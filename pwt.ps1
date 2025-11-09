@@ -36,6 +36,7 @@ if ($response.Character -ne 'Y') {
 Clear-Host
 $global:defaultInstructions = @"
 ----- CAMBIOS -----
+- Ahora permite que selecciones los formatos para video y audio.
 - Se agrega la opción para actualizar y desinstalar dependencias.
 - Se agregó vista previa del video.
 - Se agregó detalles de progreso de descarga en consola.
@@ -50,7 +51,7 @@ Add-Type -AssemblyName System.Drawing
 
 # Crear el formulario
 $formPrincipal = New-Object System.Windows.Forms.Form
-$formPrincipal.Size = New-Object System.Drawing.Size(300, 760)
+$formPrincipal.Size = New-Object System.Drawing.Size(400, 800)
 $formPrincipal.StartPosition = "CenterScreen"
 $formPrincipal.BackColor = [System.Drawing.Color]::White
 $formPrincipal.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::FixedDialog
@@ -59,7 +60,7 @@ $formPrincipal.MinimizeBox = $false
 $defaultFont = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Regular)
 $boldFont    = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
                                                                                                         $version = "Alfa 251109.1300"
-$formPrincipal.Text = ("Daniel Tools v{0}" -f $version)
+$formPrincipal.Text = ("YTDLL v{0}" -f $version)
 
 Write-Host "`n=============================================" -ForegroundColor DarkCyan
 Write-Host "                   YTDLL                       " -ForegroundColor Green
@@ -223,6 +224,7 @@ function Refresh-GateByDeps {
 $script:formatsIndex = @{}   # format_id -> objeto con metadatos (tipo, codecs, label)
 $script:formatsVideo = @()   # lista de objetos mostrables en Combo Video
 $script:formatsAudio = @()   # lista de objetos mostrables en Combo Audio
+$script:ExcludedFormatIds = @('18','22','95','96')
 
 # Por compatibilidad PS5/7 evitamos ValueMember; guardamos Display con el format_id al inicio
 function New-FormatDisplay {
@@ -320,7 +322,10 @@ function Fetch-Formats {
     foreach ($f in $json.formats) {
         $klass = Classify-Format $f
         $script:formatsIndex[$klass.Id] = $klass
-
+    # Evitar que aparezcan progresivos problemáticos en la UI
+    if ($klass.Progressive -and $script:ExcludedFormatIds -contains $klass.Id) {
+        continue
+    }
         # Etiqueta legible
         $res = if ($klass.VRes) { "{0}p" -f $klass.VRes } else { "" }
         $sz  = Human-Size $klass.Filesize
@@ -730,32 +735,32 @@ $script:ultimaRutaDescarga = $null
 # ====== [NUEVO] Selectores de formato ======
 $lblVideoFmt = Create-Label -Text "Formato de VIDEO:" `
     -Location (New-Object System.Drawing.Point(20, 165)) `
-    -Size (New-Object System.Drawing.Size(260, 20)) -Font $boldFont
+    -Size (New-Object System.Drawing.Size(360, 20)) -Font $boldFont
 
 $cmbVideoFmt = Create-ComboBox `
     -Location (New-Object System.Drawing.Point(20, 188)) `
-    -Size (New-Object System.Drawing.Size(260, 28))
+    -Size (New-Object System.Drawing.Size(360, 28))
 
 $lblAudioFmt = Create-Label -Text "Formato de AUDIO:" `
     -Location (New-Object System.Drawing.Point(20, 220)) `
-    -Size (New-Object System.Drawing.Size(260, 20)) -Font $boldFont
+    -Size (New-Object System.Drawing.Size(360, 20)) -Font $boldFont
 
 $cmbAudioFmt = Create-ComboBox `
     -Location (New-Object System.Drawing.Point(20, 243)) `
-    -Size (New-Object System.Drawing.Size(260, 28))
+    -Size (New-Object System.Drawing.Size(360, 28))
 
 $formPrincipal.Controls.Add($lblVideoFmt)
 $formPrincipal.Controls.Add($cmbVideoFmt)
 $formPrincipal.Controls.Add($lblAudioFmt)
 $formPrincipal.Controls.Add($cmbAudioFmt)
 # Parte SUPERIOR: consulta y descarga
-$lblUrl = Create-Label -Text "URL de YouTube:" -Location (New-Object System.Drawing.Point(20, 20)) -Size (New-Object System.Drawing.Size(260, 22)) -Font $boldFont
-$txtUrl = Create-TextBox -Location (New-Object System.Drawing.Point(20, 45)) -Size (New-Object System.Drawing.Size(260, 26))
+$lblUrl = Create-Label -Text "URL de YouTube:" -Location (New-Object System.Drawing.Point(20, 20)) -Size (New-Object System.Drawing.Size(360, 22)) -Font $boldFont
+$txtUrl = Create-TextBox -Location (New-Object System.Drawing.Point(20, 45)) -Size (New-Object System.Drawing.Size(360, 26))
 # --- Label de estado con 2 renglones (wrap) ---
 $lblEstadoConsulta = Create-Label `
     -Text "Estado: sin consultar" `
     -Location (New-Object System.Drawing.Point(20, 75)) `
-    -Size (New-Object System.Drawing.Size(260, 44)) `
+    -Size (New-Object System.Drawing.Size(360, 44)) `
     -Font $defaultFont `
     -BorderStyle ([System.Windows.Forms.BorderStyle]::FixedSingle) `
     -TextAlign ([System.Drawing.ContentAlignment]::TopLeft)
@@ -763,14 +768,14 @@ $lblEstadoConsulta.UseCompatibleTextRendering = $true
 
 $btnConsultar = Create-Button -Text "Consultar" `
     -Location (New-Object System.Drawing.Point(20, 125)) `
-    -Size (New-Object System.Drawing.Size(120, 35)) `
+    -Size (New-Object System.Drawing.Size(170, 35)) `
     -BackColor ([System.Drawing.Color]::White) `
     -ForeColor ([System.Drawing.Color]::Black) `
     -ToolTipText "Obtener información del video"
 
 $btnDescargar = Create-Button -Text "Descargar" `
-    -Location (New-Object System.Drawing.Point(160, 125)) `
-    -Size (New-Object System.Drawing.Size(120, 35)) `
+    -Location (New-Object System.Drawing.Point(210, 125)) `
+    -Size (New-Object System.Drawing.Size(170, 35)) `
     -BackColor ([System.Drawing.Color]::Black) `
     -ForeColor ([System.Drawing.Color]::White) `
     -ToolTipText "Descargar usando bestvideo+bestaudio -> mp4"
@@ -779,12 +784,12 @@ Set-DownloadButtonVisual -ok:$false
 # ----- [NUEVO] Zona de vista previa -----
 $lblPreview = Create-Label -Text "Vista previa:" `
     -Location (New-Object System.Drawing.Point(20, 280)) `
-    -Size (New-Object System.Drawing.Size(260, 22)) `
+    -Size (New-Object System.Drawing.Size(360, 22)) `
     -Font $boldFont
 
 $picPreview = New-Object System.Windows.Forms.PictureBox
 $picPreview.Location   = New-Object System.Drawing.Point(20, 305)
-$picPreview.Size       = New-Object System.Drawing.Size(260, 146)
+$picPreview.Size       = New-Object System.Drawing.Size(360, 146)
 $picPreview.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
 $picPreview.SizeMode   = [System.Windows.Forms.PictureBoxSizeMode]::Zoom
 $picPreview.BackColor  = [System.Drawing.Color]::White
@@ -802,7 +807,7 @@ $formPrincipal.Controls.Add($btnDescargar)
 # --- Bitácora con scroll vertical 
 $txtCambios = Create-TextBox `
     -Location (New-Object System.Drawing.Point(20, 470)) `
-    -Size (New-Object System.Drawing.Size(260, 100)) `
+    -Size (New-Object System.Drawing.Size(360, 100)) `
     -BackColor ([System.Drawing.Color]::White) `
     -ForeColor ([System.Drawing.Color]::Black) `
     -Font $defaultFont `
@@ -813,11 +818,11 @@ $txtCambios = Create-TextBox `
 $txtCambios.WordWrap = $true
 $formPrincipal.Controls.Add($txtCambios)
 
-$lblTituloDeps = Create-Label -Text "Dependencias:" -Location (New-Object System.Drawing.Point(20, 590)) -Size (New-Object System.Drawing.Size(260, 24)) -Font $boldFont
-$lblYtDlp      = Create-Label -Text "yt-dlp: verificando..." -Location (New-Object System.Drawing.Point(80, 620)) -Size (New-Object System.Drawing.Size(200, 24)) -Font $defaultFont -BorderStyle ([System.Windows.Forms.BorderStyle]::FixedSingle)
-$lblFfmpeg     = Create-Label -Text "ffmpeg: verificando..." -Location (New-Object System.Drawing.Point(80, 650)) -Size (New-Object System.Drawing.Size(200, 24)) -Font $defaultFont -BorderStyle ([System.Windows.Forms.BorderStyle]::FixedSingle)
-$lblNode       = Create-Label -Text "Node.js: verificando..." -Location (New-Object System.Drawing.Point(80, 680)) -Size (New-Object System.Drawing.Size(200, 24)) -Font $defaultFont -BorderStyle ([System.Windows.Forms.BorderStyle]::FixedSingle)
-$btnExit    = Create-Button -Text "Salir"    -Location (New-Object System.Drawing.Point(20, 720)) -BackColor ([System.Drawing.Color]::Black) -ForeColor ([System.Drawing.Color]::White) -ToolTipText "Cerrar la aplicación" -Size (New-Object System.Drawing.Size(260, 35))
+$lblTituloDeps = Create-Label -Text "Dependencias:" -Location (New-Object System.Drawing.Point(20, 590)) -Size (New-Object System.Drawing.Size(360, 24)) -Font $boldFont
+$lblYtDlp      = Create-Label -Text "yt-dlp: verificando..." -Location (New-Object System.Drawing.Point(80, 620)) -Size (New-Object System.Drawing.Size(300, 24)) -Font $defaultFont -BorderStyle ([System.Windows.Forms.BorderStyle]::FixedSingle)
+$lblFfmpeg     = Create-Label -Text "ffmpeg: verificando..." -Location (New-Object System.Drawing.Point(80, 650)) -Size (New-Object System.Drawing.Size(300, 24)) -Font $defaultFont -BorderStyle ([System.Windows.Forms.BorderStyle]::FixedSingle)
+$lblNode       = Create-Label -Text "Node.js: verificando..." -Location (New-Object System.Drawing.Point(80, 680)) -Size (New-Object System.Drawing.Size(300, 24)) -Font $defaultFont -BorderStyle ([System.Windows.Forms.BorderStyle]::FixedSingle)
+$btnExit    = Create-Button -Text "Salir"    -Location (New-Object System.Drawing.Point(20, 720)) -BackColor ([System.Drawing.Color]::Black) -ForeColor ([System.Drawing.Color]::White) -ToolTipText "Cerrar la aplicación" -Size (New-Object System.Drawing.Size(360, 35))
 $btnYtRefresh   = Create-IconButton -Text "↻" -Location (New-Object System.Drawing.Point(20, 620)) -ToolTipText "Buscar/actualizar yt-dlp"
 $btnYtUninstall = Create-IconButton -Text "✖" -Location (New-Object System.Drawing.Point(48, 620)) -ToolTipText "Desinstalar yt-dlp"
 $btnYtRefresh.Add_Click({
@@ -1065,12 +1070,14 @@ $btnDescargar.Add_Click({
             $fSelector = "best"
         } elseif ($videoSel -eq "bestvideo") {
             $fSelector = "bestvideo+" + ($(if ($audioSel) { $audioSel } else { "bestaudio" }))
-        } else {
-            # Es un format_id específico
-            $klass = $script:formatsIndex[$videoSel]
-            if ($klass -and $klass.Progressive) {
-                $fSelector = $videoSel
-                $mergeExt  = $klass.Ext  # opcional: respeta contenedor del progresivo
+            } else {
+                # Es un format_id específico
+                $klass = $script:formatsIndex[$videoSel]
+                if ($klass -and $klass.Progressive) {
+                    # Evitar progresivos: forzar adaptativo (video-only + audio)
+                    $fSelector = "bestvideo+" + ($(if ($audioSel) { $audioSel } else { "bestaudio" }))
+                    $mergeExt  = "mp4"
+
             } elseif ($klass -and $klass.VideoOnly) {
                 $fSelector = $videoSel + "+" + ($(if ($audioSel) { $audioSel } else { "bestaudio" }))
             } else {
@@ -1088,7 +1095,7 @@ $btnDescargar.Add_Click({
       "--encoding","utf-8",
       "--progress","--no-color","--newline",
       "-f",$fSelector,
-      "--merge-output-format",$mergeExt,
+      "--recode-video","mp4",
       "-P",$script:ultimaRutaDescarga,
       "--progress-template","download:%(progress._percent_str)s ETA:%(progress._eta_str)s SPEED:%(progress._speed_str)s",
       "--extractor-args","youtube:player_client=default,-web_safari,-web_embedded,-tv",
