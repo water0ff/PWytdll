@@ -306,11 +306,13 @@ $formPrincipal.Controls.Add($lblCambios)
 $lblTituloDeps = Create-Label -Text "Dependencias:" -Location (New-Object System.Drawing.Point(20, 420)) -Size (New-Object System.Drawing.Size(260, 24)) -Font $boldFont
 $lblYtDlp      = Create-Label -Text "yt-dlp: verificando..." -Location (New-Object System.Drawing.Point(20, 450)) -Size (New-Object System.Drawing.Size(260, 24)) -Font $defaultFont -BorderStyle ([System.Windows.Forms.BorderStyle]::FixedSingle)
 $lblFfmpeg     = Create-Label -Text "ffmpeg: verificando..." -Location (New-Object System.Drawing.Point(20, 480)) -Size (New-Object System.Drawing.Size(260, 24)) -Font $defaultFont -BorderStyle ([System.Windows.Forms.BorderStyle]::FixedSingle)
+$lblNode       = Create-Label -Text "Node.js: verificando..." -Location (New-Object System.Drawing.Point(20, 510)) -Size (New-Object System.Drawing.Size(260, 24)) -Font $defaultFont -BorderStyle ([System.Windows.Forms.BorderStyle]::FixedSingle)
 
-$btnConsola = Create-Button -Text "Consola" -Location (New-Object System.Drawing.Point(20, 520)) -BackColor ([System.Drawing.Color]::White) -ForeColor ([System.Drawing.Color]::Black) -ToolTipText "Abrir PowerShell" -Size (New-Object System.Drawing.Size(120, 35))
-$btnExit    = Create-Button -Text "Salir"    -Location (New-Object System.Drawing.Point(160, 520)) -BackColor ([System.Drawing.Color]::Black) -ForeColor ([System.Drawing.Color]::White) -ToolTipText "Cerrar la aplicación" -Size (New-Object System.Drawing.Size(120, 35))
+$btnConsola = Create-Button -Text "Consola" -Location (New-Object System.Drawing.Point(20, 550)) -BackColor ([System.Drawing.Color]::White) -ForeColor ([System.Drawing.Color]::Black) -ToolTipText "Abrir PowerShell" -Size (New-Object System.Drawing.Size(120, 35))
+$btnExit    = Create-Button -Text "Salir"    -Location (New-Object System.Drawing.Point(160, 550)) -BackColor ([System.Drawing.Color]::Black) -ForeColor ([System.Drawing.Color]::White) -ToolTipText "Cerrar la aplicación" -Size (New-Object System.Drawing.Size(120, 35))
 
 $formPrincipal.Controls.Add($lblTituloDeps)
+$formPrincipal.Controls.Add($lblNode)
 $formPrincipal.Controls.Add($lblYtDlp)
 $formPrincipal.Controls.Add($lblFfmpeg)
 $formPrincipal.Controls.Add($btnConsola)
@@ -526,7 +528,9 @@ $formPrincipal.Add_Shown({
         Ensure-Tool -CommandName "yt-dlp" -FriendlyName "yt-dlp" -ChocoPkg "yt-dlp" -LabelRef ([ref]$lblYtDlp) -VersionArgs "--version"
         $lblFfmpeg.Text = "ffmpeg: verificando..."
         Ensure-Tool -CommandName "ffmpeg" -FriendlyName "ffmpeg" -ChocoPkg "ffmpeg" -LabelRef ([ref]$lblFfmpeg) -VersionArgs "-version"
+        Ensure-Tool -CommandName "node" -FriendlyName "Node.js" -ChocoPkg "nodejs-lts" -LabelRef ([ref]$lblNode) -VersionArgs "--version"
         Write-Host "[READY] Dependencias verificadas." -ForegroundColor Green
+
     }
     catch {
         Write-Host ("[ERROR] Error al validar dependencias: {0}" -f $_) -ForegroundColor Red
