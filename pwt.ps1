@@ -381,96 +381,98 @@ function Invoke-Capture {
     return [pscustomobject]@{ ExitCode = $p.ExitCode; StdOut = $stdout; StdErr = $stderr }
 }
 # Invoca yt-dlp leyendo progreso en tiempo real y actualiza consola + barra
-# Invoca yt-dlp leyendo STDERR en tiempo real y actualiza consola + barra (sin hilos/eventos)
 function Invoke-YtDlpWithProgress {
     param(
         [Parameter(Mandatory=$true)][string]$ExePath,
         [Parameter(Mandatory=$true)][string[]]$Args
     )
 
+    # Ventana de progreso
     $progressForm = Show-ProgressBar
-    $currentPct = 0
+    $lastPct = -1
 
+    # Configurar proceso
     $psi = New-Object System.Diagnostics.ProcessStartInfo
-    $psi.FileName = $ExePath
-    $psi.Arguments = (($Args | ForEach-Object { if ($_ -match '\s') { '"{0}"' -f $_ } else { $_ } }) -join ' ')
+    $psi.FileName               = $ExePath
+    $psi.Arguments              = (($Args | ForEach-Object { if ($_ -match '\s') { '"{0}"' -f $_ } else { $_ } }) -join ' ')
+    $psi.UseShellExecute        = $false
     $psi.RedirectStandardOutput = $true
     $psi.RedirectStandardError  = $true
-    $psi.UseShellExecute = $false
-    $psi.CreateNoWindow  = $true
+    $psi.CreateNoWindow         = $true
+
+    # Evita caracteres raros (títulos) y asegura UTF-8 en Python (yt-dlp)
+    $psi.EnvironmentVariables["PYTHONUTF8"]       = "1"
+    $psi.EnvironmentVariables["PYTHONIOENCODING"] = "utf-8"
 
     $p = New-Object System.Diagnostics.Process
     $p.StartInfo = $psi
-    [void]$p.Start()
+    $p.EnableRaisingEvents = $true
 
-    # Consumir stdout luego (no suele traer progreso); prevenimos bloqueos
-    $stdOutReader = $p.StandardOutput
+    # Parser de líneas de progreso
+    $updateAction = {
+        param([string]$line)
 
-    # Función local para parsear una línea de progreso
-    function _UpdateFromLine([string]$line) {
         if ([string]::IsNullOrWhiteSpace($line)) { return }
 
-        $pct = $null; $eta = ""; $spd = ""
-
         # 1) progress-template: "download: 12.3% ETA:00:10 SPEED:1.23MiB/s"
-        $m = [regex]::Match($line, 'download:\s*(?<pct>\d+(?:\.\d+)?)%\s*(?:ETA:(?<eta>\S+))?\s*(?:SPEED:(?<spd>.+))?')
+        $m = [regex]::Match($line, 'download:\s*(?<pct>\d+(?:\.\d+)?)%\s*(?:ETA:(?<eta>\S+))?\s*(?:SPEED:(?<spd>.+))?', 'IgnoreCase')
+
+        if (-not $m.Success) {
+            # 2) formato clásico: "[download]  12.3% of ... at 1.2MiB/s ETA 00:10"
+            $m = [regex]::Match($line, '(?<pct>\d+(?:\.\d+)?)%\s+of.*?at\s+(?<spd>\S+)\s+ETA\s+(?<eta>\S+)', 'IgnoreCase')
+            if (-not $m.Success) {
+                # 3) cualquier porcentaje suelto
+                $m = [regex]::Match($line, '(?<pct>\d+(?:\.\d+)?)%')
+            }
+        }
 
         if ($m.Success) {
-            $pct = $m.Groups['pct'].Value
+            $pct = [int][math]::Min(100, [math]::Round([double]$m.Groups['pct'].Value))
             $eta = $m.Groups['eta'].Value
             $spd = $m.Groups['spd'].Value
-        } else {
-            # 2) formato clásico: "[download]  12.3% of ... at 1.2MiB/s ETA 00:10"
-            $m2 = [regex]::Match($line, '(\d+(?:\.\d+)?)%\s+of.*?at\s+(?<spd>\S+)\s+ETA\s+(?<eta>\S+)')
-            if ($m2.Success) {
-                $pct = $m2.Groups[1].Value
-                $eta = $m2.Groups['eta'].Value
-                $spd = $m2.Groups['spd'].Value
-            } else {
-                # 3) solo porcentaje: "[download]  34.5% ..."
-                $m3 = [regex]::Match($line, '(\d+(?:\.\d+)?)%')
-                if ($m3.Success) { $pct = $m3.Groups[1].Value }
-            }
-        }
 
-        if ($pct -ne $null) {
-            $pct = [int][math]::Min(100, [math]::Round([double]$pct))
-            # Consola (misma línea)
-            $msg = ("`r[PROGRESO] {0,3}%  ETA {1,-8}  {2,-12}" -f $pct, $eta, $spd).TrimEnd()
-            Write-Host $msg -NoNewline
+            if ($pct -ne $lastPct) {
+                $script:lastPct = $pct
+                # Consola (mismo renglón)
+                Write-Host ("`r[PROGRESO] {0,3}%  ETA {1,-8}  {2,-16}" -f $pct, $eta, $spd) -NoNewline
 
-            # Barra + etiqueta
-            if ($pct -ne $currentPct -and -not $progressForm.IsDisposed) {
-                $script:currentPct = $pct
-                Update-ProgressBar -ProgressForm $progressForm -CurrentStep $pct -TotalSteps 100
-                $progressForm.Label.Text = ("{0}% Completado" -f $pct)
+                # Actualizar UI de forma segura
+                if (-not $progressForm.IsDisposed) {
+                    $null = $progressForm.BeginInvoke([Action]{
+                        Update-ProgressBar -ProgressForm $progressForm -CurrentStep $pct -TotalSteps 100
+                        $progressForm.Label.Text = ("{0}% Completado" -f $pct)
+                    })
+                }
             }
-            [System.Windows.Forms.Application]::DoEvents()
         }
     }
 
-    # Leer STDERR línea a línea (yt-dlp manda progreso a STDERR)
-    $err = $p.StandardError
-    try {
-        while (-not $err.EndOfStream) {
-            $line = $err.ReadLine()
-            _UpdateFromLine $line
-        }
-    } catch {
-        # Ignorar si se cierra el stream al terminar el proceso
+    # Handlers asíncronos
+    $p.add_OutputDataReceived({
+        if ($_.Data) { & $updateAction $_.Data }
+    })
+    $p.add_ErrorDataReceived({
+        if ($_.Data) { & $updateAction $_.Data }
+    })
+
+    # Iniciar y empezar lectura asíncrona
+    [void]$p.Start()
+    $p.BeginOutputReadLine()
+    $p.BeginErrorReadLine()
+
+    # Bucle ligero para mantener viva la UI sin bloquear
+    while (-not $p.HasExited) {
+        [System.Windows.Forms.Application]::DoEvents()
+        Start-Sleep -Milliseconds 50
     }
 
-    $p.WaitForExit()
-    # Drenar stdout para evitar buffers colgados
-    try { [void]$stdOutReader.ReadToEnd() } catch {}
-
-    # Salto de línea final para no dejar el cursor pegado
+    # Línea nueva para la consola, cerrar barra
     Write-Host ""
-
     if (-not $progressForm.IsDisposed) { Close-ProgressBar $progressForm }
 
     return $p.ExitCode
 }
+
 
 
 # ====== Eventos ======
@@ -536,14 +538,13 @@ $btnDescargar.Add_Click({
     Write-Host ("[DESCARGA] Carpeta seleccionada: {0}" -f $($script:ultimaRutaDescarga)) -ForegroundColor Cyan
 
     # Args de descarga con progreso amigable
-    $args = @(
-        "--newline","--no-color",
-        "-f","bestvideo+bestaudio","--merge-output-format","mp4",
-        "-P",$script:ultimaRutaDescarga,
-        # plantilla clara; si no es soportada, igual parseamos el formato clásico
-        "--progress-template","download:%(progress._percent_str)s ETA:%(progress._eta_str)s SPEED:%(progress._speed_str)s",
-        $script:ultimaURL
-    )
+            $args = @(
+                "--newline","--no-color","--progress",
+                "-f","bestvideo+bestaudio","--merge-output-format","mp4",
+                "-P",$script:ultimaRutaDescarga,
+                "--progress-template","download:%(progress._percent_str)s ETA:%(progress._eta_str)s SPEED:%(progress._speed_str)s",
+                $script:ultimaURL
+            )
 
     Write-Host "[DESCARGA] Iniciando descarga..." -ForegroundColor Cyan
     Write-Host ("[CMD] {0} {1}" -f $yt.Source, ($args -join ' ')) -ForegroundColor DarkGray
