@@ -8,6 +8,14 @@ if (-not (Test-Path $iconDir)) {
     New-Item -ItemType Directory -Path $iconDir -Force | Out-Null
     Write-Host "Carpeta de íconos creada: $iconDir"
 }
+# Forzar UTF-8 en PowerShell y en procesos hijos (Python/yt-dlp)
+try {
+  [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+  [Console]::InputEncoding  = [System.Text.Encoding]::UTF8
+} catch {}
+
+$OutputEncoding = [System.Text.Encoding]::UTF8
+$env:PYTHONIOENCODING = 'utf-8'
 # Mostrar advertencia ALFA y solicitar confirmación
 Write-Host "`n==============================================" -ForegroundColor Red
 Write-Host "           ADVERTENCIA DE VERSIÓN ALFA          " -ForegroundColor Red
@@ -542,15 +550,16 @@ $btnDescargar.Add_Click({
     $script:ultimaRutaDescarga = $fbd.SelectedPath
     Write-Host ("[DESCARGA] Carpeta seleccionada: {0}" -f $($script:ultimaRutaDescarga)) -ForegroundColor Cyan
 
-        # Construcción de argumentos para yt-dlp (estable, sin mweb)
+        # Construcción de argumentos para yt-dlp (estable, sin android ni clients web sabr)
         $args = @(
           "--newline","--no-color","--progress",
           "-f","bestvideo+bestaudio","--merge-output-format","mp4",
           "-P",$script:ultimaRutaDescarga,
           "--progress-template","download:%(progress._percent_str)s ETA:%(progress._eta_str)s SPEED:%(progress._speed_str)s",
-          "--extractor-args","youtube:player_client=default,android",  # <- adiós mweb
+          "--extractor-args","youtube:player_client=default,-web_safari,-web_embedded,-tv",
           $script:ultimaURL
         )
+
         
         Write-Host "[DESCARGA] Iniciando descarga..." -ForegroundColor Cyan
         Write-Host ("[CMD] {0} {1}" -f $yt.Source, ($args -join ' ')) -ForegroundColor DarkGray
