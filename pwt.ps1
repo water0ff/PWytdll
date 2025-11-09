@@ -365,6 +365,156 @@ function Update-ProgressBar { param($ProgressForm, $CurrentStep, $TotalSteps)
 }
 function Close-ProgressBar { param($ProgressForm) $ProgressForm.Close() }
 
+
+
+
+
+
+
+# ======                                                                                                 NUEVO: URL + acciones ======
+# estado de consulta
+$script:videoConsultado = $false
+$script:ultimaURL = $null
+$script:ultimoTitulo = $null
+
+# etiqueta y caja de texto para URL
+$lblUrl = Create-Label -Text "URL de YouTube:" -Location (New-Object System.Drawing.Point(20, 305)) -Size (New-Object System.Drawing.Size(260, 22)) -Font $boldFont
+$txtUrl = Create-TextBox -Location (New-Object System.Drawing.Point(20, 330)) -Size (New-Object System.Drawing.Size(260, 26))
+
+# etiqueta de estado de la consulta
+$lblEstadoConsulta = Create-Label -Text "Estado: sin consultar" -Location (New-Object System.Drawing.Point(20, 360)) -Size (New-Object System.Drawing.Size(260, 22)) -Font $defaultFont -BorderStyle ([System.Windows.Forms.BorderStyle]::FixedSingle)
+
+# botones
+$btnConsultar = Create-Button -Text "Consultar" -Location (New-Object System.Drawing.Point(20, 390)) -Size (New-Object System.Drawing.Size(120, 35)) -BackColor ([System.Drawing.Color]::White) -ForeColor ([System.Drawing.Color]::Black) -ToolTipText "Obtener información del video"
+$btnDescargar = Create-Button -Text "Descargar versión seleccionada" -Location (New-Object System.Drawing.Point(20, 435)) -Size (New-Object System.Drawing.Size(260, 35)) -BackColor ([System.Drawing.Color]::Black) -ForeColor ([System.Drawing.Color]::White) -ToolTipText "Descargar usando bestvideo+bestaudio -> mp4"
+$btnDescargar.Enabled = $false
+
+# Controles de URL y acciones
+$formPrincipal.Controls.Add($lblUrl)
+$formPrincipal.Controls.Add($txtUrl)
+$formPrincipal.Controls.Add($lblEstadoConsulta)
+$formPrincipal.Controls.Add($btnConsultar)
+$formPrincipal.Controls.Add($btnDescargar)
+
+# ====== NUEVO: lógica Consultar y Descargar ======
+
+# Utilidad segura para invocar un ejecutable y capturar salida y código de retorno
+function Invoke-Capture {
+    param(
+        [Parameter(Mandatory=$true)][string]$ExePath,
+        [string[]]$Args = @()
+    )
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = $ExePath
+    $psi.Arguments = (($Args | ForEach-Object { if ($_ -match '\s') { '"{0}"' -f $_ } else { $_ } }) -join ' ')
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError  = $true
+    $psi.UseShellExecute = $false
+    $psi.CreateNoWindow  = $true
+    $p = New-Object System.Diagnostics.Process
+    $p.StartInfo = $psi
+    [void]$p.Start()
+    $stdout = $p.StandardOutput.ReadToEnd()
+    $stderr = $p.StandardError.ReadToEnd()
+    $p.WaitForExit()
+    return [pscustomobject]@{ ExitCode = $p.ExitCode; StdOut = $stdout; StdErr = $stderr }
+}
+
+# Botón: Consultar
+$btnConsultar.Add_Click({
+    $url = $txtUrl.Text.Trim()
+    if ([string]::IsNullOrWhiteSpace($url)) {
+        [System.Windows.Forms.MessageBox]::Show("Escribe una URL de YouTube.", "Falta URL",
+            [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning) | Out-Null
+        return
+    }
+    try {
+        $yt = Get-Command yt-dlp -ErrorAction Stop
+    } catch {
+        [System.Windows.Forms.MessageBox]::Show("yt-dlp no está disponible. Valídalo en Dependencias.", "yt-dlp no encontrado",
+            [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Error) | Out-Null
+        return
+    }
+
+    # intentamos obtener título (validación suave de la URL)
+    $res = Invoke-Capture -ExePath $yt.Source -Args @("--no-playlist","--get-title",$url)
+    $titulo = ($res.StdOut + "`n" + $res.StdErr).Trim() -split "`r?`n" | Where-Object { $_.Trim() -ne "" } | Select-Object -First 1
+
+    if ($res.ExitCode -eq 0 -and $titulo) {
+        $script:videoConsultado = $true
+        $script:ultimaURL = $url
+        $script:ultimoTitulo = $titulo
+        $lblEstadoConsulta.Text = "Consultado: $titulo"
+        $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::ForestGreen
+        $btnDescargar.Enabled = $true
+    } else {
+        $script:videoConsultado = $false
+        $script:ultimaURL = $null
+        $script:ultimoTitulo = $null
+        $lblEstadoConsulta.Text = "Error al consultar la URL"
+        $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::Red
+        $btnDescargar.Enabled = $false
+        [System.Windows.Forms.MessageBox]::Show(
+            "No se pudo consultar el video. Revisa la URL o tu conexión.",
+            "Consulta fallida",
+            [System.Windows.Forms.MessageBoxButtons]::OK,
+            [System.Windows.Forms.MessageBoxIcon]::Error
+        ) | Out-Null
+    }
+})
+
+# Botón: Descargar versión seleccionada (por omisión)
+$btnDescargar.Add_Click({
+    if (-not $script:videoConsultado -or [string]::IsNullOrWhiteSpace($script:ultimaURL)) {
+        [System.Windows.Forms.MessageBox]::Show("Primero usa 'Consultar' para validar la URL.", "Requisito: Consultar",
+            [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information) | Out-Null
+        return
+    }
+    try {
+        $yt = Get-Command yt-dlp -ErrorAction Stop
+    } catch {
+        [System.Windows.Forms.MessageBox]::Show("yt-dlp no está disponible. Valídalo en Dependencias.", "yt-dlp no encontrado",
+            [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Error) | Out-Null
+        return
+    }
+
+    # Descarga con el formato por omisión solicitado
+    $args = @("-f","bestvideo+bestaudio","--merge-output-format","mp4",$script:ultimaURL)
+
+    # (Opcional) mostrar progreso con tu barra si quieres más adelante
+    $resultado = Invoke-Capture -ExePath $yt.Source -Args $args
+
+    if ($resultado.ExitCode -eq 0) {
+        [System.Windows.Forms.MessageBox]::Show(
+            "Descarga finalizada:`n$($script:ultimoTitulo)",
+            "Completado",
+            [System.Windows.Forms.MessageBoxButtons]::OK,
+            [System.Windows.Forms.MessageBoxIcon]::Information
+        ) | Out-Null
+    } else {
+        [System.Windows.Forms.MessageBox]::Show(
+            "Falló la descarga. Revisa conexión/URL/DRM. Detalle:`n$($resultado.StdErr)",
+            "Error de descarga",
+            [System.Windows.Forms.MessageBoxButtons]::OK,
+            [System.Windows.Forms.MessageBoxIcon]::Error
+        ) | Out-Null
+    }
+})
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 # --- Botón Salir usando Create-Button ---
 $btnExit = Create-Button -Text "Salir" -Location (New-Object System.Drawing.Point(20, 170)) -BackColor ([System.Drawing.Color]::Black) -ForeColor ([System.Drawing.Color]::White) `
     -ToolTipText "Cerrar la aplicación" -Size (New-Object System.Drawing.Size(120, 35)) -Font $defaultFont
