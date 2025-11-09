@@ -43,15 +43,15 @@ $formPrincipal.MaximizeBox = $false
 $formPrincipal.MinimizeBox = $false
 $defaultFont = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Regular)
 $boldFont    = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
-$version = "Alfa 251109.1223"
+                                                                                                        $version = "Alfa 251109.1300"
 $formPrincipal.Text = ("Daniel Tools v{0}" -f $version)
 
 Write-Host "`n=============================================" -ForegroundColor DarkCyan
 Write-Host "                   YTDLL                       " -ForegroundColor Green
-Write-Host "              Versión: v$($version)               " -ForegroundColor Green
+Write-Host ("              Versión: v{0}" -f $version) -ForegroundColor Green
 Write-Host "=============================================" -ForegroundColor DarkCyan
 
-# Tooltip y fábricas de controles (sin cambios de firmas)
+# Tooltip y fábricas de controles
 $toolTip = New-Object System.Windows.Forms.ToolTip
 function Create-Button {
     param (
@@ -82,15 +82,16 @@ function Create-Button {
     if ($ToolTipText) { $toolTip.SetToolTip($button, $ToolTipText) }
     return $button
 }
-function Create-Label { param(
-    [string]$Text,[System.Drawing.Point]$Location,
-    [System.Drawing.Color]$BackColor = [System.Drawing.Color]::Transparent,
-    [System.Drawing.Color]$ForeColor = [System.Drawing.Color]::Black,
-    [string]$ToolTipText = $null,[System.Drawing.Size]$Size = (New-Object System.Drawing.Size(200, 30)),
-    [System.Drawing.Font]$Font = $defaultFont,
-    [System.Windows.Forms.BorderStyle]$BorderStyle = [System.Windows.Forms.BorderStyle]::None,
-    [System.Drawing.ContentAlignment]$TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft
-)
+function Create-Label {
+    param(
+        [string]$Text,[System.Drawing.Point]$Location,
+        [System.Drawing.Color]$BackColor = [System.Drawing.Color]::Transparent,
+        [System.Drawing.Color]$ForeColor = [System.Drawing.Color]::Black,
+        [string]$ToolTipText = $null,[System.Drawing.Size]$Size = (New-Object System.Drawing.Size(200, 30)),
+        [System.Drawing.Font]$Font = $defaultFont,
+        [System.Windows.Forms.BorderStyle]$BorderStyle = [System.Windows.Forms.BorderStyle]::None,
+        [System.Drawing.ContentAlignment]$TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft
+    )
     $label = New-Object System.Windows.Forms.Label
     $label.Text = $Text; $label.Size = $Size; $label.Location = $Location
     $label.BackColor = $BackColor; $label.ForeColor = $ForeColor; $label.Font = $Font
@@ -98,16 +99,17 @@ function Create-Label { param(
     if ($ToolTipText) { $toolTip.SetToolTip($label, $ToolTipText) }
     return $label
 }
-function Create-Form { param(
-    [Parameter(Mandatory=$true)][string]$Title,
-    [Parameter()][System.Drawing.Size]$Size = (New-Object System.Drawing.Size(350,200)),
-    [Parameter()][System.Windows.Forms.FormStartPosition]$StartPosition = [System.Windows.Forms.FormStartPosition]::CenterScreen,
-    [Parameter()][System.Windows.Forms.FormBorderStyle]$FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::FixedDialog,
-    [Parameter()][bool]$MaximizeBox = $false,[Parameter()][bool]$MinimizeBox = $false,
-    [Parameter()][bool]$TopMost = $false,[Parameter()][bool]$ControlBox = $true,
-    [Parameter()][System.Drawing.Icon]$Icon = $null,
-    [Parameter()][System.Drawing.Color]$BackColor = [System.Drawing.SystemColors]::Control
-)
+function Create-Form {
+    param(
+        [Parameter(Mandatory=$true)][string]$Title,
+        [Parameter()][System.Drawing.Size]$Size = (New-Object System.Drawing.Size(350,200)),
+        [Parameter()][System.Windows.Forms.FormStartPosition]$StartPosition = [System.Windows.Forms.FormStartPosition]::CenterScreen,
+        [Parameter()][System.Windows.Forms.FormBorderStyle]$FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::FixedDialog,
+        [Parameter()][bool]$MaximizeBox = $false,[Parameter()][bool]$MinimizeBox = $false,
+        [Parameter()][bool]$TopMost = $false,[Parameter()][bool]$ControlBox = $true,
+        [Parameter()][System.Drawing.Icon]$Icon = $null,
+        [Parameter()][System.Drawing.Color]$BackColor = [System.Drawing.SystemColors]::Control
+    )
     $form = New-Object System.Windows.Forms.Form
     $form.Text=$Title; $form.Size=$Size; $form.StartPosition=$StartPosition
     $form.FormBorderStyle=$FormBorderStyle; $form.MaximizeBox=$MaximizeBox; $form.MinimizeBox=$MinimizeBox
@@ -116,11 +118,12 @@ function Create-Form { param(
     $form.BackColor = $BackColor
     return $form
 }
-function Create-ComboBox { param(
-    [System.Drawing.Point]$Location,[System.Drawing.Size]$Size = (New-Object System.Drawing.Size(200,30)),
-    [System.Windows.Forms.ComboBoxStyle]$DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDownList,
-    [System.Drawing.Font]$Font = $defaultFont,[string[]]$Items = @(),[int]$SelectedIndex = -1,[string]$DefaultText = $null
-)
+function Create-ComboBox {
+    param(
+        [System.Drawing.Point]$Location,[System.Drawing.Size]$Size = (New-Object System.Drawing.Size(200,30)),
+        [System.Windows.Forms.ComboBoxStyle]$DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDownList,
+        [System.Drawing.Font]$Font = $defaultFont,[string[]]$Items = @(),[int]$SelectedIndex = -1,[string]$DefaultText = $null
+    )
     $comboBox = New-Object System.Windows.Forms.ComboBox
     $comboBox.Location = $Location; $comboBox.Size = $Size
     $comboBox.DropDownStyle = $DropDownStyle; $comboBox.Font = $Font
@@ -128,13 +131,14 @@ function Create-ComboBox { param(
     if ($DefaultText) { $comboBox.Text = $DefaultText }
     return $comboBox
 }
-function Create-TextBox { param(
-    [System.Drawing.Point]$Location,[System.Drawing.Size]$Size = (New-Object System.Drawing.Size(200,30)),
-    [System.Drawing.Color]$BackColor=[System.Drawing.Color]::White,[System.Drawing.Color]$ForeColor=[System.Drawing.Color]::Black,
-    [System.Drawing.Font]$Font=$defaultFont,[string]$Text="",[bool]$Multiline=$false,
-    [System.Windows.Forms.ScrollBars]$ScrollBars=[System.Windows.Forms.ScrollBars]::None,
-    [bool]$ReadOnly=$false,[bool]$UseSystemPasswordChar=$false
-)
+function Create-TextBox {
+    param(
+        [System.Drawing.Point]$Location,[System.Drawing.Size]$Size = (New-Object System.Drawing.Size(200,30)),
+        [System.Drawing.Color]$BackColor=[System.Drawing.Color]::White,[System.Drawing.Color]$ForeColor=[System.Drawing.Color]::Black,
+        [System.Drawing.Font]$Font=$defaultFont,[string]$Text="",[bool]$Multiline=$false,
+        [System.Windows.Forms.ScrollBars]$ScrollBars=[System.Windows.Forms.ScrollBars]::None,
+        [bool]$ReadOnly=$false,[bool]$UseSystemPasswordChar=$false
+    )
     $textBox = New-Object System.Windows.Forms.TextBox
     $textBox.Location=$Location; $textBox.Size=$Size; $textBox.BackColor=$BackColor; $textBox.ForeColor=$ForeColor
     $textBox.Font=$Font; $textBox.Text=$Text; $textBox.Multiline=$Multiline; $textBox.ScrollBars=$ScrollBars; $textBox.ReadOnly=$ReadOnly
@@ -145,7 +149,7 @@ function Create-TextBox { param(
 # ====== Consola: LOGS explícitos ======
 Write-Host "[INIT] Cargando UI..." -ForegroundColor Cyan
 
-# Funciones de validación e instalación (ahora con más Write-Host)
+# Funciones de validación e instalación
 function Check-Chocolatey {
     Write-Host "[CHECK] Verificando Chocolatey..." -ForegroundColor Cyan
     if (-not (Get-Command choco -ErrorAction SilentlyContinue)) {
@@ -188,8 +192,13 @@ function Check-Chocolatey {
     }
 }
 
+# ====== utilidades yt-dlp / ffmpeg ======
 function Get-ToolVersion {
-    param([Parameter(Mandatory=$true)][string]$Command,[string]$ArgsForVersion="--version",[ValidateSet("FirstLine","Raw")][string]$Parse="FirstLine")
+    param(
+        [Parameter(Mandatory=$true)][string]$Command,
+        [string]$ArgsForVersion="--version",
+        [ValidateSet("FirstLine","Raw")][string]$Parse="FirstLine"
+    )
     try { $cmd = Get-Command $Command -ErrorAction Stop } catch { return $null }
     try {
         $p = New-Object System.Diagnostics.Process
@@ -205,61 +214,102 @@ function Get-ToolVersion {
         $stderr = $p.StandardError.ReadToEnd()
         $p.WaitForExit()
         $combined = ($stdout + "`n" + $stderr).Trim()
-        if ($Parse -eq "FirstLine") { return ($combined -split "`r?`n" | ? { $_.Trim() -ne "" } | select -First 1) }
+        if ($Parse -eq "FirstLine") {
+            return ($combined -split "`r?`n" | Where-Object { $_.Trim() -ne "" } | Select-Object -First 1)
+        }
         return $combined
-    } catch { return "Detectado pero no se obtuvo versión" }
+    } catch {
+        return "Detectado pero no se obtuvo versión"
+    }
 }
-
 function Ensure-Tool {
     param(
         [Parameter(Mandatory=$true)][string]$CommandName,
         [Parameter(Mandatory=$true)][string]$FriendlyName,
         [Parameter(Mandatory=$true)][string]$ChocoPkg,
         [Parameter(Mandatory=$true)][ref]$LabelRef,
-        [string]$VersionArgs="--version",[ValidateSet("FirstLine","Raw")][string]$Parse="FirstLine"
+        [string]$VersionArgs="--version",
+        [ValidateSet("FirstLine","Raw")][string]$Parse="FirstLine"
     )
-    Write-Host "[CHECK] Verificando $FriendlyName..." -ForegroundColor Cyan
+    Write-Host ("[CHECK] Verificando {0}..." -f $FriendlyName) -ForegroundColor Cyan
     $version = Get-ToolVersion -Command $CommandName -ArgsForVersion $VersionArgs -Parse $Parse
     if (-not $version) {
-        Write-Host "[WARN] $FriendlyName no encontrado." -ForegroundColor Yellow
+        Write-Host ("[WARN] {0} no encontrado." -f $FriendlyName) -ForegroundColor Yellow
         $resp = [System.Windows.Forms.MessageBox]::Show(
-            "$FriendlyName no está instalado. ¿Desea instalarlo ahora con Chocolatey?",
-            "$FriendlyName no encontrado",[System.Windows.Forms.MessageBoxButtons]::YesNo,
+            ("{0} no está instalado. ¿Desea instalarlo ahora con Chocolatey?" -f $FriendlyName),
+            ("{0} no encontrado" -f $FriendlyName),
+            [System.Windows.Forms.MessageBoxButtons]::YesNo,
             [System.Windows.Forms.MessageBoxIcon]::Question
         )
         if ($resp -eq [System.Windows.Forms.DialogResult]::Yes) {
-            Write-Host "[INSTALL] Instalando $FriendlyName con choco install $ChocoPkg -y" -ForegroundColor Cyan
+            Write-Host ("[INSTALL] Instalando {0} con choco install {1} -y" -f $FriendlyName,$ChocoPkg) -ForegroundColor Cyan
             try {
                 Start-Process -FilePath "choco" -ArgumentList @("install",$ChocoPkg,"-y") -NoNewWindow -Wait
                 $version = Get-ToolVersion -Command $CommandName -ArgsForVersion $VersionArgs -Parse $Parse
                 if (-not $version) { $version = "Instalado, versión no detectada" }
-                $LabelRef.Value.Text = "$($FriendlyName): $version"
+                $LabelRef.Value.Text = ("{0}: {1}" -f $FriendlyName,$version)
                 $LabelRef.Value.ForeColor = [System.Drawing.Color]::ForestGreen
-                Write-Host "[OK] $FriendlyName instalado: $version" -ForegroundColor Green
+                Write-Host ("[OK] {0} instalado: {1}" -f $FriendlyName,$version) -ForegroundColor Green
             } catch {
-                $LabelRef.Value.Text = "$($FriendlyName): error al instalar"
+                $LabelRef.Value.Text = ("{0}: error al instalar" -f $FriendlyName)
                 $LabelRef.Value.ForeColor = [System.Drawing.Color]::Red
-                Write-Host "[ERROR] Falló instalación de $FriendlyName: $_" -ForegroundColor Red
+                Write-Host ("[ERROR] Falló instalación de {0}: {1}" -f $FriendlyName,$_ ) -ForegroundColor Red
                 [System.Windows.Forms.MessageBox]::Show(
-                    "No se pudo instalar $FriendlyName automáticamente.","Error",
-                    [System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Error
+                    ("No se pudo instalar {0} automáticamente." -f $FriendlyName),
+                    "Error",
+                    [System.Windows.Forms.MessageBoxButtons]::OK,
+                    [System.Windows.Forms.MessageBoxIcon]::Error
                 ) | Out-Null
             }
         } else {
-            $LabelRef.Value.Text = "$($FriendlyName): no instalado"
+            $LabelRef.Value.Text = ("{0}: no instalado" -f $FriendlyName)
             $LabelRef.Value.ForeColor = [System.Drawing.Color]::Red
-            Write-Host "[CANCEL] Usuario omitió instalación de $FriendlyName." -ForegroundColor Yellow
+            Write-Host ("[CANCEL] Usuario omitió instalación de {0}." -f $FriendlyName) -ForegroundColor Yellow
         }
     } else {
-        $LabelRef.Value.Text = "$($FriendlyName): $version"
+        $LabelRef.Value.Text = ("{0}: {1}" -f $FriendlyName,$version)
         $LabelRef.Value.ForeColor = [System.Drawing.Color]::ForestGreen
-        Write-Host "[OK] $FriendlyName detectado: $version" -ForegroundColor Green
+        Write-Host ("[OK] {0} detectado: {1}" -f $FriendlyName,$version) -ForegroundColor Green
     }
 }
 
-# ====== Progreso (igual) ======
-function Show-ProgressBar { ... }  # (tu misma definición)
-function Update-ProgressBar { param($ProgressForm,$CurrentStep,$TotalSteps) ... }
+# ====== Barra de progreso (completa, sin '...') ======
+function Show-ProgressBar {
+    $sizeProgress = New-Object System.Drawing.Size(400, 150)
+    $formProgress = Create-Form `
+        -Title "Progreso" -Size $sizeProgress -StartPosition ([System.Windows.Forms.FormStartPosition]::CenterScreen) `
+        -FormBorderStyle ([System.Windows.Forms.FormBorderStyle]::FixedDialog) -TopMost $true -ControlBox $false
+    $progressBar = New-Object System.Windows.Forms.ProgressBar
+    $progressBar.Size = New-Object System.Drawing.Size(360, 20)
+    $progressBar.Location = New-Object System.Drawing.Point(10, 50)
+    $progressBar.Style = [System.Windows.Forms.ProgressBarStyle]::Continuous
+    $progressBar.Maximum = 100
+    $type = $progressBar.GetType()
+    $flags = [Reflection.BindingFlags]::NonPublic -bor [Reflection.BindingFlags]::Instance
+    $type.GetField("DoubleBuffered", $flags).SetValue($progressBar, $true)
+
+    $lblPercentage = New-Object System.Windows.Forms.Label
+    $lblPercentage.Location = New-Object System.Drawing.Point(10, 20)
+    $lblPercentage.Size = New-Object System.Drawing.Size(360, 20)
+    $lblPercentage.Text = "0% Completado"
+    $lblPercentage.TextAlign = [System.Drawing.ContentAlignment]::MiddleCenter
+
+    $formProgress.Controls.Add($progressBar)
+    $formProgress.Controls.Add($lblPercentage)
+    $formProgress | Add-Member -MemberType NoteProperty -Name ProgressBar -Value $progressBar -Force
+    $formProgress | Add-Member -MemberType NoteProperty -Name Label -Value $lblPercentage -Force
+    $formProgress.Show()
+    return $formProgress
+}
+function Update-ProgressBar {
+    param($ProgressForm, $CurrentStep, $TotalSteps)
+    $percent = [math]::Round(($CurrentStep / $TotalSteps) * 100)
+    if (-not $ProgressForm.IsDisposed) {
+        $ProgressForm.ProgressBar.Value = $percent
+        $ProgressForm.Label.Text = ("{0}% Completado" -f $percent)
+        [System.Windows.Forms.Application]::DoEvents()
+    }
+}
 function Close-ProgressBar { param($ProgressForm) $ProgressForm.Close() }
 
 # ====== Estado de consulta ======
@@ -306,7 +356,8 @@ $formPrincipal.Controls.Add($btnConsola)
 $formPrincipal.Controls.Add($btnExit)
 
 # ====== Utilidad captura ======
-function Invoke-Capture { param([Parameter(Mandatory=$true)][string]$ExePath,[string[]]$Args=@())
+function Invoke-Capture {
+    param([Parameter(Mandatory=$true)][string]$ExePath,[string[]]$Args=@())
     $psi = New-Object System.Diagnostics.ProcessStartInfo
     $psi.FileName = $ExePath
     $psi.Arguments = (($Args | ForEach-Object { if ($_ -match '\s') { '"{0}"' -f $_ } else { $_ } }) -join ' ')
@@ -333,7 +384,7 @@ $btnConsultar.Add_Click({
             [System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Warning) | Out-Null
         return
     }
-    Write-Host "[CONSULTA] Consultando URL: $url" -ForegroundColor Cyan
+    Write-Host ("[CONSULTA] Consultando URL: {0}" -f $url) -ForegroundColor Cyan
     try { $yt = Get-Command yt-dlp -ErrorAction Stop } catch {
         Write-Host "[ERROR] yt-dlp no disponible. Valida dependencias." -ForegroundColor Red
         [System.Windows.Forms.MessageBox]::Show("yt-dlp no está disponible. Valídalo en Dependencias.","yt-dlp no encontrado",
@@ -341,12 +392,12 @@ $btnConsultar.Add_Click({
         return
     }
     $res = Invoke-Capture -ExePath $yt.Source -Args @("--no-playlist","--get-title",$url)
-    $titulo = ($res.StdOut + "`n" + $res.StdErr).Trim() -split "`r?`n" | ? { $_.Trim() -ne "" } | select -First 1
+    $titulo = ($res.StdOut + "`n" + $res.StdErr).Trim() -split "`r?`n" | Where-Object { $_.Trim() -ne "" } | Select-Object -First 1
     if ($res.ExitCode -eq 0 -and $titulo) {
         $script:videoConsultado = $true; $script:ultimaURL = $url; $script:ultimoTitulo = $titulo
-        $lblEstadoConsulta.Text = "Consultado: $titulo"; $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::ForestGreen
+        $lblEstadoConsulta.Text = ("Consultado: {0}" -f $titulo); $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::ForestGreen
         $btnDescargar.Enabled = $true
-        Write-Host "[OK] Video consultado: $titulo" -ForegroundColor Green
+        Write-Host ("[OK] Video consultado: {0}" -f $titulo) -ForegroundColor Green
     } else {
         $script:videoConsultado = $false; $script:ultimaURL = $null; $script:ultimoTitulo = $null
         $lblEstadoConsulta.Text = "Error al consultar la URL"; $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::Red
@@ -382,23 +433,23 @@ $btnDescargar.Add_Click({
         return
     }
     $script:ultimaRutaDescarga = $fbd.SelectedPath
-    Write-Host "[DESCARGA] Carpeta seleccionada: ${script:ultimaRutaDescarga}" -ForegroundColor Cyan
+    Write-Host ("[DESCARGA] Carpeta seleccionada: {0}" -f $($script:ultimaRutaDescarga)) -ForegroundColor Cyan
 
     # Descarga con formato por omisión y carpeta elegida
     $args = @("-f","bestvideo+bestaudio","--merge-output-format","mp4","-P",$script:ultimaRutaDescarga,$script:ultimaURL)
     Write-Host "[DESCARGA] Iniciando descarga..." -ForegroundColor Cyan
-    Write-Host "[CMD] yt-dlp $($args -join ' ')" -ForegroundColor DarkGray
+    Write-Host ("[CMD] yt-dlp {0}" -f ($args -join ' ')) -ForegroundColor DarkGray
 
     $resultado = Invoke-Capture -ExePath $yt.Source -Args $args
     if ($resultado.ExitCode -eq 0) {
-        Write-Host "[OK] Descarga finalizada: ${script:ultimoTitulo}" -ForegroundColor Green
-        [System.Windows.Forms.MessageBox]::Show("Descarga finalizada:`n$($script:ultimoTitulo)","Completado",
+        Write-Host ("[OK] Descarga finalizada: {0}" -f $($script:ultimoTitulo)) -ForegroundColor Green
+        [System.Windows.Forms.MessageBox]::Show(("Descarga finalizada:`n{0}" -f $($script:ultimoTitulo)),"Completado",
             [System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Information) | Out-Null
     } else {
-        Write-Host "[ERROR] Falló la descarga. Código: $($resultado.ExitCode)" -ForegroundColor Red
+        Write-Host ("[ERROR] Falló la descarga. Código: {0}" -f $($resultado.ExitCode)) -ForegroundColor Red
         Write-Host $resultado.StdOut
         Write-Host $resultado.StdErr
-        [System.Windows.Forms.MessageBox]::Show("Falló la descarga. Revisa conexión/URL/DRM. Detalle:`n$($resultado.StdErr)","Error de descarga",
+        [System.Windows.Forms.MessageBox]::Show(("Falló la descarga. Revisa conexión/URL/DRM. Detalle:`n{0}" -f $($resultado.StdErr)),"Error de descarga",
             [System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Error) | Out-Null
     }
 })
@@ -424,9 +475,9 @@ $formPrincipal.Add_Shown({
         Write-Host "[READY] Dependencias verificadas." -ForegroundColor Green
     }
     catch {
-        Write-Host "[ERROR] Error al validar dependencias: $_" -ForegroundColor Red
+        Write-Host ("[ERROR] Error al validar dependencias: {0}" -f $_) -ForegroundColor Red
         [System.Windows.Forms.MessageBox]::Show(
-            "Error al validar dependencias:`n$_","Error",
+            ("Error al validar dependencias:`n{0}" -f $_),"Error",
             [System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Error
         ) | Out-Null
         $formPrincipal.Close()
