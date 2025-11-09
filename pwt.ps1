@@ -35,7 +35,7 @@ Add-Type -AssemblyName System.Drawing
 
 # Crear el formulario
 $formPrincipal = New-Object System.Windows.Forms.Form
-$formPrincipal.Size = New-Object System.Drawing.Size(300, 600)
+$formPrincipal.Size = New-Object System.Drawing.Size(300, 700)
 $formPrincipal.StartPosition = "CenterScreen"
 $formPrincipal.BackColor = [System.Drawing.Color]::White
 $formPrincipal.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::FixedDialog
@@ -233,45 +233,83 @@ function Ensure-Tool {
     )
     Write-Host ("[CHECK] Verificando {0}..." -f $FriendlyName) -ForegroundColor Cyan
     $version = Get-ToolVersion -Command $CommandName -ArgsForVersion $VersionArgs -Parse $Parse
+
     if (-not $version) {
         Write-Host ("[WARN] {0} no encontrado." -f $FriendlyName) -ForegroundColor Yellow
+
         $resp = [System.Windows.Forms.MessageBox]::Show(
             ("{0} no está instalado. ¿Desea instalarlo ahora con Chocolatey?" -f $FriendlyName),
             ("{0} no encontrado" -f $FriendlyName),
             [System.Windows.Forms.MessageBoxButtons]::YesNo,
             [System.Windows.Forms.MessageBoxIcon]::Question
         )
-        if ($resp -eq [System.Windows.Forms.DialogResult]::Yes) {
-            Write-Host ("[INSTALL] Instalando {0} con choco install {1} -y" -f $FriendlyName,$ChocoPkg) -ForegroundColor Cyan
-            try {
-                Start-Process -FilePath "choco" -ArgumentList @("install",$ChocoPkg,"-y") -NoNewWindow -Wait
-                $version = Get-ToolVersion -Command $CommandName -ArgsForVersion $VersionArgs -Parse $Parse
-                if (-not $version) { $version = "Instalado, versión no detectada" }
-                $LabelRef.Value.Text = ("{0}: {1}" -f $FriendlyName,$version)
-                $LabelRef.Value.ForeColor = [System.Drawing.Color]::ForestGreen
-                Write-Host ("[OK] {0} instalado: {1}" -f $FriendlyName,$version) -ForegroundColor Green
-            } catch {
-                $LabelRef.Value.Text = ("{0}: error al instalar" -f $FriendlyName)
-                $LabelRef.Value.ForeColor = [System.Drawing.Color]::Red
-                Write-Host ("[ERROR] Falló instalación de {0}: {1}" -f $FriendlyName,$_ ) -ForegroundColor Red
-                [System.Windows.Forms.MessageBox]::Show(
-                    ("No se pudo instalar {0} automáticamente." -f $FriendlyName),
-                    "Error",
-                    [System.Windows.Forms.MessageBoxButtons]::OK,
-                    [System.Windows.Forms.MessageBoxIcon]::Error
-                ) | Out-Null
-            }
-        } else {
+        if ($resp -ne [System.Windows.Forms.DialogResult]::Yes) {
             $LabelRef.Value.Text = ("{0}: no instalado" -f $FriendlyName)
             $LabelRef.Value.ForeColor = [System.Drawing.Color]::Red
             Write-Host ("[CANCEL] Usuario omitió instalación de {0}." -f $FriendlyName) -ForegroundColor Yellow
+            return
         }
-    } else {
+
+        Write-Host ("[INSTALL] Instalando {0} con choco install {1} -y" -f $FriendlyName,$ChocoPkg) -ForegroundColor Cyan
+        try {
+            # Instalación con progreso de choco (hereda consola del host)
+            Start-Process -FilePath "choco" -ArgumentList @("install",$ChocoPkg,"-y") -NoNewWindow -Wait
+
+            # Verificar inmediatamente después
+            $version = Get-ToolVersion -Command $CommandName -ArgsForVersion $VersionArgs -Parse $Parse
+
+            if ($version) {
+                $LabelRef.Value.Text = ("{0}: {1}" -f $FriendlyName,$version)
+                $LabelRef.Value.ForeColor = [System.Drawing.Color]::ForestGreen
+                Write-Host ("[OK] {0} instalado: {1}" -f $FriendlyName,$version) -ForegroundColor Green
+
+                # *** Comportamiento requerido: cerrar UI y solicitar reinicio de PowerShell ***
+                [System.Windows.Forms.MessageBox]::Show(
+                    ("{0} se instaló correctamente.`n`nPara que el PATH y las variables se apliquen, cierre y vuelva a abrir PowerShell.`nLa aplicación se cerrará ahora." -f $FriendlyName),
+                    "Reinicio de PowerShell requerido",
+                    [System.Windows.Forms.MessageBoxButtons]::OK,
+                    [System.Windows.Forms.MessageBoxIcon]::Information
+                ) | Out-Null
+
+                try { $formPrincipal.Close(); $formPrincipal.Dispose() } catch {}
+                # Cierra el host para asegurar que no queden sesiones con PATH viejo
+                Stop-Process -Id $PID -Force
+            }
+            else {
+                # Instalado pero no detecta versión (raro): igual pedimos reinicio y cerramos
+                $LabelRef.Value.Text = ("{0}: Instalado (reinicie PowerShell)" -f $FriendlyName)
+                $LabelRef.Value.ForeColor = [System.Drawing.Color]::DarkOrange
+                Write-Host ("[WARN] {0} instalado, pero versión no detectada. Requiere reinicio de PowerShell." -f $FriendlyName) -ForegroundColor Yellow
+
+                [System.Windows.Forms.MessageBox]::Show(
+                    ("{0} parece haberse instalado, pero no se pudo leer la versión inmediatamente.`n`nCierre y vuelva a abrir PowerShell.`nLa aplicación se cerrará ahora." -f $FriendlyName),
+                    "Reinicio de PowerShell requerido",
+                    [System.Windows.Forms.MessageBoxButtons]::OK,
+                    [System.Windows.Forms.MessageBoxIcon]::Warning
+                ) | Out-Null
+
+                try { $formPrincipal.Close(); $formPrincipal.Dispose() } catch {}
+                Stop-Process -Id $PID -Force
+            }
+        } catch {
+            $LabelRef.Value.Text = ("{0}: error al instalar" -f $FriendlyName)
+            $LabelRef.Value.ForeColor = [System.Drawing.Color]::Red
+            Write-Host ("[ERROR] Falló instalación de {0}: {1}" -f $FriendlyName,$_ ) -ForegroundColor Red
+            [System.Windows.Forms.MessageBox]::Show(
+                ("No se pudo instalar {0} automáticamente.`nRevise la conexión o intente manualmente." -f $FriendlyName),
+                "Error",
+                [System.Windows.Forms.MessageBoxButtons]::OK,
+                [System.Windows.Forms.MessageBoxIcon]::Error
+            ) | Out-Null
+        }
+    }
+    else {
         $LabelRef.Value.Text = ("{0}: {1}" -f $FriendlyName,$version)
         $LabelRef.Value.ForeColor = [System.Drawing.Color]::ForestGreen
         Write-Host ("[OK] {0} detectado: {1}" -f $FriendlyName,$version) -ForegroundColor Green
     }
 }
+
 
 # ====== Estado de consulta ======
 $script:videoConsultado = $false
