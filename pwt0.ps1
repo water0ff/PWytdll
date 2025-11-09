@@ -922,47 +922,72 @@ function New-WorkingBox {
 }
 
 # Lanza un proceso pero manteniendo la UI viva (bombea DoEvents)
+# Lanza un proceso sin bloquear UI, redirigiendo a archivos (evita deadlock por buffers)
 function Invoke-CaptureResponsive {
     param(
         [Parameter(Mandatory=$true)][string]$ExePath,
         [string[]]$Args = @(),
-        [string]$WorkingText = "Procesando..."
+        [string]$WorkingText = "Procesando...",
+        [int]$TimeoutSec = 120
     )
-    # Muestra el cuadro "Trabajando..."
+
     $wb = New-WorkingBox -Text $WorkingText
 
-    # Prepara proceso sin bloquear
-    $psi = New-Object System.Diagnostics.ProcessStartInfo
-    $psi.FileName  = $ExePath
-    $psi.Arguments = (($Args | ForEach-Object { if ($_ -match '\s') { '"{0}"' -f $_ } else { $_ } }) -join ' ')
-    $psi.RedirectStandardOutput = $true
-    $psi.RedirectStandardError  = $true
-    $psi.UseShellExecute = $false
-    $psi.CreateNoWindow  = $true
+    # Archivos temporales para evitar que los búferes de stdout/err se llenen
+    $tmpDir = [System.IO.Path]::GetTempPath()
+    $outFile = Join-Path $tmpDir ("proc_stdout_{0}.log" -f ([guid]::NewGuid()))
+    $errFile = Join-Path $tmpDir ("proc_stderr_{0}.log" -f ([guid]::NewGuid()))
 
-    $p = New-Object System.Diagnostics.Process
-    $p.StartInfo = $psi
-    [void]$p.Start()
+    # Unir argumentos con comillas cuando hay espacios
+    $argLine = ($Args | ForEach-Object { if ($_ -match '\s') { '"{0}"' -f $_ } else { $_ } }) -join ' '
 
-    # Mientras corre, mantener la UI fluida
-        $dot = 0
-        while (-not $p.HasExited) {
+    # Lanzar proceso con redirección a archivos (no a tuberías)
+    $proc = Start-Process -FilePath $ExePath `
+        -ArgumentList $argLine `
+        -NoNewWindow -PassThru `
+        -RedirectStandardOutput $outFile `
+        -RedirectStandardError  $errFile
+
+    $sw = [Diagnostics.Stopwatch]::StartNew()
+    $dot = 0
+    try {
+        while (-not $proc.HasExited) {
             [System.Windows.Forms.Application]::DoEvents()
+
+            # Feedback visual
             $dot = ($dot + 1) % 4
             try {
-                # Cambia el texto del cuadro y/o del label principal
                 $wb.Label.Text = $WorkingText + ("." * $dot)
                 if ($lblEstadoConsulta) { $lblEstadoConsulta.Text = $WorkingText + ("." * $dot) }
             } catch {}
+
+            if ($sw.Elapsed.TotalSeconds -ge $TimeoutSec) {
+                try { $proc.Kill() } catch {}
+                throw "Tiempo de espera agotado ($TimeoutSec s) en '$WorkingText'."
+            }
             Start-Sleep -Milliseconds 120
         }
+    } finally {
+        $sw.Stop()
+        try { $wb.Form.Close(); $wb.Form.Dispose() } catch {}
+    }
 
+    # Leer salidas desde archivo (si existen)
+    $stdout = ""
+    $stderr = ""
+    try { if (Test-Path $outFile) { $stdout = [IO.File]::ReadAllText($outFile) } } catch {}
+    try { if (Test-Path $errFile) { $stderr = [IO.File]::ReadAllText($errFile) } } catch {}
 
-    $stdout = $p.StandardOutput.ReadToEnd()
-    $stderr = $p.StandardError.ReadToEnd()
-    try { $wb.Form.Close(); $wb.Form.Dispose() } catch {}
-    return [pscustomobject]@{ ExitCode = $p.ExitCode; StdOut = $stdout; StdErr = $stderr }
+    # Limpieza (mejor effort)
+    try { Remove-Item -Path $outFile,$errFile -ErrorAction SilentlyContinue } catch {}
+
+    return [pscustomobject]@{
+        ExitCode = $proc.ExitCode
+        StdOut   = $stdout
+        StdErr   = $stderr
+    }
 }
+
 
 function Invoke-Capture {
     param([Parameter(Mandatory=$true)][string]$ExePath,[string[]]$Args=@())
