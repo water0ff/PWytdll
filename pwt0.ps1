@@ -730,8 +730,12 @@ function Ensure-Tool {
 $script:videoConsultado = $false
 $script:ultimaURL = $null
 $script:ultimoTitulo = $null
-$script:ultimaRutaDescarga = $null
-# ====== UI (REORDENADA) ======
+# ====== Estado de consulta ======
+$script:videoConsultado   = $false
+$script:ultimaURL         = $null
+$script:ultimoTitulo      = $null
+# Por omisión: Escritorio del usuario (soporta redirecciones como OneDrive)
+$script:ultimaRutaDescarga = [Environment]::GetFolderPath('Desktop')
 # ====== [NUEVO] Selectores de formato ======
 $lblVideoFmt = Create-Label -Text "Formato de VIDEO:" `
     -Location (New-Object System.Drawing.Point(20, 165)) `
@@ -780,6 +784,52 @@ $btnDescargar = Create-Button -Text "Descargar" `
     -ForeColor ([System.Drawing.Color]::White) `
     -ToolTipText "Descargar usando bestvideo+bestaudio -> mp4"
 Set-DownloadButtonVisual -ok:$false
+# --- Carpeta de destino (configurable, por omisión Escritorio) ---
+$lblDestino = Create-Label -Text "Carpeta de destino:" `
+    -Location (New-Object System.Drawing.Point(20, 160)) `
+    -Size (New-Object System.Drawing.Size(360, 20)) -Font $boldFont
+
+# TextBox solo lectura con la ruta actual
+$txtDestino = Create-TextBox `
+    -Location (New-Object System.Drawing.Point(20, 183)) `
+    -Size (New-Object System.Drawing.Size(320, 26)) `
+    -ReadOnly $true `
+    -Text $script:ultimaRutaDescarga
+
+# Botón para abrir selector de carpeta
+$btnPickDestino = Create-IconButton -Text "📁" `
+    -Location (New-Object System.Drawing.Point(346, 183)) `
+    -ToolTipText "Cambiar carpeta de destino"
+
+# Evento del botón: abre FolderBrowserDialog partiendo del valor actual
+# Usar la carpeta configurada (sin preguntar)
+$dest = $script:ultimaRutaDescarga
+if ([string]::IsNullOrWhiteSpace($dest)) {
+    $dest = [Environment]::GetFolderPath('Desktop')
+    $script:ultimaRutaDescarga = $dest
+    $txtDestino.Text = $dest
+}
+if (-not (Test-Path -LiteralPath $dest)) {
+    try {
+        New-Item -ItemType Directory -Path $dest -Force | Out-Null
+        Write-Host ("[DESTINO] Carpeta creada: {0}" -f $dest) -ForegroundColor Cyan
+    } catch {
+        Write-Host ("[ERROR] No se pudo preparar la carpeta destino: {0}" -f $_) -ForegroundColor Red
+        [System.Windows.Forms.MessageBox]::Show(
+            "No se pudo preparar la carpeta de destino. Verifica permisos.",
+            "Error de destino",
+            [System.Windows.Forms.MessageBoxButtons]::OK,
+            [System.Windows.Forms.MessageBoxIcon]::Error
+        ) | Out-Null
+        return
+    }
+}
+Write-Host ("[DESCARGA] Carpeta destino: {0}" -f $dest) -ForegroundColor Cyan
+
+
+$formPrincipal.Controls.Add($lblDestino)
+$formPrincipal.Controls.Add($txtDestino)
+$formPrincipal.Controls.Add($btnPickDestino)
 
 # ----- [NUEVO] Zona de vista previa -----
 $lblPreview = Create-Label -Text "Vista previa:" `
@@ -1095,7 +1145,7 @@ $btnDescargar.Add_Click({
       "--encoding","utf-8",
       "--progress","--no-color","--newline",
       "-f",$fSelector,
-      "--recode-video","mp4",
+      "--merge-output-format",$mergeExt,
       "-P",$script:ultimaRutaDescarga,
       "--progress-template","download:%(progress._percent_str)s ETA:%(progress._eta_str)s SPEED:%(progress._speed_str)s",
       "--extractor-args","youtube:player_client=default,-web_safari,-web_embedded,-tv",
