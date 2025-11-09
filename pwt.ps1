@@ -343,6 +343,9 @@ function Close-ProgressBar {
     param($ProgressForm)
     $ProgressForm.Close()
 }
+# --- Botón Salir usando Create-Button ---
+$btnExit = Create-Button -Text "Salir" -Location (New-Object System.Drawing.Point(20, 170)) -BackColor ([System.Drawing.Color]::Black) -ForeColor ([System.Drawing.Color]::White) `
+    -ToolTipText "Cerrar la aplicación" -Size (New-Object System.Drawing.Size(120, 35)) -Font $defaultFont
 # --- Label "CAMBIOS" usando Create-Label ---
 $lblCambios = Create-Label -Text $global:defaultInstructions -Location (New-Object System.Drawing.Point(20, 60)) -Size (New-Object System.Drawing.Size(260, 100)) `
     -BackColor ([System.Drawing.Color]::Transparent) -ForeColor ([System.Drawing.Color]::Black) -Font $defaultFont -BorderStyle ([System.Windows.Forms.BorderStyle]::FixedSingle) `
