@@ -36,6 +36,7 @@ if ($response.Character -ne 'Y') {
 Clear-Host
 $global:defaultInstructions = @"
 ----- CAMBIOS -----
+- Se agrega la opción para actualizar y desinstalar dependencias.
 - Se agregó vista previa del video.
 - Se agregó detalles de progreso de descarga en consola.
 - Se agregó dependencia Node.
@@ -159,6 +160,7 @@ function Create-TextBox {
     $textBox.WordWrap=$false; if ($UseSystemPasswordChar) { $textBox.UseSystemPasswordChar = $true }
     return $textBox
 }
+# 1) SOLO pinta el botón de descarga
 function Set-DownloadButtonVisual {
     param([bool]$ok)
 
@@ -179,6 +181,45 @@ function Set-DownloadButtonVisual {
     # IMPORTANTE: actualizar Tag para que el MouseLeave restaure el color correcto
     $btnDescargar.Tag = $btnDescargar.BackColor
 }
+
+# 2) GATE DE DEPENDENCIAS (FUERA de la función anterior)
+# --- ¿Node es obligatorio? (true = requerido; false = opcional)
+$script:RequireNode = $true
+
+function Test-CommandExists {
+    param([Parameter(Mandatory=$true)][string]$Name)
+    try { Get-Command $Name -ErrorAction Stop | Out-Null; return $true } catch { return $false }
+}
+
+function Refresh-GateByDeps {
+    # Reglas: yt-dlp y ffmpeg siempre requeridos; Node depende de $RequireNode
+    $haveYt   = Test-CommandExists -Name "yt-dlp"
+    $haveFfm  = Test-CommandExists -Name "ffmpeg"
+    $haveNode = if ($script:RequireNode) { Test-CommandExists -Name "node" } else { $true }
+
+    $allOk = $haveYt -and $haveFfm -and $haveNode
+
+    # Bloquea/Desbloquea "Consultar"
+    $btnConsultar.Enabled = $allOk
+    if ($allOk) {
+        $toolTip.SetToolTip($btnConsultar, "Obtener información del video")
+    } else {
+        $toolTip.SetToolTip($btnConsultar, "Deshabilitado: instala/activa dependencias")
+
+        # Cascada: limpia consulta y bloquea "Descargar"
+        $script:videoConsultado = $false
+        $script:ultimaURL       = $null
+        $script:ultimoTitulo    = $null
+        Set-DownloadButtonVisual -ok:$false
+        $lblEstadoConsulta.Text = "Estado: sin consultar"
+        $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::Black
+        if ($picPreview) { $picPreview.Image = $null }
+    }
+
+    # (Opcional) Bloquear edición de URL si faltan deps:
+    # $txtUrl.ReadOnly = -not $allOk
+}
+
 # ================== [NUEVO] Botones de acciones por dependencia ==================
 function Create-IconButton {
     param(
@@ -216,7 +257,9 @@ function Refresh-DependencyLabel {
         $LabelRef.Value.Text = ("{0}: no instalado" -f $FriendlyName)
         $LabelRef.Value.ForeColor = [System.Drawing.Color]::Red
     }
+    Refresh-GateByDeps   # <-- NUEVO
 }
+
 
 function Update-Dependency {
     param(
@@ -254,9 +297,10 @@ function Update-Dependency {
             [System.Windows.Forms.MessageBoxButtons]::OK,
             [System.Windows.Forms.MessageBoxIcon]::Error
         ) | Out-Null
+    } finally {
+        Refresh-GateByDeps   # <-- re-evalúa y bloquea/habilita Consultar/Descargar
     }
 }
-
 function Uninstall-Dependency {
     param(
         [string]$ChocoPkg,
@@ -299,8 +343,11 @@ function Uninstall-Dependency {
             [System.Windows.Forms.MessageBoxButtons]::OK,
             [System.Windows.Forms.MessageBoxIcon]::Error
         ) | Out-Null
+    } finally {
+        Refresh-GateByDeps   # <-- re-evalúa y bloquea/habilita Consultar/Descargar
     }
 }
+
 
 # ====== Consola: LOGS explícitos ======
 Write-Host "[INIT] Cargando UI..." -ForegroundColor Cyan
@@ -732,6 +779,10 @@ function Invoke-YtDlpConsoleProgress {
 
 # Consultar
 $btnConsultar.Add_Click({
+    Refresh-GateByDeps                 # <-- asegura estado al vuelo
+    if (-not $btnConsultar.Enabled) {  # <-- si faltan deps, salir
+        return
+    }
     $url = $txtUrl.Text.Trim()
     if ([string]::IsNullOrWhiteSpace($url)) {
         [System.Windows.Forms.MessageBox]::Show("Escribe una URL de YouTube.","Falta URL",
@@ -841,11 +892,11 @@ $formPrincipal.Add_Shown({
         Ensure-Tool -CommandName "yt-dlp" -FriendlyName "yt-dlp" -ChocoPkg "yt-dlp" -LabelRef ([ref]$lblYtDlp) -VersionArgs "--version"
         $lblFfmpeg.Text = "ffmpeg: verificando..."
         Ensure-Tool -CommandName "ffmpeg" -FriendlyName "ffmpeg" -ChocoPkg "ffmpeg" -LabelRef ([ref]$lblFfmpeg) -VersionArgs "-version"
-        Ensure-Tool -CommandName "node" -FriendlyName "Node.js" -ChocoPkg "nodejs-lts" -LabelRef ([ref]$lblNode) -VersionArgs "--version"
+        Ensure-Tool -CommandName "node"   -FriendlyName "Node.js" -ChocoPkg "nodejs-lts" -LabelRef ([ref]$lblNode) -VersionArgs "--version"
         Write-Host "[READY] Dependencias verificadas." -ForegroundColor Green
+        Refresh-GateByDeps   # <--- NUEVO: bloquea/desbloquea botones según deps
 
-    }
-    catch {
+    } catch {
         Write-Host ("[ERROR] Error al validar dependencias: {0}" -f $_) -ForegroundColor Red
         [System.Windows.Forms.MessageBox]::Show(
             ("Error al validar dependencias:`n{0}" -f $_),"Error",
