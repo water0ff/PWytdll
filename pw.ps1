@@ -42,6 +42,7 @@ Write-Host "[OK] El usuario aceptó los riesgos. Corriendo programa..." -Foregro
 $global:defaultInstructions = @"
 ----- CAMBIOS -----
 - Primer versión
+- 2
 "@
 
 # --- Cargar WinForms ---
@@ -159,7 +160,7 @@ function Update-ProgressBar {
 }
 function Close-ProgressBar { param($ProgressForm) $ProgressForm.Close() }
 
-# --- Instalación de Chocolatey (tu función) ---
+# --- Instalación de Chocolatey ---
 function Install-Chocolatey {
     Write-Host "[CHOCOLATEY] Iniciando instalación..." -ForegroundColor Cyan
     try {
@@ -177,6 +178,7 @@ function Install-Chocolatey {
         return $false
     }
 }
+
 # --- Verificar y (opcional) instalar/actualizar herramientas ---
 function Check-Tool {
     param(
@@ -249,6 +251,7 @@ function Check-Tool {
         Write-Host "[OK] $Display está actualizado." -ForegroundColor Green
     }
 }
+
 # --- Verificar/Instalar Chocolatey ---
 function Ensure-Chocolatey {
     if (Get-Command choco -ErrorAction SilentlyContinue) {
@@ -309,40 +312,36 @@ if (-not (Ensure-Chocolatey)) {
     return
 }
 Write-Host "[OK] Preparando interfaz gráfica..." -ForegroundColor Green
-# Labels de estado de herramientas
+
+# 1) Crear el formulario ANTES de usar .Controls
+$formPrincipal = Create-Form -Title "Daniel Tools v$version" -Size (New-Object System.Drawing.Size(300, 600)) -BackColor ([System.Drawing.Color]::White)
+
+# 2) Crear y agregar controles
+# Título
+$lblTitulo = Create-Label -Text "YT-DLP GUI (ALFA)" -Location (New-Object System.Drawing.Point(20,20)) -Size (New-Object System.Drawing.Size(260, 30)) -ForeColor ([System.Drawing.Color]::Black) -Font $boldFont
+$formPrincipal.Controls.Add($lblTitulo)
+
+# Cambios
+$lblCambios = Create-Label -Text $global:defaultInstructions -Location (New-Object System.Drawing.Point(20,60)) -Size (New-Object System.Drawing.Size(260, 80)) -ForeColor ([System.Drawing.Color]::Black) -Font $defaultFont -BorderStyle ([System.Windows.Forms.BorderStyle]::FixedSingle) -TextAlign ([System.Drawing.ContentAlignment]::TopLeft)
+$formPrincipal.Controls.Add($lblCambios)
+Write-Host "[OK] Label 'CAMBIOS' agregado a la interfaz." -ForegroundColor Green
+
+# Estado de herramientas
 $lblYtDlp  = Create-Label -Text "yt-dlp: verificando..." -Location (New-Object System.Drawing.Point(20, 210)) -Size (New-Object System.Drawing.Size(260, 25))
 $formPrincipal.Controls.Add($lblYtDlp)
 
 $lblFfmpeg = Create-Label -Text "FFmpeg: verificando..." -Location (New-Object System.Drawing.Point(20, 240)) -Size (New-Object System.Drawing.Size(260, 25))
 $formPrincipal.Controls.Add($lblFfmpeg)
-# Crear botón Salir
-$btnExit = Create-Button `
-    -Text "Salir" `
-    -Location (New-Object System.Drawing.Point(20, 160)) `
-    -Size (New-Object System.Drawing.Size(120, 35))
-# --- Construir interfaz principal ---
-$formPrincipal = Create-Form -Title "Daniel Tools v$version" -Size (New-Object System.Drawing.Size(300, 600)) -BackColor ([System.Drawing.Color]::White)
 
-# Título
-$lblTitulo = Create-Label -Text "YT-DLP GUI (ALFA)" -Location (New-Object System.Drawing.Point(20,20)) -Size (New-Object System.Drawing.Size(260, 30)) -ForeColor ([System.Drawing.Color]::Black) -Font $boldFont
-$formPrincipal.Controls.Add($lblTitulo)
-
-# Label de cambios (usa $global:defaultInstructions)
-$lblCambios = Create-Label -Text $global:defaultInstructions -Location (New-Object System.Drawing.Point(20,60)) -Size (New-Object System.Drawing.Size(260, 80)) -ForeColor ([System.Drawing.Color]::Black) -Font $defaultFont -BorderStyle ([System.Windows.Forms.BorderStyle]::FixedSingle) -TextAlign ([System.Drawing.ContentAlignment]::TopLeft)
-$formPrincipal.Controls.Add($lblCambios)
-Write-Host "[OK] Label 'CAMBIOS' agregado a la interfaz." -ForegroundColor Green
-
-# Botón Salir
-$btnExit = Create-Button -Text "Salir" -Location (New-Object System.Drawing.Point(20,160))
+# Botón Salir (una sola vez)
+$btnExit = Create-Button -Text "Salir" -Location (New-Object System.Drawing.Point(20,160)) -Size (New-Object System.Drawing.Size(120, 35))
 $btnExit.Add_Click({
     Write-Host "[UI] Cierre solicitado por el usuario." -ForegroundColor DarkYellow
     $formPrincipal.Close()
 })
 $formPrincipal.Controls.Add($btnExit)
 
-# Mostrar el formulario
-Write-Host "[RUN] Mostrando la interfaz..." -ForegroundColor Cyan
-# Al mostrar la interfaz, validar y actualizar labels
+# 3) Eventos del formulario
 $formPrincipal.Add_Shown({
     try {
         Check-Tool -Display 'yt-dlp' -Exe 'yt-dlp' -ChocoPkg 'yt-dlp' -Label $lblYtDlp
@@ -357,5 +356,8 @@ $formPrincipal.Add_Shown({
         ) | Out-Null
     }
 })
+
+# 4) Mostrar el formulario
+Write-Host "[RUN] Mostrando la interfaz..." -ForegroundColor Cyan
 $formPrincipal.ShowDialog() | Out-Null
 Write-Host "[END] Interfaz cerrada." -ForegroundColor DarkCyan
