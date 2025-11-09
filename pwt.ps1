@@ -1,3 +1,34 @@
+No me muestra en consola el avance de descarga. Ayudame a que el codigo que me vayas dando siga siendo compatible con la mayoria de powershell.
+
+
+Consola:
+El usuario aceptó los riesgos. Corriendo programa...
+
+=============================================
+                   YTDLL
+              Versión: vAlfa 251109.1300
+=============================================
+[INIT] Cargando UI...
+[CHECK] Verificando Chocolatey...
+[OK] Chocolatey ya está instalado.
+[CHECK] Validando dependencias yt-dlp y ffmpeg...
+[CHECK] Verificando yt-dlp...
+[OK] yt-dlp detectado: 2025.11.03.233024
+[CHECK] Verificando ffmpeg...
+[OK] ffmpeg detectado: ffmpeg version 8.0-essentials_build-www.gyan.dev Copyright (c) 2000-2025 the FFmpeg developers
+[READY] Dependencias verificadas.
+[CONSULTA] Consultando URL: https://www.youtube.com/shorts/6OQ3Z2sEC9E
+[OK] Video consultado: B┴ILELE
+[DESCARGA] Carpeta seleccionada: C:\Users\water\Desktop
+[DESCARGA] Iniciando descarga...
+[CMD] C:\ProgramData\chocolatey\bin\yt-dlp.exe --newline --no-color --progress -f bestvideo+bestaudio --merge-output-format mp4 -P C:\Users\water\Desktop --progress-template download:%(progress._percent_str)s ETA:%(progress._eta_str)s SPEED:%(progress._speed_str)s https://www.youtube.com/shorts/6OQ3Z2sEC9E
+
+[OK] Descarga finalizada: B┴ILELE
+[EXIT] Cerrando aplicación por solicitud del usuario.
+Cancel
+PS C:\Users\water>
+
+
 # Crear la carpeta 'C:\Temp' si no existe
 if (!(Test-Path -Path "C:\Temp")) {
     New-Item -ItemType Directory -Path "C:\Temp" | Out-Null
@@ -273,52 +304,6 @@ function Ensure-Tool {
     }
 }
 
-# ====== Barra de progreso (completa, sin '...') ======
-function Show-ProgressBar {
-    $sizeProgress = New-Object System.Drawing.Size(400, 150)
-    $formProgress = Create-Form `
-        -Title "Progreso" -Size $sizeProgress -StartPosition ([System.Windows.Forms.FormStartPosition]::CenterScreen) `
-        -FormBorderStyle ([System.Windows.Forms.FormBorderStyle]::FixedDialog) -TopMost $true -ControlBox $false
-
-    $progressBar = New-Object System.Windows.Forms.ProgressBar
-    $progressBar.Size = New-Object System.Drawing.Size(360, 20)
-    $progressBar.Location = New-Object System.Drawing.Point(10, 50)
-    $progressBar.Style = [System.Windows.Forms.ProgressBarStyle]::Continuous
-    $progressBar.Maximum = 100
-
-    # Activar DoubleBuffered sólo si el campo existe en esta versión de .NET
-    try {
-        $type  = $progressBar.GetType()
-        $flags = [Reflection.BindingFlags]::NonPublic -bor [Reflection.BindingFlags]::Instance
-        $f     = $type.GetField("DoubleBuffered", $flags)
-        if ($f) { $f.SetValue($progressBar, $true) }
-    } catch { }
-
-    $lblPercentage = New-Object System.Windows.Forms.Label
-    $lblPercentage.Location = New-Object System.Drawing.Point(10, 20)
-    $lblPercentage.Size = New-Object System.Drawing.Size(360, 20)
-    $lblPercentage.Text = "0% Completado"
-    $lblPercentage.TextAlign = [System.Drawing.ContentAlignment]::MiddleCenter
-
-    $formProgress.Controls.Add($progressBar)
-    $formProgress.Controls.Add($lblPercentage)
-    $formProgress | Add-Member -MemberType NoteProperty -Name ProgressBar -Value $progressBar -Force
-    $formProgress | Add-Member -MemberType NoteProperty -Name Label -Value $lblPercentage -Force
-    $formProgress.Show()
-    return $formProgress
-}
-
-function Update-ProgressBar {
-    param($ProgressForm, $CurrentStep, $TotalSteps)
-    $percent = [math]::Round(($CurrentStep / $TotalSteps) * 100)
-    if (-not $ProgressForm.IsDisposed) {
-        $ProgressForm.ProgressBar.Value = $percent
-        $ProgressForm.Label.Text = ("{0}% Completado" -f $percent)
-        [System.Windows.Forms.Application]::DoEvents()
-    }
-}
-function Close-ProgressBar { param($ProgressForm) $ProgressForm.Close() }
-
 # ====== Estado de consulta ======
 $script:videoConsultado = $false
 $script:ultimaURL = $null
@@ -380,49 +365,50 @@ function Invoke-Capture {
     $p.WaitForExit()
     return [pscustomobject]@{ ExitCode = $p.ExitCode; StdOut = $stdout; StdErr = $stderr }
 }
-# Invoca yt-dlp leyendo progreso en tiempo real y actualiza consola + barra
-function Invoke-YtDlpWithProgress {
+# Progreso SOLO en consola usando tail de STDERR de yt-dlp
+function Invoke-YtDlpConsoleProgress {
     param(
         [Parameter(Mandatory=$true)][string]$ExePath,
         [Parameter(Mandatory=$true)][string[]]$Args
     )
 
-    # ===== Ventana de progreso =====
-    $progressForm = Show-ProgressBar
-    $script:lastPct = -1
+    # Asegurar UTF-8 para que los títulos no salgan raros y -Progress de PowerShell no estorbe
+    try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch {}
+    $global:ProgressPreference = 'SilentlyContinue'
 
-    # ===== Forzar UTF-8 y salida sin buffer para Python =====
-    $env:PYTHONUTF8        = "1"
-    $env:PYTHONIOENCODING  = "utf-8"
-    $env:PYTHONUNBUFFERED  = "1"
+    # Archivos temporales para redirección
+    $tmpDir  = [System.IO.Path]::GetTempPath()
+    $errFile = Join-Path $tmpDir ("yt-dlp-stderr_{0}.log" -f ([guid]::NewGuid()))
+    $outFile = Join-Path $tmpDir ("yt-dlp-stdout_{0}.log" -f ([guid]::NewGuid()))
 
-    # Construir línea de argumentos (respetando comillas si hay espacios)
+    # Construir línea de argumentos (respetando espacios con comillas)
     $argLine = ($Args | ForEach-Object { if ($_ -match '\s') { '"{0}"' -f $_ } else { $_ } }) -join ' '
 
-    # Preparar proceso con redirección y lectura en vivo
-    $p = New-Object System.Diagnostics.Process
-    $p.StartInfo = New-Object System.Diagnostics.ProcessStartInfo
-    $p.StartInfo.FileName               = $ExePath
-    $p.StartInfo.Arguments              = $argLine
-    $p.StartInfo.UseShellExecute        = $false
-    $p.StartInfo.RedirectStandardOutput = $true
-    $p.StartInfo.RedirectStandardError  = $true
-    $p.StartInfo.CreateNoWindow         = $true
-    $p.StartInfo.StandardOutputEncoding = [System.Text.Encoding]::UTF8
-    $p.StartInfo.StandardErrorEncoding  = [System.Text.Encoding]::UTF8
+    # Lanzar proceso redirigiendo a archivos (sin UI)
+    $proc = Start-Process -FilePath $ExePath `
+        -ArgumentList $argLine `
+        -NoNewWindow -PassThru `
+        -RedirectStandardError $errFile `
+        -RedirectStandardOutput $outFile
 
-    # Función local para parsear líneas de progreso
-    $updateLine = {
-        param([string]$line)
+    # Abrir el archivo de STDERR para “tail”
+    $fs = [System.IO.File]::Open($errFile,
+        [System.IO.FileMode]::OpenOrCreate,
+        [System.IO.FileAccess]::Read,
+        [System.IO.FileShare]::ReadWrite)
+    $sr = New-Object System.IO.StreamReader($fs)
 
-        if ([string]::IsNullOrWhiteSpace($line)) { return }
-
-        # Formato personalizado (--progress-template) o clásico
-        $m = [regex]::Match($line, 'download:\s*(?<pct>\d+(?:\.\d+)?)%\s*(?:ETA:(?<eta>\S+))?\s*(?:SPEED:(?<spd>.+))?', 'IgnoreCase')
+    $lastPct = -1
+    function _PrintLine([string]$text) {
+        if ([string]::IsNullOrWhiteSpace($text)) { return }
+        # 1) progress-template: "download: 12.3% ETA:00:10 SPEED:1.23MiB/s"
+        $m = [regex]::Match($text, 'download:\s*(?<pct>\d+(?:\.\d+)?)%\s*(?:ETA:(?<eta>\S+))?\s*(?:SPEED:(?<spd>.+))?', 'IgnoreCase')
         if (-not $m.Success) {
-            $m = [regex]::Match($line, '(?<pct>\d+(?:\.\d+)?)%\s+of.*?at\s+(?<spd>\S+)\s+ETA\s+(?<eta>\S+)', 'IgnoreCase')
+            # 2) formato clásico: "[download]  12.3% of ... at 1.2MiB/s ETA 00:10"
+            $m = [regex]::Match($text, '(?<pct>\d+(?:\.\d+)?)%\s+of.*?at\s+(?<spd>\S+)\s+ETA\s+(?<eta>\S+)', 'IgnoreCase')
             if (-not $m.Success) {
-                $m = [regex]::Match($line, '(?<pct>\d+(?:\.\d+)?)%')
+                # 3) porcentaje suelto
+                $m = [regex]::Match($text, '(?<pct>\d+(?:\.\d+)?)%')
             }
         }
 
@@ -430,47 +416,35 @@ function Invoke-YtDlpWithProgress {
             $pct = [int][math]::Min(100, [math]::Round([double]$m.Groups['pct'].Value))
             $eta = $m.Groups['eta'].Value
             $spd = $m.Groups['spd'].Value
-
-            if ($pct -ne $script:lastPct) {
+            if ($pct -ne $lastPct) {
                 $script:lastPct = $pct
-                # Línea de progreso en consola (sobrescribe con \r)
+                # Línea dinámica con retorno de carro (sin salto)
                 Write-Host ("`r[PROGRESO] {0,3}%  ETA {1,-8}  {2,-16}" -f $pct, $eta, $spd) -NoNewline
-
-                # Actualiza barra de progreso en UI
-                if ($progressForm -and -not $progressForm.IsDisposed) {
-                    Update-ProgressBar -ProgressForm $progressForm -CurrentStep $pct -TotalSteps 100
-                    $progressForm.Label.Text = ("{0}% Completado" -f $pct)
-                    [System.Windows.Forms.Application]::DoEvents()
-                }
             }
+        } else {
+            # Si no es línea de progreso, imprime como log normal (con salto)
+            Write-Host ("`n{0}" -f $text)
         }
     }
 
-    # Manejadores de datos (ambos streams, por compatibilidad)
-    $p.add_OutputDataReceived({ param($s,$e) if ($e.Data) { & $updateLine $e.Data } })
-    $p.add_ErrorDataReceived ({ param($s,$e) if ($e.Data) { & $updateLine $e.Data } })
-
-    # Iniciar y comenzar lectura asíncrona
-    [void]$p.Start()
-    $p.BeginOutputReadLine()
-    $p.BeginErrorReadLine()
-
-    # Bucle simple para mantener viva la UI mientras corre
-    while (-not $p.HasExited) {
-        [System.Windows.Forms.Application]::DoEvents()
-        Start-Sleep -Milliseconds 80
+    try {
+        while (-not $proc.HasExited -or -not $sr.EndOfStream) {
+            while (-not $sr.EndOfStream) {
+                $line = $sr.ReadLine()
+                _PrintLine $line
+            }
+            Start-Sleep -Milliseconds 80
+        }
+    } finally {
+        try { $sr.Close(); $fs.Close() } catch {}
+        # Asegura salto de línea final para no dejar la consola en la misma línea del \r
+        Write-Host ""
+        # (Si quieres limpiar los logs, descomenta:)
+        # Remove-Item -Path $errFile,$outFile -ErrorAction SilentlyContinue
     }
 
-    # Asegurar que drenamos buffers al final
-    $p.WaitForExit()
-
-    # Salto de línea para que no se quede pegado el cursor después del -NoNewline
-    Write-Host ""
-
-    if ($progressForm -and -not $progressForm.IsDisposed) { Close-ProgressBar $progressForm }
-    return $p.ExitCode
+    return $proc.ExitCode
 }
-
 
 
 
@@ -538,7 +512,7 @@ $btnDescargar.Add_Click({
     $script:ultimaRutaDescarga = $fbd.SelectedPath
     Write-Host ("[DESCARGA] Carpeta seleccionada: {0}" -f $($script:ultimaRutaDescarga)) -ForegroundColor Cyan
 
-    # Args de descarga con progreso amigable
+        # ...tus args...
         $args = @(
             "--newline","--no-color","--progress",
             "-f","bestvideo+bestaudio","--merge-output-format","mp4",
@@ -546,12 +520,12 @@ $btnDescargar.Add_Click({
             "--progress-template","download:%(progress._percent_str)s ETA:%(progress._eta_str)s SPEED:%(progress._speed_str)s",
             $script:ultimaURL
         )
+        
+        Write-Host "[DESCARGA] Iniciando descarga..." -ForegroundColor Cyan
+        Write-Host ("[CMD] {0} {1}" -f $yt.Source, ($args -join ' ')) -ForegroundColor DarkGray
+        
+        $exit = Invoke-YtDlpConsoleProgress -ExePath $yt.Source -Args $args
 
-
-    Write-Host "[DESCARGA] Iniciando descarga..." -ForegroundColor Cyan
-    Write-Host ("[CMD] {0} {1}" -f $yt.Source, ($args -join ' ')) -ForegroundColor DarkGray
-
-    $exit = Invoke-YtDlpWithProgress -ExePath $yt.Source -Args $args
 
     if ($exit -eq 0) {
         Write-Host ("[OK] Descarga finalizada: {0}" -f $($script:ultimoTitulo)) -ForegroundColor Green
