@@ -297,67 +297,75 @@ function Fetch-Formats {
         return $false
     }
 
-    $obj = Invoke-CaptureResponsive -ExePath $yt.Source -Args @("-J","--no-playlist",$Url) -WorkingText "Consultando formatos…"
-    if ($obj.ExitCode -ne 0 -or [string]::IsNullOrWhiteSpace($obj.StdOut)) {
-        Write-Host "[ERROR] No se pudo obtener JSON de formatos." -ForegroundColor Red
-        Write-Host $obj.StdErr
-        return $false
+    # Guardar/restaurar label por si el caller no lo hace (defensa)
+    $prevLabel = $null
+    if ($lblEstadoConsulta) {
+        $prevLabel = $lblEstadoConsulta.Text
+        $lblEstadoConsulta.Text = "Consultando formatos…"
     }
 
     try {
-        $json = $obj.StdOut | ConvertFrom-Json
-    } catch {
-        Write-Host "[ERROR] JSON inválido al listar formatos." -ForegroundColor Red
-        return $false
-    }
+        $obj = Invoke-CaptureResponsive -ExePath $yt.Source -Args @("-J","--no-playlist",$Url) -WorkingText "Consultando formatos…"
+        if ($obj.ExitCode -ne 0 -or [string]::IsNullOrWhiteSpace($obj.StdOut)) {
+            Write-Host "[ERROR] No se pudo obtener JSON de formatos." -ForegroundColor Red
+            Write-Host $obj.StdErr
+            return $false
+        }
 
-    if (-not $json.formats) {
-        Write-Host "[WARN] El extractor no devolvió lista de formatos." -ForegroundColor Yellow
-        return $false
-    }
+        try {
+            $json = $obj.StdOut | ConvertFrom-Json
+        } catch {
+            Write-Host "[ERROR] JSON inválido al listar formatos." -ForegroundColor Red
+            return $false
+        }
 
-    # Imprime tabla estilo -F
-    Print-FormatsTable -formats $json.formats
+        if (-not $json.formats) {
+            Write-Host "[WARN] El extractor no devolvió lista de formatos." -ForegroundColor Yellow
+            return $false
+        }
 
-    # Construye índices y listas para combos
-    foreach ($f in $json.formats) {
-        $klass = Classify-Format $f
-        $script:formatsIndex[$klass.Id] = $klass
-    # Evitar que aparezcan progresivos problemáticos en la UI
-    if ($klass.Progressive -and $script:ExcludedFormatIds -contains $klass.Id) {
-        continue
-    }
-        # Etiqueta legible
-        $res = if ($klass.VRes) { "{0}p" -f $klass.VRes } else { "" }
-        $sz  = Human-Size $klass.Filesize
-        $tbr = if ($klass.Tbr) { "{0}k" -f [math]::Round($klass.Tbr) } else { "" }
+        Print-FormatsTable -formats $json.formats
 
-        if ($klass.Progressive) {
-            $label = "{0} {1} {2}/{3} (progresivo) {4} {5}" -f $klass.Ext,$res,$klass.VCodec,$klass.ACodec,$sz,$tbr
-            $script:formatsVideo += (New-FormatDisplay -Id $klass.Id -Label $label)
-        } elseif ($klass.VideoOnly) {
-            $label = "{0} {1} {2} (v-only) {3} {4}" -f $klass.Ext,$res,$klass.VCodec,$sz,$tbr
-            $script:formatsVideo += (New-FormatDisplay -Id $klass.Id -Label $label)
-        } elseif ($klass.AudioOnly) {
-            $label = "{0} ~{1} {2} (a-only) {3}" -f $klass.Ext, $klass.ABr, $klass.ACodec, $sz
-            $script:formatsAudio += (New-FormatDisplay -Id $klass.Id -Label $label)
+        foreach ($f in $json.formats) {
+            $klass = Classify-Format $f
+            $script:formatsIndex[$klass.Id] = $klass
+
+            if ($klass.Progressive -and $script:ExcludedFormatIds -contains $klass.Id) { continue }
+
+            $res = if ($klass.VRes) { "{0}p" -f $klass.VRes } else { "" }
+            $sz  = Human-Size $klass.Filesize
+            $tbr = if ($klass.Tbr) { "{0}k" -f [math]::Round($klass.Tbr) } else { "" }
+
+            if ($klass.Progressive) {
+                $label = "{0} {1} {2}/{3} (progresivo) {4} {5}" -f $klass.Ext,$res,$klass.VCodec,$klass.ACodec,$sz,$tbr
+                $script:formatsVideo += (New-FormatDisplay -Id $klass.Id -Label $label)
+            } elseif ($klass.VideoOnly) {
+                $label = "{0} {1} {2} (v-only) {3} {4}" -f $klass.Ext,$res,$klass.VCodec,$sz,$tbr
+                $script:formatsVideo += (New-FormatDisplay -Id $klass.Id -Label $label)
+            } elseif ($klass.AudioOnly) {
+                $label = "{0} ~{1} {2} (a-only) {3}" -f $klass.Ext, $klass.ABr, $klass.ACodec, $sz
+                $script:formatsAudio += (New-FormatDisplay -Id $klass.Id -Label $label)
+            }
+        }
+
+        $script:formatsVideo = @(
+            "best — mejor calidad (progresivo si existe; si no, será adaptativo)",
+            "bestvideo — mejor video (sin audio; usar con audio)"
+        ) + $script:formatsVideo
+
+        $script:formatsAudio = @(
+            "bestaudio — mejor audio disponible"
+        ) + $script:formatsAudio
+
+        return $true
+    } finally {
+        if ($lblEstadoConsulta -and $prevLabel) {
+            # NO dejar “Consultando formatos…”
+            $lblEstadoConsulta.Text = $prevLabel
         }
     }
-
-    # Inyecta opciones lógicas al inicio
-    # VIDEO: best (progresivo) y bestvideo
-    $script:formatsVideo = @(
-        "best — mejor calidad (progresivo si existe; si no, será adaptativo)",
-        "bestvideo — mejor video (sin audio; usar con audio)"
-    ) + $script:formatsVideo
-
-    # AUDIO: bestaudio
-    $script:formatsAudio = @(
-        "bestaudio — mejor audio disponible"
-    ) + $script:formatsAudio
-
-    return $true
 }
+
 
 # Devuelve el format_id a partir del texto mostrado en combo
 function Get-SelectedFormatId {
@@ -921,8 +929,6 @@ function New-WorkingBox {
     return @{ Form = $f; Label = $lbl }
 }
 
-# Lanza un proceso pero manteniendo la UI viva (bombea DoEvents)
-# Lanza un proceso sin bloquear UI, redirigiendo a archivos (evita deadlock por buffers)
 function Invoke-CaptureResponsive {
     param(
         [Parameter(Mandatory=$true)][string]$ExePath,
@@ -931,17 +937,21 @@ function Invoke-CaptureResponsive {
         [int]$TimeoutSec = 120
     )
 
-    $wb = New-WorkingBox -Text $WorkingText
+    # Deshabilitar "Consultar" mientras corre
+    $prevBtnState = $null
+    if ($btnConsultar) { $prevBtnState = $btnConsultar.Enabled; $btnConsultar.Enabled = $false }
 
-    # Archivos temporales para evitar que los búferes de stdout/err se llenen
-    $tmpDir = [System.IO.Path]::GetTempPath()
+    # Mostrar texto en label (parpadeo)
+    $prevLabel = $null
+    if ($lblEstadoConsulta) { $prevLabel = $lblEstadoConsulta.Text; $lblEstadoConsulta.Text = $WorkingText }
+
+    # Archivos temporales para stdout/err (evita deadlock)
+    $tmpDir  = [System.IO.Path]::GetTempPath()
     $outFile = Join-Path $tmpDir ("proc_stdout_{0}.log" -f ([guid]::NewGuid()))
     $errFile = Join-Path $tmpDir ("proc_stderr_{0}.log" -f ([guid]::NewGuid()))
 
-    # Unir argumentos con comillas cuando hay espacios
     $argLine = ($Args | ForEach-Object { if ($_ -match '\s') { '"{0}"' -f $_ } else { $_ } }) -join ' '
 
-    # Lanzar proceso con redirección a archivos (no a tuberías)
     $proc = Start-Process -FilePath $ExePath `
         -ArgumentList $argLine `
         -NoNewWindow -PassThru `
@@ -953,13 +963,8 @@ function Invoke-CaptureResponsive {
     try {
         while (-not $proc.HasExited) {
             [System.Windows.Forms.Application]::DoEvents()
-
-            # Feedback visual
             $dot = ($dot + 1) % 4
-            try {
-                $wb.Label.Text = $WorkingText + ("." * $dot)
-                if ($lblEstadoConsulta) { $lblEstadoConsulta.Text = $WorkingText + ("." * $dot) }
-            } catch {}
+            if ($lblEstadoConsulta) { $lblEstadoConsulta.Text = $WorkingText + ("." * $dot) }
 
             if ($sw.Elapsed.TotalSeconds -ge $TimeoutSec) {
                 try { $proc.Kill() } catch {}
@@ -969,24 +974,20 @@ function Invoke-CaptureResponsive {
         }
     } finally {
         $sw.Stop()
-        try { $wb.Form.Close(); $wb.Form.Dispose() } catch {}
+        # Restaurar botón
+        if ($btnConsultar -and $prevBtnState -ne $null) { $btnConsultar.Enabled = $prevBtnState }
     }
 
-    # Leer salidas desde archivo (si existen)
-    $stdout = ""
-    $stderr = ""
+    # Leer salidas
+    $stdout = ""; $stderr = ""
     try { if (Test-Path $outFile) { $stdout = [IO.File]::ReadAllText($outFile) } } catch {}
     try { if (Test-Path $errFile) { $stderr = [IO.File]::ReadAllText($errFile) } } catch {}
-
-    # Limpieza (mejor effort)
     try { Remove-Item -Path $outFile,$errFile -ErrorAction SilentlyContinue } catch {}
 
-    return [pscustomobject]@{
-        ExitCode = $proc.ExitCode
-        StdOut   = $stdout
-        StdErr   = $stderr
-    }
+    # NO restauramos el label aquí; lo hará el llamador con el texto final correcto.
+    return [pscustomobject]@{ ExitCode = $proc.ExitCode; StdOut = $stdout; StdErr = $stderr }
 }
+
 
 
 function Invoke-Capture {
@@ -1083,81 +1084,95 @@ function Invoke-YtDlpConsoleProgress {
 
 # Consultar
 $btnConsultar.Add_Click({
-    Refresh-GateByDeps                 # <-- asegura estado al vuelo
-    if (-not $btnConsultar.Enabled) {  # <-- si faltan deps, salir
-        return
-    }
-    $url = $txtUrl.Text.Trim()
-    if ([string]::IsNullOrWhiteSpace($url)) {
-        [System.Windows.Forms.MessageBox]::Show("Escribe una URL de YouTube.","Falta URL",
-            [System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Warning) | Out-Null
-        return
-    }
-    Write-Host ("[CONSULTA] Consultando URL: {0}" -f $url) -ForegroundColor Cyan
+    # Bloquear doble clic desde el inicio
+    $btnConsultar.Enabled = $false
+    try {
+        Refresh-GateByDeps
+        if (-not $btnConsultar.Enabled) { return }
+
+        $url = $txtUrl.Text.Trim()
+        if ([string]::IsNullOrWhiteSpace($url)) {
+            [System.Windows.Forms.MessageBox]::Show("Escribe una URL de YouTube.","Falta URL",
+                [System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Warning) | Out-Null
+            return
+        }
+
+        Write-Host ("[CONSULTA] Consultando URL: {0}" -f $url) -ForegroundColor Cyan
         try { $yt = Get-Command yt-dlp -ErrorAction Stop } catch {
             Write-Host "[ERROR] yt-dlp no disponible. Valida dependencias." -ForegroundColor Red
             [System.Windows.Forms.MessageBox]::Show("yt-dlp no está disponible. Valídalo en Dependencias.","yt-dlp no encontrado",
                 [System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Error) | Out-Null
             return
         }
-        
-        # <<< CAMBIO CLAVE: llamada no bloqueante con spinner >>>
+
+        # 1) Consultar título
         $res = Invoke-CaptureResponsive -ExePath $yt.Source `
                 -Args @("--no-playlist","--get-title",$url) `
                 -WorkingText "Consultando URL…"
-        
+
         $titulo = ($res.StdOut + "`n" + $res.StdErr).Trim() -split "`r?`n" |
                   Where-Object { $_.Trim() -ne "" } | Select-Object -First 1
 
-    if ($res.ExitCode -eq 0 -and $titulo) {
+        if ($res.ExitCode -ne 0 -or -not $titulo) {
+            $script:videoConsultado = $false; $script:ultimaURL = $null; $script:ultimoTitulo = $null
+            $lblEstadoConsulta.Text = "Error al consultar la URL"; $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::Red
+            Set-DownloadButtonVisual -ok:$false
+            $picPreview.Image = $null
+            Write-Host "[ERROR] No se pudo consultar el video. STDOUT/ERR:" -ForegroundColor Red
+            Write-Host $res.StdOut
+            Write-Host $res.StdErr
+            [System.Windows.Forms.MessageBox]::Show("No se pudo consultar el video. Revisa la URL o tu conexión.","Consulta fallida",
+                [System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Error) | Out-Null
+            return
+        }
+
+        # 2) Ya tengo título -> dejo el label en Consultado: <titulo>
         $script:videoConsultado = $true; $script:ultimaURL = $url; $script:ultimoTitulo = $titulo
         $lblEstadoConsulta.Text = ("Consultado: {0}" -f $titulo); $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::ForestGreen
         Set-DownloadButtonVisual -ok:$true
         Show-PreviewFromUrl -Url $url -Titulo $titulo
         Write-Host ("[OK] Video consultado: {0}" -f $titulo) -ForegroundColor Green
-        # ====== [NUEVO] Listar formatos y llenar combos ======
-$cmbVideoFmt.Items.Clear()
-$cmbAudioFmt.Items.Clear()
 
-if (Fetch-Formats -Url $url) {
-    # Video
-    foreach ($i in $script:formatsVideo) { [void]$cmbVideoFmt.Items.Add($i) }
-    # Audio
-    foreach ($i in $script:formatsAudio) { [void]$cmbAudioFmt.Items.Add($i) }
+        # 3) Rellenar formatos (si cambia el label a “Consultando formatos…”, lo restauramos al final)
+        $cmbVideoFmt.Items.Clear()
+        $cmbAudioFmt.Items.Clear()
 
-    # Valores por omisión
-    # Preferimos bestvideo + bestaudio; si alguien usa progresivo, puede elegir "best"
-    if ($cmbVideoFmt.Items.Count -gt 0) {
-        # Busca bestvideo; si no está, deja "best"
-        $idx = 0
-        for ($n=0; $n -lt $cmbVideoFmt.Items.Count; $n++) {
-            if ($cmbVideoFmt.Items[$n].ToString().StartsWith("bestvideo")) { $idx = $n; break }
-            if ($cmbVideoFmt.Items[$n].ToString().StartsWith("best")) { $idx = $n }
+        $prevLabelText = $lblEstadoConsulta.Text
+        $lblEstadoConsulta.Text = "Consultando formatos…"
+        try {
+            if (Fetch-Formats -Url $url) {
+                foreach ($i in $script:formatsVideo) { [void]$cmbVideoFmt.Items.Add($i) }
+                foreach ($i in $script:formatsAudio) { [void]$cmbAudioFmt.Items.Add($i) }
+
+                if ($cmbVideoFmt.Items.Count -gt 0) {
+                    $idx = 0
+                    for ($n=0; $n -lt $cmbVideoFmt.Items.Count; $n++) {
+                        if ($cmbVideoFmt.Items[$n].ToString().StartsWith("bestvideo")) { $idx = $n; break }
+                        if ($cmbVideoFmt.Items[$n].ToString().StartsWith("best")) { $idx = $n }
+                    }
+                    $cmbVideoFmt.SelectedIndex = $idx
+                }
+                if ($cmbAudioFmt.Items.Count -gt 0) {
+                    $idx = 0
+                    for ($n=0; $n -lt $cmbAudioFmt.Items.Count; $n++) {
+                        if ($cmbAudioFmt.Items[$n].ToString().StartsWith("bestaudio")) { $idx = $n; break }
+                    }
+                    $cmbAudioFmt.SelectedIndex = $idx
+                }
+            } else {
+                Write-Host "[WARN] No se pudieron enumerar formatos. Se usará bestvideo+bestaudio." -ForegroundColor Yellow
+            }
+        } finally {
+            # 4) Restaurar SIEMPRE el título en el label (evita que quede ‘Consultando formatos…’)
+            $lblEstadoConsulta.Text = $prevLabelText
         }
-        $cmbVideoFmt.SelectedIndex = $idx
-    }
-    if ($cmbAudioFmt.Items.Count -gt 0) {
-        $idx = 0
-        for ($n=0; $n -lt $cmbAudioFmt.Items.Count; $n++) {
-            if ($cmbAudioFmt.Items[$n].ToString().StartsWith("bestaudio")) { $idx = $n; break }
-        }
-        $cmbAudioFmt.SelectedIndex = $idx
-    }
-} else {
-    Write-Host "[WARN] No se pudieron enumerar formatos. Se usará bestvideo+bestaudio." -ForegroundColor Yellow
-}
-    } else {
-        $script:videoConsultado = $false; $script:ultimaURL = $null; $script:ultimoTitulo = $null
-        $lblEstadoConsulta.Text = "Error al consultar la URL"; $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::Red
-        Set-DownloadButtonVisual -ok:$false
-        $picPreview.Image = $null
-        Write-Host "[ERROR] No se pudo consultar el video. STDOUT/ERR:" -ForegroundColor Red
-        Write-Host $res.StdOut
-        Write-Host $res.StdErr
-        [System.Windows.Forms.MessageBox]::Show("No se pudo consultar el video. Revisa la URL o tu conexión.","Consulta fallida",
-            [System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Error) | Out-Null
+
+    } finally {
+        # Rehabilitar el botón “Consultar” pase lo que pase
+        $btnConsultar.Enabled = $true
     }
 })
+
 
 # Descargar (pregunta DÓNDE en entorno visual, y loguea en consola)
 # Descargar (pregunta DÓNDE, muestra progreso en consola + barra)
