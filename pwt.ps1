@@ -259,26 +259,37 @@ function Get-ToolVersion {
         $p.StartInfo.FileName = $cmd.Source
         $p.StartInfo.Arguments = $ArgsForVersion
         $p.StartInfo.RedirectStandardOutput = $true
+        $p.StartInfo.RedirectStandardError  = $true   # <— IMPORTANTE
         $p.StartInfo.UseShellExecute = $false
-        $p.StartInfo.CreateNoWindow = $true
+        $p.StartInfo.CreateNoWindow  = $true
         [void]$p.Start()
-        $out = $p.StandardOutput.ReadToEnd().Trim()
+        $stdout = $p.StandardOutput.ReadToEnd()
+        $stderr = $p.StandardError.ReadToEnd()
         $p.WaitForExit()
-        if ($Parse -eq "FirstLine") { return ($out -split "`r?`n")[0] }
-        return $out
+
+        $combined = ($stdout + "`n" + $stderr).Trim()
+
+        if ($Parse -eq "FirstLine") {
+            # Toma la primera línea no vacía
+            return ($combined -split "`r?`n" | Where-Object { $_.Trim() -ne "" } | Select-Object -First 1)
+        }
+        return $combined
     } catch {
         return "Detectado pero no se obtuvo versión"
     }
 }
+
 
 function Ensure-Tool {
     param(
         [Parameter(Mandatory=$true)][string]$CommandName,
         [Parameter(Mandatory=$true)][string]$FriendlyName,
         [Parameter(Mandatory=$true)][string]$ChocoPkg,
-        [Parameter(Mandatory=$true)][ref]$LabelRef
+        [Parameter(Mandatory=$true)][ref]$LabelRef,
+        [string]$VersionArgs = "--version",             # <— nuevo
+        [ValidateSet("FirstLine","Raw")][string]$Parse = "FirstLine"
     )
-    $version = Get-ToolVersion -Command $CommandName -ArgsForVersion "--version" -Parse FirstLine
+    $version = Get-ToolVersion -Command $CommandName -ArgsForVersion $VersionArgs -Parse $Parse
     if (-not $version) {
         $resp = [System.Windows.Forms.MessageBox]::Show(
             "$FriendlyName no está instalado. ¿Desea instalarlo ahora con Chocolatey?",
@@ -289,7 +300,7 @@ function Ensure-Tool {
         if ($resp -eq [System.Windows.Forms.DialogResult]::Yes) {
             try {
                 Start-Process -FilePath "choco" -ArgumentList @("install", $ChocoPkg, "-y") -NoNewWindow -Wait
-                $version = Get-ToolVersion -Command $CommandName -ArgsForVersion "--version" -Parse FirstLine
+                $version = Get-ToolVersion -Command $CommandName -ArgsForVersion $VersionArgs -Parse $Parse
                 if (-not $version) { $version = "Instalado, versión no detectada" }
                 $LabelRef.Value.Text = "$($FriendlyName): $version"
                 $LabelRef.Value.ForeColor = [System.Drawing.Color]::ForestGreen
@@ -312,6 +323,7 @@ function Ensure-Tool {
         $LabelRef.Value.ForeColor = [System.Drawing.Color]::ForestGreen
     }
 }
+
 
 # ====== FIN utilidades nuevas ======
 
@@ -385,10 +397,10 @@ $formPrincipal.Add_Shown({
         }
 
         # Validar/instalar yt-dlp y ffmpeg (con MessageBox si faltan)
-        Ensure-Tool -CommandName "yt-dlp" -FriendlyName "yt-dlp" -ChocoPkg "yt-dlp" -LabelRef ([ref]$lblYtDlp)
+        Ensure-Tool -CommandName "yt-dlp" -FriendlyName "yt-dlp" -ChocoPkg "yt-dlp" -LabelRef ([ref]$lblYtDlp) -VersionArgs "--version"
         # ffmpeg imprime mucho; usamos "-version" y tomamos primera línea
         $lblFfmpeg.Text = "ffmpeg: verificando..."
-        Ensure-Tool -CommandName "ffmpeg" -FriendlyName "ffmpeg" -ChocoPkg "ffmpeg" -LabelRef ([ref]$lblFfmpeg)
+        Ensure-Tool -CommandName "ffmpeg" -FriendlyName "ffmpeg" -ChocoPkg "ffmpeg" -LabelRef ([ref]$lblFfmpeg) -VersionArgs "-version"
     }
     catch {
         [System.Windows.Forms.MessageBox]::Show(
