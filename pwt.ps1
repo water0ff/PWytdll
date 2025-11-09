@@ -738,19 +738,19 @@ $script:ultimoTitulo      = $null
 $script:ultimaRutaDescarga = [Environment]::GetFolderPath('Desktop')
 # ====== [NUEVO] Selectores de formato ======
 $lblVideoFmt = Create-Label -Text "Formato de VIDEO:" `
-    -Location (New-Object System.Drawing.Point(20, 165)) `
+    -Location (New-Object System.Drawing.Point(20, 215)) `
     -Size (New-Object System.Drawing.Size(360, 20)) -Font $boldFont
 
 $cmbVideoFmt = Create-ComboBox `
-    -Location (New-Object System.Drawing.Point(20, 188)) `
+    -Location (New-Object System.Drawing.Point(20, 238)) `
     -Size (New-Object System.Drawing.Size(360, 28))
 
 $lblAudioFmt = Create-Label -Text "Formato de AUDIO:" `
-    -Location (New-Object System.Drawing.Point(20, 220)) `
+    -Location (New-Object System.Drawing.Point(20, 270)) `
     -Size (New-Object System.Drawing.Size(360, 20)) -Font $boldFont
 
 $cmbAudioFmt = Create-ComboBox `
-    -Location (New-Object System.Drawing.Point(20, 243)) `
+    -Location (New-Object System.Drawing.Point(20, 293)) `
     -Size (New-Object System.Drawing.Size(360, 28))
 
 $formPrincipal.Controls.Add($lblVideoFmt)
@@ -833,12 +833,12 @@ $formPrincipal.Controls.Add($btnPickDestino)
 
 # ----- [NUEVO] Zona de vista previa -----
 $lblPreview = Create-Label -Text "Vista previa:" `
-    -Location (New-Object System.Drawing.Point(20, 280)) `
+    -Location (New-Object System.Drawing.Point(20, 330)) `
     -Size (New-Object System.Drawing.Size(360, 22)) `
     -Font $boldFont
 
 $picPreview = New-Object System.Windows.Forms.PictureBox
-$picPreview.Location   = New-Object System.Drawing.Point(20, 305)
+$picPreview.Location   = New-Object System.Drawing.Point(20, 355)
 $picPreview.Size       = New-Object System.Drawing.Size(360, 146)
 $picPreview.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
 $picPreview.SizeMode   = [System.Windows.Forms.PictureBoxSizeMode]::Zoom
@@ -856,14 +856,10 @@ $formPrincipal.Controls.Add($btnDescargar)
 
 # --- Bitácora con scroll vertical 
 $txtCambios = Create-TextBox `
-    -Location (New-Object System.Drawing.Point(20, 470)) `
-    -Size (New-Object System.Drawing.Size(360, 100)) `
-    -BackColor ([System.Drawing.Color]::White) `
-    -ForeColor ([System.Drawing.Color]::Black) `
-    -Font $defaultFont `
-    -Text $global:defaultInstructions `
-    -Multiline $true `
-    -ScrollBars ([System.Windows.Forms.ScrollBars]::Vertical) `
+    -Location (New-Object System.Drawing.Point(20, 520)) -Size (New-Object System.Drawing.Size(360, 50)) `
+    -BackColor ([System.Drawing.Color]::White) -ForeColor ([System.Drawing.Color]::Black) `
+    -Font $defaultFont -Text $global:defaultInstructions `
+    -Multiline $true -ScrollBars ([System.Windows.Forms.ScrollBars]::Vertical) `
     -ReadOnly $true
 $txtCambios.WordWrap = $true
 $formPrincipal.Controls.Add($txtCambios)
