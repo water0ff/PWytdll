@@ -163,22 +163,22 @@ function Create-TextBox {
 # 1) SOLO pinta el botón de descarga
 function Set-DownloadButtonVisual {
     param([bool]$ok)
-
     if ($ok) {
         $btnDescargar.Enabled   = $true
         $btnDescargar.BackColor = [System.Drawing.Color]::ForestGreen
         $btnDescargar.ForeColor = [System.Drawing.Color]::White
-        $btnDescargar.Text      = "Descargar (listo)"
+        # Texto SIEMPRE fijo
+        $btnDescargar.Text      = "Descargar"
         $toolTip.SetToolTip($btnDescargar, "Consulta válida: listo para descargar")
     } else {
         $btnDescargar.Enabled   = $false
         $btnDescargar.BackColor = [System.Drawing.Color]::Black
         $btnDescargar.ForeColor = [System.Drawing.Color]::White
-        $btnDescargar.Text      = "Descargar versión seleccionada"
+        # Texto SIEMPRE fijo
+        $btnDescargar.Text      = "Descargar"
         $toolTip.SetToolTip($btnDescargar, "Descarga deshabilitada: primero 'Consultar'")
     }
-
-    # IMPORTANTE: actualizar Tag para que el MouseLeave restaure el color correcto
+    # Mantén el Tag sincronizado para el hover
     $btnDescargar.Tag = $btnDescargar.BackColor
 }
 
@@ -588,11 +588,29 @@ $script:ultimaRutaDescarga = $null
 # Parte SUPERIOR: consulta y descarga
 $lblUrl = Create-Label -Text "URL de YouTube:" -Location (New-Object System.Drawing.Point(20, 20)) -Size (New-Object System.Drawing.Size(260, 22)) -Font $boldFont
 $txtUrl = Create-TextBox -Location (New-Object System.Drawing.Point(20, 45)) -Size (New-Object System.Drawing.Size(260, 26))
-$lblEstadoConsulta = Create-Label -Text "Estado: sin consultar" -Location (New-Object System.Drawing.Point(20, 75)) -Size (New-Object System.Drawing.Size(260, 22)) -Font $defaultFont -BorderStyle ([System.Windows.Forms.BorderStyle]::FixedSingle)
+# --- Label de estado con 2 renglones (wrap) ---
+$lblEstadoConsulta = Create-Label `
+    -Text "Estado: sin consultar" `
+    -Location (New-Object System.Drawing.Point(20, 75)) `
+    -Size (New-Object System.Drawing.Size(260, 44)) `
+    -Font $defaultFont `
+    -BorderStyle ([System.Windows.Forms.BorderStyle]::FixedSingle) `
+    -TextAlign ([System.Drawing.ContentAlignment]::TopLeft)
+$lblEstadoConsulta.UseCompatibleTextRendering = $true
 
-$btnConsultar = Create-Button -Text "Consultar" -Location (New-Object System.Drawing.Point(20, 105)) -Size (New-Object System.Drawing.Size(120, 35)) -BackColor ([System.Drawing.Color]::White) -ForeColor ([System.Drawing.Color]::Black) -ToolTipText "Obtener información del video"
-$btnDescargar = Create-Button -Text "Descargar versión seleccionada" -Location (New-Object System.Drawing.Point(20, 145)) -Size (New-Object System.Drawing.Size(260, 35)) -BackColor ([System.Drawing.Color]::Black) -ForeColor ([System.Drawing.Color]::White) -ToolTipText "Descargar usando bestvideo+bestaudio -> mp4"
+$btnConsultar = Create-Button -Text "Consultar" `
+    -Location (New-Object System.Drawing.Point(20, 105)) `
+    -Size (New-Object System.Drawing.Size(120, 35)) `
+    -BackColor ([System.Drawing.Color]::White) `
+    -ForeColor ([System.Drawing.Color]::Black) `
+    -ToolTipText "Obtener información del video"
 
+$btnDescargar = Create-Button -Text "Descargar" `
+    -Location (New-Object System.Drawing.Point(160, 105)) `
+    -Size (New-Object System.Drawing.Size(120, 35)) `
+    -BackColor ([System.Drawing.Color]::Black) `
+    -ForeColor ([System.Drawing.Color]::White) `
+    -ToolTipText "Descargar usando bestvideo+bestaudio -> mp4"
 Set-DownloadButtonVisual -ok:$false
 
 # ----- [NUEVO] Zona de vista previa -----
@@ -618,31 +636,25 @@ $formPrincipal.Controls.Add($lblEstadoConsulta)
 $formPrincipal.Controls.Add($btnConsultar)
 $formPrincipal.Controls.Add($btnDescargar)
 
-# Parte MEDIA: cambios (si lo quieres conservar)
-# Parte MEDIA: cambios (reubicado más abajo)
-$lblCambios = Create-Label -Text $global:defaultInstructions `
+# --- Bitácora con scroll vertical 
+$txtCambios = Create-TextBox `
     -Location (New-Object System.Drawing.Point(20, 370)) `
     -Size (New-Object System.Drawing.Size(260, 100)) `
-    -BackColor ([System.Drawing.Color]::Transparent) `
+    -BackColor ([System.Drawing.Color]::White) `
     -ForeColor ([System.Drawing.Color]::Black) `
     -Font $defaultFont `
-    -BorderStyle ([System.Windows.Forms.BorderStyle]::FixedSingle) `
-    -TextAlign ([System.Drawing.ContentAlignment]::TopLeft)
-$lblCambios.AutoSize = $false
-$lblCambios.UseCompatibleTextRendering = $true
-$formPrincipal.Controls.Add($lblCambios)
-
-
-
-
-
+    -Text $global:defaultInstructions `
+    -Multiline $true `
+    -ScrollBars ([System.Windows.Forms.ScrollBars]::Vertical) `
+    -ReadOnly $true
+$txtCambios.WordWrap = $true
+$formPrincipal.Controls.Add($txtCambios)
 
 $lblTituloDeps = Create-Label -Text "Dependencias:" -Location (New-Object System.Drawing.Point(20, 490)) -Size (New-Object System.Drawing.Size(260, 24)) -Font $boldFont
 $lblYtDlp      = Create-Label -Text "yt-dlp: verificando..." -Location (New-Object System.Drawing.Point(80, 520)) -Size (New-Object System.Drawing.Size(260, 24)) -Font $defaultFont -BorderStyle ([System.Windows.Forms.BorderStyle]::FixedSingle)
 $lblFfmpeg     = Create-Label -Text "ffmpeg: verificando..." -Location (New-Object System.Drawing.Point(80, 550)) -Size (New-Object System.Drawing.Size(260, 24)) -Font $defaultFont -BorderStyle ([System.Windows.Forms.BorderStyle]::FixedSingle)
 $lblNode       = Create-Label -Text "Node.js: verificando..." -Location (New-Object System.Drawing.Point(80, 580)) -Size (New-Object System.Drawing.Size(260, 24)) -Font $defaultFont -BorderStyle ([System.Windows.Forms.BorderStyle]::FixedSingle)
-$btnConsola = Create-Button -Text "Consola" -Location (New-Object System.Drawing.Point(20, 620)) -BackColor ([System.Drawing.Color]::White) -ForeColor ([System.Drawing.Color]::Black) -ToolTipText "Abrir PowerShell" -Size (New-Object System.Drawing.Size(120, 35))
-$btnExit    = Create-Button -Text "Salir"    -Location (New-Object System.Drawing.Point(160, 620)) -BackColor ([System.Drawing.Color]::Black) -ForeColor ([System.Drawing.Color]::White) -ToolTipText "Cerrar la aplicación" -Size (New-Object System.Drawing.Size(120, 35))
+$btnExit    = Create-Button -Text "Salir"    -Location (New-Object System.Drawing.Point(20, 620)) -BackColor ([System.Drawing.Color]::Black) -ForeColor ([System.Drawing.Color]::White) -ToolTipText "Cerrar la aplicación" -Size (New-Object System.Drawing.Size(220, 35))
 $btnYtRefresh   = Create-IconButton -Text "↻" -Location (New-Object System.Drawing.Point(20, 520)) -ToolTipText "Buscar/actualizar yt-dlp"
 $btnYtUninstall = Create-IconButton -Text "✖" -Location (New-Object System.Drawing.Point(48, 520)) -ToolTipText "Desinstalar yt-dlp"
 $btnYtRefresh.Add_Click({
@@ -681,7 +693,6 @@ $formPrincipal.Controls.Add($lblTituloDeps)
 $formPrincipal.Controls.Add($lblNode)
 $formPrincipal.Controls.Add($lblYtDlp)
 $formPrincipal.Controls.Add($lblFfmpeg)
-$formPrincipal.Controls.Add($btnConsola)
 $formPrincipal.Controls.Add($btnExit)
 
 # ====== Utilidad captura ======
@@ -873,12 +884,6 @@ $btnDescargar.Add_Click({
     }
 })
 
-
-# Botón Consola
-$btnConsola.Add_Click({
-    Write-Host "[ACCION] Abriendo PowerShell externo..." -ForegroundColor Cyan
-    Start-Process -FilePath "powershell.exe" -ArgumentList "-NoExit","-NoLogo" -WindowStyle Normal
-})
 
 # Validación de Chocolatey y dependencias al iniciar la UI
 $formPrincipal.Add_Shown({
