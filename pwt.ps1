@@ -387,47 +387,41 @@ function Invoke-YtDlpWithProgress {
         [Parameter(Mandatory=$true)][string[]]$Args
     )
 
-    # Ventana de progreso
+    # ===== Ventana de progreso =====
     $progressForm = Show-ProgressBar
-    $lastPct = -1
+    $script:lastPct = -1
 
-    # Archivos temporales para redirección
-    $tmpDir  = [System.IO.Path]::GetTempPath()
-    $errFile = Join-Path $tmpDir ("yt-dlp-stderr_{0}.log" -f ([guid]::NewGuid()))
-    $outFile = Join-Path $tmpDir ("yt-dlp-stdout_{0}.log" -f ([guid]::NewGuid()))
+    # ===== Forzar UTF-8 y salida sin buffer para Python =====
+    $env:PYTHONUTF8        = "1"
+    $env:PYTHONIOENCODING  = "utf-8"
+    $env:PYTHONUNBUFFERED  = "1"
 
-    # Asegurar UTF-8 para que no salga mojibake en títulos
-    $env:PYTHONUTF8       = "1"
-    $env:PYTHONIOENCODING = "utf-8"
-
-    # Construir argumentos (entrecomillar si hay espacios)
+    # Construir línea de argumentos (respetando comillas si hay espacios)
     $argLine = ($Args | ForEach-Object { if ($_ -match '\s') { '"{0}"' -f $_ } else { $_ } }) -join ' '
 
-    # Lanzar proceso redirigiendo a archivos (sin handlers ni pipes)
-    $proc = Start-Process -FilePath $ExePath `
-        -ArgumentList $argLine `
-        -NoNewWindow -PassThru `
-        -RedirectStandardError $errFile `
-        -RedirectStandardOutput $outFile
+    # Preparar proceso con redirección y lectura en vivo
+    $p = New-Object System.Diagnostics.Process
+    $p.StartInfo = New-Object System.Diagnostics.ProcessStartInfo
+    $p.StartInfo.FileName               = $ExePath
+    $p.StartInfo.Arguments              = $argLine
+    $p.StartInfo.UseShellExecute        = $false
+    $p.StartInfo.RedirectStandardOutput = $true
+    $p.StartInfo.RedirectStandardError  = $true
+    $p.StartInfo.CreateNoWindow         = $true
+    $p.StartInfo.StandardOutputEncoding = [System.Text.Encoding]::UTF8
+    $p.StartInfo.StandardErrorEncoding  = [System.Text.Encoding]::UTF8
 
-    # Abrir el archivo de STDERR para “tail”
-    $fs = [System.IO.File]::Open($errFile,
-        [System.IO.FileMode]::OpenOrCreate,
-        [System.IO.FileAccess]::Read,
-        [System.IO.FileShare]::ReadWrite)
-    $sr = New-Object System.IO.StreamReader($fs)
+    # Función local para parsear líneas de progreso
+    $updateLine = {
+        param([string]$line)
 
-    # Función local para parsear y actualizar
-    function _UpdateFromLine([string]$line) {
         if ([string]::IsNullOrWhiteSpace($line)) { return }
 
-        # 1) progress-template: "download: 12.3% ETA:00:10 SPEED:1.23MiB/s"
+        # Formato personalizado (--progress-template) o clásico
         $m = [regex]::Match($line, 'download:\s*(?<pct>\d+(?:\.\d+)?)%\s*(?:ETA:(?<eta>\S+))?\s*(?:SPEED:(?<spd>.+))?', 'IgnoreCase')
         if (-not $m.Success) {
-            # 2) formato clásico: "[download]  12.3% of ... at 1.2MiB/s ETA 00:10"
             $m = [regex]::Match($line, '(?<pct>\d+(?:\.\d+)?)%\s+of.*?at\s+(?<spd>\S+)\s+ETA\s+(?<eta>\S+)', 'IgnoreCase')
             if (-not $m.Success) {
-                # 3) porcentaje suelto
                 $m = [regex]::Match($line, '(?<pct>\d+(?:\.\d+)?)%')
             }
         }
@@ -437,10 +431,13 @@ function Invoke-YtDlpWithProgress {
             $eta = $m.Groups['eta'].Value
             $spd = $m.Groups['spd'].Value
 
-            if ($pct -ne $lastPct) {
+            if ($pct -ne $script:lastPct) {
                 $script:lastPct = $pct
+                # Línea de progreso en consola (sobrescribe con \r)
                 Write-Host ("`r[PROGRESO] {0,3}%  ETA {1,-8}  {2,-16}" -f $pct, $eta, $spd) -NoNewline
-                if (-not $progressForm.IsDisposed) {
+
+                # Actualiza barra de progreso en UI
+                if ($progressForm -and -not $progressForm.IsDisposed) {
                     Update-ProgressBar -ProgressForm $progressForm -CurrentStep $pct -TotalSteps 100
                     $progressForm.Label.Text = ("{0}% Completado" -f $pct)
                     [System.Windows.Forms.Application]::DoEvents()
@@ -449,27 +446,32 @@ function Invoke-YtDlpWithProgress {
         }
     }
 
-    try {
-        # Bucle de UI: leer líneas nuevas del archivo sin bloquear
-        while (-not $proc.HasExited -or -not $sr.EndOfStream) {
-            while (-not $sr.EndOfStream) {
-                $line = $sr.ReadLine()
-                _UpdateFromLine $line
-            }
-            [System.Windows.Forms.Application]::DoEvents()
-            Start-Sleep -Milliseconds 80
-        }
-    } finally {
-        # Limpieza
-        try { $sr.Close(); $fs.Close() } catch {}
-        Write-Host ""
-        if (-not $progressForm.IsDisposed) { Close-ProgressBar $progressForm }
-        # Los logs son útiles para diagnósticos; bórralos si no los quieres
-        # Remove-Item -Path $errFile,$outFile -ErrorAction SilentlyContinue
+    # Manejadores de datos (ambos streams, por compatibilidad)
+    $p.add_OutputDataReceived({ param($s,$e) if ($e.Data) { & $updateLine $e.Data } })
+    $p.add_ErrorDataReceived ({ param($s,$e) if ($e.Data) { & $updateLine $e.Data } })
+
+    # Iniciar y comenzar lectura asíncrona
+    [void]$p.Start()
+    $p.BeginOutputReadLine()
+    $p.BeginErrorReadLine()
+
+    # Bucle simple para mantener viva la UI mientras corre
+    while (-not $p.HasExited) {
+        [System.Windows.Forms.Application]::DoEvents()
+        Start-Sleep -Milliseconds 80
     }
 
-    return $proc.ExitCode
+    # Asegurar que drenamos buffers al final
+    $p.WaitForExit()
+
+    # Salto de línea para que no se quede pegado el cursor después del -NoNewline
+    Write-Host ""
+
+    if ($progressForm -and -not $progressForm.IsDisposed) { Close-ProgressBar $progressForm }
+    return $p.ExitCode
 }
+
+
 
 
 
