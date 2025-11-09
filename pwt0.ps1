@@ -599,14 +599,14 @@ $lblEstadoConsulta = Create-Label `
 $lblEstadoConsulta.UseCompatibleTextRendering = $true
 
 $btnConsultar = Create-Button -Text "Consultar" `
-    -Location (New-Object System.Drawing.Point(20, 115)) `
+    -Location (New-Object System.Drawing.Point(20, 125)) `
     -Size (New-Object System.Drawing.Size(120, 35)) `
     -BackColor ([System.Drawing.Color]::White) `
     -ForeColor ([System.Drawing.Color]::Black) `
     -ToolTipText "Obtener información del video"
 
 $btnDescargar = Create-Button -Text "Descargar" `
-    -Location (New-Object System.Drawing.Point(160, 115)) `
+    -Location (New-Object System.Drawing.Point(160, 125)) `
     -Size (New-Object System.Drawing.Size(120, 35)) `
     -BackColor ([System.Drawing.Color]::Black) `
     -ForeColor ([System.Drawing.Color]::White) `
@@ -654,7 +654,7 @@ $lblTituloDeps = Create-Label -Text "Dependencias:" -Location (New-Object System
 $lblYtDlp      = Create-Label -Text "yt-dlp: verificando..." -Location (New-Object System.Drawing.Point(80, 520)) -Size (New-Object System.Drawing.Size(200, 24)) -Font $defaultFont -BorderStyle ([System.Windows.Forms.BorderStyle]::FixedSingle)
 $lblFfmpeg     = Create-Label -Text "ffmpeg: verificando..." -Location (New-Object System.Drawing.Point(80, 550)) -Size (New-Object System.Drawing.Size(200, 24)) -Font $defaultFont -BorderStyle ([System.Windows.Forms.BorderStyle]::FixedSingle)
 $lblNode       = Create-Label -Text "Node.js: verificando..." -Location (New-Object System.Drawing.Point(80, 580)) -Size (New-Object System.Drawing.Size(200, 24)) -Font $defaultFont -BorderStyle ([System.Windows.Forms.BorderStyle]::FixedSingle)
-$btnExit    = Create-Button -Text "Salir"    -Location (New-Object System.Drawing.Point(20, 620)) -BackColor ([System.Drawing.Color]::Black) -ForeColor ([System.Drawing.Color]::White) -ToolTipText "Cerrar la aplicación" -Size (New-Object System.Drawing.Size(280, 35))
+$btnExit    = Create-Button -Text "Salir"    -Location (New-Object System.Drawing.Point(20, 620)) -BackColor ([System.Drawing.Color]::Black) -ForeColor ([System.Drawing.Color]::White) -ToolTipText "Cerrar la aplicación" -Size (New-Object System.Drawing.Size(260, 35))
 $btnYtRefresh   = Create-IconButton -Text "↻" -Location (New-Object System.Drawing.Point(20, 520)) -ToolTipText "Buscar/actualizar yt-dlp"
 $btnYtUninstall = Create-IconButton -Text "✖" -Location (New-Object System.Drawing.Point(48, 520)) -ToolTipText "Desinstalar yt-dlp"
 $btnYtRefresh.Add_Click({
