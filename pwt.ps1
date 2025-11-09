@@ -343,6 +343,52 @@ function Close-ProgressBar {
     param($ProgressForm)
     $ProgressForm.Close()
 }
+# --- Label "CAMBIOS" con el contenido de $global:defaultInstructions ---
+$lblCambios = New-Object System.Windows.Forms.Label
+$lblCambios.Text      = $global:defaultInstructions
+$lblCambios.Location  = New-Object System.Drawing.Point(20, 60)
+$lblCambios.Size      = New-Object System.Drawing.Size(260, 80)
+$lblCambios.Font      = $defaultFont
+$lblCambios.ForeColor = [System.Drawing.Color]::Black
+$lblCambios.BackColor = [System.Drawing.Color]::Transparent
+$lblCambios.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
+$lblCambios.TextAlign   = [System.Drawing.ContentAlignment]::TopLeft
+# Crear botón Salir 
+$btnExit = Create-Button -Text "Salir" -Location (New-Object System.Drawing.Point(20, 160)) -Size (New-Object System.Drawing.Size(120, 35))
+# Para saltos de línea y buen render:
+$lblCambios.AutoSize = $false
+$lblCambios.UseCompatibleTextRendering = $true
+
+$formPrincipal.Controls.Add($lblCambios)
+# --- Validación de Chocolatey al iniciar la UI ---
+$formPrincipal.Add_Shown({
+    try {
+        # Si el usuario cancela o falla la instalación, simplemente no seguimos.
+        if (-not (Check-Chocolatey)) {
+            # Si Check-Chocolatey no mató el proceso (Stop-Process), cerramos la ventana de forma limpia.
+            $formPrincipal.Close()
+            return
+        }
+        # Aquí puedes dejar cualquier otra verificación que quieras hacer
+        # (por ejemplo, preparar labels de estado de herramientas)
+    }
+    catch {
+        [System.Windows.Forms.MessageBox]::Show(
+            "Error al validar Chocolatey:`n$_",
+            "Error",
+            [System.Windows.Forms.MessageBoxButtons]::OK,
+            [System.Windows.Forms.MessageBoxIcon]::Error
+        ) | Out-Null
+        $formPrincipal.Close()
+    }
+})
+
+
+
+
+
+
+
 
 # Botón para salir
 $btnExit.Add_Click({
