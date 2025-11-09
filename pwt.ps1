@@ -219,7 +219,150 @@ function Refresh-GateByDeps {
     # (Opcional) Bloquear edición de URL si faltan deps:
     # $txtUrl.ReadOnly = -not $allOk
 }
+# ====== [NUEVO] Estructuras para formatos ======
+$script:formatsIndex = @{}   # format_id -> objeto con metadatos (tipo, codecs, label)
+$script:formatsVideo = @()   # lista de objetos mostrables en Combo Video
+$script:formatsAudio = @()   # lista de objetos mostrables en Combo Audio
 
+# Por compatibilidad PS5/7 evitamos ValueMember; guardamos Display con el format_id al inicio
+function New-FormatDisplay {
+    param(
+        [string]$Id,[string]$Label
+    )
+    # Formato: "137 — mp4 1080p h264 (v-only) ~3.2MiB 2200k"
+    return ("{0} — {1}" -f $Id, $Label)
+}
+
+# Detecta si un format (del JSON) es solo video, solo audio o progresivo
+function Classify-Format {
+    param($fmt)
+    $v = $fmt.vcodec; $a = $fmt.acodec
+    $isVideoOnly = $v -and $v -ne "none" -and ($a -eq $null -or $a -eq "" -or $a -eq "none")
+    $isAudioOnly = $a -and $a -ne "none" -and ($v -eq $null -or $v -eq "" -or $v -eq "none")
+    $isProgressive = $v -and $v -ne "none" -and $a -and $a -ne "none"
+    [pscustomobject]@{
+        VideoOnly     = [bool]$isVideoOnly
+        AudioOnly     = [bool]$isAudioOnly
+        Progressive   = [bool]$isProgressive
+        Ext           = $fmt.ext
+        VRes          = $fmt.height
+        VCodec        = $fmt.vcodec
+        ACodec        = $fmt.acodec
+        ABr           = $fmt.abr
+        Tbr           = $fmt.tbr
+        Filesize      = $fmt.filesize
+        FormatNote    = $fmt.format_note
+        Id            = $fmt.format_id
+    }
+}
+
+# Toma bytes y devuelve algo legible
+function Human-Size {
+    param([Nullable[long]]$bytes)
+    if (-not $bytes -or $bytes -le 0) { return "" }
+    $units = "B","KiB","MiB","GiB","TiB"
+    $p = 0; $n = [double]$bytes
+    while ($n -ge 1024 -and $p -lt $units.Count-1) { $n/=1024; $p++ }
+    return ("{0:N1}{1}" -f $n, $units[$p])
+}
+
+# Imprime tabla tipo -F en consola
+function Print-FormatsTable {
+    param([array]$formats)  # array del JSON .formats
+    Write-Host "`n[FORMATOS] Disponibles (similar a yt-dlp -F):" -ForegroundColor Cyan
+    Write-Host ("{0,-9} {1,-5} {2,-10} {3,-7} {4,-9} {5}" -f "format_id","ext","res","vcodec","acodec","nota/tamaño/tbr") -ForegroundColor DarkGray
+    foreach ($f in $formats) {
+        $sz = Human-Size $f.filesize
+        $tbr = if ($f.tbr) { "{0}k" -f [math]::Round($f.tbr) } else { "" }
+        $res = if ($f.height) { "{0}p" -f $f.height } else { "" }
+        $note = ($f.format_note ? $f.format_note : "")
+        $extra = ($note, $sz, $tbr) -join " "
+        Write-Host ("{0,-9} {1,-5} {2,-10} {3,-7} {4,-9} {5}" -f $f.format_id, $f.ext, $res, $f.vcodec, $f.acodec, $extra)
+    }
+}
+
+# Obtiene y prepara formatos desde yt-dlp -J
+function Fetch-Formats {
+    param([Parameter(Mandatory=$true)][string]$Url)
+
+    $script:formatsIndex.Clear()
+    $script:formatsVideo = @()
+    $script:formatsAudio = @()
+
+    try { $yt = Get-Command yt-dlp -ErrorAction Stop } catch {
+        Write-Host "[ERROR] yt-dlp no disponible para listar formatos." -ForegroundColor Red
+        return $false
+    }
+
+    $obj = Invoke-Capture -ExePath $yt.Source -Args @("-J","--no-playlist",$Url)
+    if ($obj.ExitCode -ne 0 -or [string]::IsNullOrWhiteSpace($obj.StdOut)) {
+        Write-Host "[ERROR] No se pudo obtener JSON de formatos." -ForegroundColor Red
+        Write-Host $obj.StdErr
+        return $false
+    }
+
+    try {
+        $json = $obj.StdOut | ConvertFrom-Json
+    } catch {
+        Write-Host "[ERROR] JSON inválido al listar formatos." -ForegroundColor Red
+        return $false
+    }
+
+    if (-not $json.formats) {
+        Write-Host "[WARN] El extractor no devolvió lista de formatos." -ForegroundColor Yellow
+        return $false
+    }
+
+    # Imprime tabla estilo -F
+    Print-FormatsTable -formats $json.formats
+
+    # Construye índices y listas para combos
+    foreach ($f in $json.formats) {
+        $klass = Classify-Format $f
+        $script:formatsIndex[$klass.Id] = $klass
+
+        # Etiqueta legible
+        $res = if ($klass.VRes) { "{0}p" -f $klass.VRes } else { "" }
+        $sz  = Human-Size $klass.Filesize
+        $tbr = if ($klass.Tbr) { "{0}k" -f [math]::Round($klass.Tbr) } else { "" }
+
+        if ($klass.Progressive) {
+            $label = "{0} {1} {2}/{3} (progresivo) {4} {5}" -f $klass.Ext,$res,$klass.VCodec,$klass.ACodec,$sz,$tbr
+            $script:formatsVideo += (New-FormatDisplay -Id $klass.Id -Label $label)
+        } elseif ($klass.VideoOnly) {
+            $label = "{0} {1} {2} (v-only) {3} {4}" -f $klass.Ext,$res,$klass.VCodec,$sz,$tbr
+            $script:formatsVideo += (New-FormatDisplay -Id $klass.Id -Label $label)
+        } elseif ($klass.AudioOnly) {
+            $label = "{0} ~{1} {2} (a-only) {3}" -f $klass.Ext, $klass.ABr, $klass.ACodec, $sz
+            $script:formatsAudio += (New-FormatDisplay -Id $klass.Id -Label $label)
+        }
+    }
+
+    # Inyecta opciones lógicas al inicio
+    # VIDEO: best (progresivo) y bestvideo
+    $script:formatsVideo = @(
+        "best — mejor calidad (progresivo si existe; si no, será adaptativo)",
+        "bestvideo — mejor video (sin audio; usar con audio)"
+    ) + $script:formatsVideo
+
+    # AUDIO: bestaudio
+    $script:formatsAudio = @(
+        "bestaudio — mejor audio disponible"
+    ) + $script:formatsAudio
+
+    return $true
+}
+
+# Devuelve el format_id a partir del texto mostrado en combo
+function Get-SelectedFormatId {
+    param([System.Windows.Forms.ComboBox]$Combo)
+    $t = ($Combo.SelectedItem | ForEach-Object { $_.ToString() })
+    if ([string]::IsNullOrWhiteSpace($t)) { return $null }
+    # Si es 'best...' lo devolvemos tal cual
+    if ($t -like "best*") { return ($t -split '\s')[0] } # "best" / "bestvideo" / "bestaudio"
+    # Caso "137 — ..."
+    return ($t -split '\s')[0]
+}
 # ================== [NUEVO] Botones de acciones por dependencia ==================
 function Create-IconButton {
     param(
@@ -583,8 +726,28 @@ $script:videoConsultado = $false
 $script:ultimaURL = $null
 $script:ultimoTitulo = $null
 $script:ultimaRutaDescarga = $null
-
 # ====== UI (REORDENADA) ======
+# ====== [NUEVO] Selectores de formato ======
+$lblVideoFmt = Create-Label -Text "Formato de VIDEO:" `
+    -Location (New-Object System.Drawing.Point(20, 165)) `
+    -Size (New-Object System.Drawing.Size(260, 20)) -Font $boldFont
+
+$cmbVideoFmt = Create-ComboBox `
+    -Location (New-Object System.Drawing.Point(20, 188)) `
+    -Size (New-Object System.Drawing.Size(260, 28))
+
+$lblAudioFmt = Create-Label -Text "Formato de AUDIO:" `
+    -Location (New-Object System.Drawing.Point(20, 220)) `
+    -Size (New-Object System.Drawing.Size(260, 20)) -Font $boldFont
+
+$cmbAudioFmt = Create-ComboBox `
+    -Location (New-Object System.Drawing.Point(20, 243)) `
+    -Size (New-Object System.Drawing.Size(260, 28))
+
+$formPrincipal.Controls.Add($lblVideoFmt)
+$formPrincipal.Controls.Add($cmbVideoFmt)
+$formPrincipal.Controls.Add($lblAudioFmt)
+$formPrincipal.Controls.Add($cmbAudioFmt)
 # Parte SUPERIOR: consulta y descarga
 $lblUrl = Create-Label -Text "URL de YouTube:" -Location (New-Object System.Drawing.Point(20, 20)) -Size (New-Object System.Drawing.Size(260, 22)) -Font $boldFont
 $txtUrl = Create-TextBox -Location (New-Object System.Drawing.Point(20, 45)) -Size (New-Object System.Drawing.Size(260, 26))
@@ -615,12 +778,12 @@ Set-DownloadButtonVisual -ok:$false
 
 # ----- [NUEVO] Zona de vista previa -----
 $lblPreview = Create-Label -Text "Vista previa:" `
-    -Location (New-Object System.Drawing.Point(20, 190)) `
+    -Location (New-Object System.Drawing.Point(20, 280)) `
     -Size (New-Object System.Drawing.Size(260, 22)) `
     -Font $boldFont
 
 $picPreview = New-Object System.Windows.Forms.PictureBox
-$picPreview.Location   = New-Object System.Drawing.Point(20, 215)
+$picPreview.Location   = New-Object System.Drawing.Point(20, 305)
 $picPreview.Size       = New-Object System.Drawing.Size(260, 146)
 $picPreview.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
 $picPreview.SizeMode   = [System.Windows.Forms.PictureBoxSizeMode]::Zoom
@@ -638,7 +801,7 @@ $formPrincipal.Controls.Add($btnDescargar)
 
 # --- Bitácora con scroll vertical 
 $txtCambios = Create-TextBox `
-    -Location (New-Object System.Drawing.Point(20, 370)) `
+    -Location (New-Object System.Drawing.Point(20, 470)) `
     -Size (New-Object System.Drawing.Size(260, 100)) `
     -BackColor ([System.Drawing.Color]::White) `
     -ForeColor ([System.Drawing.Color]::Black) `
@@ -650,13 +813,13 @@ $txtCambios = Create-TextBox `
 $txtCambios.WordWrap = $true
 $formPrincipal.Controls.Add($txtCambios)
 
-$lblTituloDeps = Create-Label -Text "Dependencias:" -Location (New-Object System.Drawing.Point(20, 490)) -Size (New-Object System.Drawing.Size(260, 24)) -Font $boldFont
-$lblYtDlp      = Create-Label -Text "yt-dlp: verificando..." -Location (New-Object System.Drawing.Point(80, 520)) -Size (New-Object System.Drawing.Size(200, 24)) -Font $defaultFont -BorderStyle ([System.Windows.Forms.BorderStyle]::FixedSingle)
-$lblFfmpeg     = Create-Label -Text "ffmpeg: verificando..." -Location (New-Object System.Drawing.Point(80, 550)) -Size (New-Object System.Drawing.Size(200, 24)) -Font $defaultFont -BorderStyle ([System.Windows.Forms.BorderStyle]::FixedSingle)
-$lblNode       = Create-Label -Text "Node.js: verificando..." -Location (New-Object System.Drawing.Point(80, 580)) -Size (New-Object System.Drawing.Size(200, 24)) -Font $defaultFont -BorderStyle ([System.Windows.Forms.BorderStyle]::FixedSingle)
-$btnExit    = Create-Button -Text "Salir"    -Location (New-Object System.Drawing.Point(20, 620)) -BackColor ([System.Drawing.Color]::Black) -ForeColor ([System.Drawing.Color]::White) -ToolTipText "Cerrar la aplicación" -Size (New-Object System.Drawing.Size(260, 35))
-$btnYtRefresh   = Create-IconButton -Text "↻" -Location (New-Object System.Drawing.Point(20, 520)) -ToolTipText "Buscar/actualizar yt-dlp"
-$btnYtUninstall = Create-IconButton -Text "✖" -Location (New-Object System.Drawing.Point(48, 520)) -ToolTipText "Desinstalar yt-dlp"
+$lblTituloDeps = Create-Label -Text "Dependencias:" -Location (New-Object System.Drawing.Point(20, 590)) -Size (New-Object System.Drawing.Size(260, 24)) -Font $boldFont
+$lblYtDlp      = Create-Label -Text "yt-dlp: verificando..." -Location (New-Object System.Drawing.Point(80, 620)) -Size (New-Object System.Drawing.Size(200, 24)) -Font $defaultFont -BorderStyle ([System.Windows.Forms.BorderStyle]::FixedSingle)
+$lblFfmpeg     = Create-Label -Text "ffmpeg: verificando..." -Location (New-Object System.Drawing.Point(80, 650)) -Size (New-Object System.Drawing.Size(200, 24)) -Font $defaultFont -BorderStyle ([System.Windows.Forms.BorderStyle]::FixedSingle)
+$lblNode       = Create-Label -Text "Node.js: verificando..." -Location (New-Object System.Drawing.Point(80, 680)) -Size (New-Object System.Drawing.Size(200, 24)) -Font $defaultFont -BorderStyle ([System.Windows.Forms.BorderStyle]::FixedSingle)
+$btnExit    = Create-Button -Text "Salir"    -Location (New-Object System.Drawing.Point(20, 720)) -BackColor ([System.Drawing.Color]::Black) -ForeColor ([System.Drawing.Color]::White) -ToolTipText "Cerrar la aplicación" -Size (New-Object System.Drawing.Size(260, 35))
+$btnYtRefresh   = Create-IconButton -Text "↻" -Location (New-Object System.Drawing.Point(20, 620)) -ToolTipText "Buscar/actualizar yt-dlp"
+$btnYtUninstall = Create-IconButton -Text "✖" -Location (New-Object System.Drawing.Point(48, 620)) -ToolTipText "Desinstalar yt-dlp"
 $btnYtRefresh.Add_Click({
     Update-Dependency -ChocoPkg "yt-dlp" -FriendlyName "yt-dlp" -CommandName "yt-dlp" -LabelRef ([ref]$lblYtDlp) -VersionArgs "--version" -Parse "FirstLine"
 })
@@ -815,6 +978,37 @@ $btnConsultar.Add_Click({
         Set-DownloadButtonVisual -ok:$true
         Show-PreviewFromUrl -Url $url -Titulo $titulo
         Write-Host ("[OK] Video consultado: {0}" -f $titulo) -ForegroundColor Green
+        # ====== [NUEVO] Listar formatos y llenar combos ======
+$cmbVideoFmt.Items.Clear()
+$cmbAudioFmt.Items.Clear()
+
+if (Fetch-Formats -Url $url) {
+    # Video
+    foreach ($i in $script:formatsVideo) { [void]$cmbVideoFmt.Items.Add($i) }
+    # Audio
+    foreach ($i in $script:formatsAudio) { [void]$cmbAudioFmt.Items.Add($i) }
+
+    # Valores por omisión
+    # Preferimos bestvideo + bestaudio; si alguien usa progresivo, puede elegir "best"
+    if ($cmbVideoFmt.Items.Count -gt 0) {
+        # Busca bestvideo; si no está, deja "best"
+        $idx = 0
+        for ($n=0; $n -lt $cmbVideoFmt.Items.Count; $n++) {
+            if ($cmbVideoFmt.Items[$n].ToString().StartsWith("bestvideo")) { $idx = $n; break }
+            if ($cmbVideoFmt.Items[$n].ToString().StartsWith("best")) { $idx = $n }
+        }
+        $cmbVideoFmt.SelectedIndex = $idx
+    }
+    if ($cmbAudioFmt.Items.Count -gt 0) {
+        $idx = 0
+        for ($n=0; $n -lt $cmbAudioFmt.Items.Count; $n++) {
+            if ($cmbAudioFmt.Items[$n].ToString().StartsWith("bestaudio")) { $idx = $n; break }
+        }
+        $cmbAudioFmt.SelectedIndex = $idx
+    }
+} else {
+    Write-Host "[WARN] No se pudieron enumerar formatos. Se usará bestvideo+bestaudio." -ForegroundColor Yellow
+}
     } else {
         $script:videoConsultado = $false; $script:ultimaURL = $null; $script:ultimoTitulo = $null
         $lblEstadoConsulta.Text = "Error al consultar la URL"; $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::Red
@@ -854,23 +1048,58 @@ $btnDescargar.Add_Click({
     $script:ultimaRutaDescarga = $fbd.SelectedPath
     Write-Host ("[DESCARGA] Carpeta seleccionada: {0}" -f $($script:ultimaRutaDescarga)) -ForegroundColor Cyan
 
-        # Construcción de argumentos:
-        $args = @(
-          "--encoding","utf-8",
-          "--progress", "--no-color", "--newline",
-          "-f","bestvideo+bestaudio","--merge-output-format","mp4",
-          "-P",$script:ultimaRutaDescarga,
-          "--progress-template","download:%(progress._percent_str)s ETA:%(progress._eta_str)s SPEED:%(progress._speed_str)s",
-          "--extractor-args","youtube:player_client=default,-web_safari,-web_embedded,-tv",
-          $script:ultimaURL
-        )
+    # ====== [NUEVO] Construcción de -f con combos ======
+    $videoSel = Get-SelectedFormatId -Combo $cmbVideoFmt
+    $audioSel = Get-SelectedFormatId -Combo $cmbAudioFmt
 
+    # Lógica:
+    # - Si $videoSel es 'best' -> progresivo si existe; ignoramos audio.
+    # - Si $videoSel es format_id PROGRESIVO -> ignoramos audio.
+    # - Si $videoSel es 'bestvideo' o VIDEO-ONLY -> combinar con audio (o bestaudio).
+    # - Si nada seleccionado -> bestvideo+bestaudio.
+    $fSelector = $null
+    $mergeExt  = "mp4"   # por omisión, para --merge-output-format
 
-        
-        Write-Host "[DESCARGA] Iniciando descarga..." -ForegroundColor Cyan
-        Write-Host ("[CMD] {0} {1}" -f $yt.Source, ($args -join ' ')) -ForegroundColor DarkGray
-        
-        $exit = Invoke-YtDlpConsoleProgress -ExePath $yt.Source -Args $args
+    if ($videoSel) {
+        if ($videoSel -eq "best") {
+            $fSelector = "best"
+        } elseif ($videoSel -eq "bestvideo") {
+            $fSelector = "bestvideo+" + ($(if ($audioSel) { $audioSel } else { "bestaudio" }))
+        } else {
+            # Es un format_id específico
+            $klass = $script:formatsIndex[$videoSel]
+            if ($klass -and $klass.Progressive) {
+                $fSelector = $videoSel
+                $mergeExt  = $klass.Ext  # opcional: respeta contenedor del progresivo
+            } elseif ($klass -and $klass.VideoOnly) {
+                $fSelector = $videoSel + "+" + ($(if ($audioSel) { $audioSel } else { "bestaudio" }))
+            } else {
+                # Desconocido: intentar combinar con audio por seguridad
+                $fSelector = $videoSel + "+" + ($(if ($audioSel) { $audioSel } else { "bestaudio" }))
+            }
+        }
+    } else {
+        # Nada seleccionado: omisión robusta
+        $fSelector = "bestvideo+bestaudio"
+    }
+
+    # Construcción de argumentos finales
+    $args = @(
+      "--encoding","utf-8",
+      "--progress","--no-color","--newline",
+      "-f",$fSelector,
+      "--merge-output-format",$mergeExt,
+      "-P",$script:ultimaRutaDescarga,
+      "--progress-template","download:%(progress._percent_str)s ETA:%(progress._eta_str)s SPEED:%(progress._speed_str)s",
+      "--extractor-args","youtube:player_client=default,-web_safari,-web_embedded,-tv",
+      $script:ultimaURL
+    )
+
+    Write-Host ("[DESCARGA] Selector de formato: -f `"{0}`"" -f $fSelector) -ForegroundColor DarkCyan
+    Write-Host ("[CMD] {0} {1}" -f $yt.Source, ($args -join ' ')) -ForegroundColor DarkGray
+
+    $exit = Invoke-YtDlpConsoleProgress -ExePath $yt.Source -Args $args
+
 
 
     if ($exit -eq 0) {
