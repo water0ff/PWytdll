@@ -44,7 +44,7 @@ $formPrincipal.MinimizeBox = $false
 $defaultFont = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Regular)
 $boldFont    = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
 $version = "Alfa 251109.1223"
-$formPrincipal.Text = "Daniel Tools v$version"
+$formPrincipal.Text = ("Daniel Tools v{0}" -f $version)
 
 Write-Host "`n=============================================" -ForegroundColor DarkCyan
 Write-Host "                   YTDLL                       " -ForegroundColor Green
@@ -382,7 +382,7 @@ $btnDescargar.Add_Click({
         return
     }
     $script:ultimaRutaDescarga = $fbd.SelectedPath
-    Write-Host "[DESCARGA] Carpeta seleccionada: $script:ultimaRutaDescarga" -ForegroundColor Cyan
+    Write-Host "[DESCARGA] Carpeta seleccionada: ${script:ultimaRutaDescarga}" -ForegroundColor Cyan
 
     # Descarga con formato por omisión y carpeta elegida
     $args = @("-f","bestvideo+bestaudio","--merge-output-format","mp4","-P",$script:ultimaRutaDescarga,$script:ultimaURL)
@@ -391,7 +391,7 @@ $btnDescargar.Add_Click({
 
     $resultado = Invoke-Capture -ExePath $yt.Source -Args $args
     if ($resultado.ExitCode -eq 0) {
-        Write-Host "[OK] Descarga finalizada: $($script:ultimoTitulo)" -ForegroundColor Green
+        Write-Host "[OK] Descarga finalizada: ${script:ultimoTitulo}" -ForegroundColor Green
         [System.Windows.Forms.MessageBox]::Show("Descarga finalizada:`n$($script:ultimoTitulo)","Completado",
             [System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Information) | Out-Null
     } else {
