@@ -145,7 +145,26 @@ function Create-TextBox {
     $textBox.WordWrap=$false; if ($UseSystemPasswordChar) { $textBox.UseSystemPasswordChar = $true }
     return $textBox
 }
+function Set-DownloadButtonVisual {
+    param([bool]$ok)
 
+    if ($ok) {
+        $btnDescargar.Enabled   = $true
+        $btnDescargar.BackColor = [System.Drawing.Color]::ForestGreen
+        $btnDescargar.ForeColor = [System.Drawing.Color]::White
+        $btnDescargar.Text      = "Descargar (listo)"
+        $toolTip.SetToolTip($btnDescargar, "Consulta válida: listo para descargar")
+    } else {
+        $btnDescargar.Enabled   = $false
+        $btnDescargar.BackColor = [System.Drawing.Color]::Black
+        $btnDescargar.ForeColor = [System.Drawing.Color]::White
+        $btnDescargar.Text      = "Descargar versión seleccionada"
+        $toolTip.SetToolTip($btnDescargar, "Descarga deshabilitada: primero 'Consultar'")
+    }
+
+    # IMPORTANTE: actualizar Tag para que el MouseLeave restaure el color correcto
+    $btnDescargar.Tag = $btnDescargar.BackColor
+}
 # ====== Consola: LOGS explícitos ======
 Write-Host "[INIT] Cargando UI..." -ForegroundColor Cyan
 
@@ -325,7 +344,9 @@ $lblEstadoConsulta = Create-Label -Text "Estado: sin consultar" -Location (New-O
 
 $btnConsultar = Create-Button -Text "Consultar" -Location (New-Object System.Drawing.Point(20, 105)) -Size (New-Object System.Drawing.Size(120, 35)) -BackColor ([System.Drawing.Color]::White) -ForeColor ([System.Drawing.Color]::Black) -ToolTipText "Obtener información del video"
 $btnDescargar = Create-Button -Text "Descargar versión seleccionada" -Location (New-Object System.Drawing.Point(20, 145)) -Size (New-Object System.Drawing.Size(260, 35)) -BackColor ([System.Drawing.Color]::Black) -ForeColor ([System.Drawing.Color]::White) -ToolTipText "Descargar usando bestvideo+bestaudio -> mp4"
-$btnDescargar.Enabled = $false
+
+Set-DownloadButtonVisual -ok:$false
+
 
 $formPrincipal.Controls.Add($lblUrl)
 $formPrincipal.Controls.Add($txtUrl)
@@ -481,12 +502,12 @@ $btnConsultar.Add_Click({
     if ($res.ExitCode -eq 0 -and $titulo) {
         $script:videoConsultado = $true; $script:ultimaURL = $url; $script:ultimoTitulo = $titulo
         $lblEstadoConsulta.Text = ("Consultado: {0}" -f $titulo); $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::ForestGreen
-        $btnDescargar.Enabled = $true
+        Set-DownloadButtonVisual -ok:$true
         Write-Host ("[OK] Video consultado: {0}" -f $titulo) -ForegroundColor Green
     } else {
         $script:videoConsultado = $false; $script:ultimaURL = $null; $script:ultimoTitulo = $null
         $lblEstadoConsulta.Text = "Error al consultar la URL"; $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::Red
-        $btnDescargar.Enabled = $false
+        Set-DownloadButtonVisual -ok:$false
         Write-Host "[ERROR] No se pudo consultar el video. STDOUT/ERR:" -ForegroundColor Red
         Write-Host $res.StdOut
         Write-Host $res.StdErr
@@ -523,12 +544,14 @@ $btnDescargar.Add_Click({
 
         # ...tus args...
         $args = @(
-            "--newline","--no-color","--progress",
-            "-f","bestvideo+bestaudio","--merge-output-format","mp4",
-            "-P",$script:ultimaRutaDescarga,
-            "--progress-template","download:%(progress._percent_str)s ETA:%(progress._eta_str)s SPEED:%(progress._speed_str)s",
-            $script:ultimaURL
+          "--newline","--no-color","--progress",
+          "-f","bestvideo+bestaudio","--merge-output-format","mp4",
+          "-P",$script:ultimaRutaDescarga,
+          "--progress-template","download:%(progress._percent_str)s ETA:%(progress._eta_str)s SPEED:%(progress._speed_str)s",
+          "--extractor-args","youtube:player_client=tv,mweb",  # <-- probar clientes alternos
+          $script:ultimaURL
         )
+
         
         Write-Host "[DESCARGA] Iniciando descarga..." -ForegroundColor Cyan
         Write-Host ("[CMD] {0} {1}" -f $yt.Source, ($args -join ' ')) -ForegroundColor DarkGray
