@@ -373,6 +373,87 @@ function Invoke-Capture {
     $p.WaitForExit()
     return [pscustomobject]@{ ExitCode = $p.ExitCode; StdOut = $stdout; StdErr = $stderr }
 }
+# Invoca yt-dlp leyendo progreso en tiempo real y actualiza consola + barra
+function Invoke-YtDlpWithProgress {
+    param(
+        [Parameter(Mandatory=$true)][string]$ExePath,
+        [Parameter(Mandatory=$true)][string[]]$Args,
+        [Parameter()][int]$TotalSteps = 100
+    )
+
+    # Creamos barra
+    $progressForm = Show-ProgressBar
+    $currentPct = 0
+
+    # Preparar proceso
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = $ExePath
+    $psi.Arguments = (($Args | ForEach-Object { if ($_ -match '\s') { '"{0}"' -f $_ } else { $_ } }) -join ' ')
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError  = $true
+    $psi.UseShellExecute = $false
+    $psi.CreateNoWindow  = $true
+
+    $p = New-Object System.Diagnostics.Process
+    $p.StartInfo = $psi
+
+    # Función local para parsear líneas y extraer %/ETA/velocidad
+    $updateFromLine = {
+        param($line)
+        if ([string]::IsNullOrWhiteSpace($line)) { return }
+
+        # 1) Formato con progress-template: "download: 12.3% ETA:00:10 SPEED:1.23MiB/s"
+        $m = [regex]::Match($line, 'download:\s*(?<pct>\d+(?:\.\d+)?)%\s*(?:ETA:(?<eta>\S+))?\s*(?:SPEED:(?<spd>.+))?')
+        if (-not $m.Success) {
+            # 2) Formato clásico de yt-dlp: "[download]  12.3% of ... at 1.2MiB/s ETA 00:10"
+            $m2 = [regex]::Match($line, '(\d+(?:\.\d+)?)%\s+of.*?at\s+(?<spd>\S+)\s+ETA\s+(?<eta>\S+)')
+            if ($m2.Success) {
+                $pct = [int][math]::Min(100,[math]::Round([double]$m2.Groups[1].Value))
+                $eta = $m2.Groups['eta'].Value
+                $spd = $m2.Groups['spd'].Value
+            } else {
+                # 3) A veces solo viene el %: "[download]  34.5% ..."
+                $m3 = [regex]::Match($line, '(\d+(?:\.\d+)?)%')
+                if (-not $m3.Success) { return }
+                $pct = [int][math]::Min(100,[math]::Round([double]$m3.Groups[1].Value))
+                $eta = ""
+                $spd = ""
+            }
+        } else {
+            $pct = [int][math]::Min(100,[math]::Round([double]$m.Groups['pct'].Value))
+            $eta = $m.Groups['eta'].Value
+            $spd = $m.Groups['spd'].Value
+        }
+
+        # Actualiza consola en la MISMA línea
+        $msg = ("`r[PROGRESO] {0,3}%  ETA {1,-8}  {2,-12}" -f $pct, $eta, $spd).TrimEnd()
+        Write-Host $msg -NoNewline
+
+        # Actualiza barra
+        if ($pct -ne $currentPct) {
+            $currentPct = $pct
+            Update-ProgressBar -ProgressForm $progressForm -CurrentStep $currentPct -TotalSteps 100
+        }
+    }
+
+    # Suscribir manejo de salida en vivo (yt-dlp suele sacar progreso a STDERR)
+    $p.add_OutputDataReceived({ param($s,$e) if ($e.Data) { & $updateFromLine $e.Data } })
+    $p.add_ErrorDataReceived( { param($s,$e) if ($e.Data) { & $updateFromLine $e.Data } })
+
+    [void]$p.Start()
+    $p.BeginOutputReadLine()
+    $p.BeginErrorReadLine()
+
+    $p.WaitForExit()
+
+    # Salto de línea para no dejar el cursor a mitad
+    Write-Host ""
+
+    # Cerrar barra
+    Close-ProgressBar $progressForm
+
+    return $p.ExitCode
+}
 
 # ====== Eventos ======
 
@@ -411,6 +492,7 @@ $btnConsultar.Add_Click({
 })
 
 # Descargar (pregunta DÓNDE en entorno visual, y loguea en consola)
+# Descargar (pregunta DÓNDE, muestra progreso en consola + barra)
 $btnDescargar.Add_Click({
     if (-not $script:videoConsultado -or [string]::IsNullOrWhiteSpace($script:ultimaURL)) {
         [System.Windows.Forms.MessageBox]::Show("Primero usa 'Consultar' para validar la URL.","Requisito: Consultar",
@@ -435,24 +517,32 @@ $btnDescargar.Add_Click({
     $script:ultimaRutaDescarga = $fbd.SelectedPath
     Write-Host ("[DESCARGA] Carpeta seleccionada: {0}" -f $($script:ultimaRutaDescarga)) -ForegroundColor Cyan
 
-    # Descarga con formato por omisión y carpeta elegida
-    $args = @("-f","bestvideo+bestaudio","--merge-output-format","mp4","-P",$script:ultimaRutaDescarga,$script:ultimaURL)
-    Write-Host "[DESCARGA] Iniciando descarga..." -ForegroundColor Cyan
-    Write-Host ("[CMD] yt-dlp {0}" -f ($args -join ' ')) -ForegroundColor DarkGray
+    # Args de descarga con progreso amigable
+    $args = @(
+        "--newline","--no-color",
+        "-f","bestvideo+bestaudio","--merge-output-format","mp4",
+        "-P",$script:ultimaRutaDescarga,
+        # plantilla clara; si no es soportada, igual parseamos el formato clásico
+        "--progress-template","download:%(progress._percent_str)s ETA:%(progress._eta_str)s SPEED:%(progress._speed_str)s",
+        $script:ultimaURL
+    )
 
-    $resultado = Invoke-Capture -ExePath $yt.Source -Args $args
-    if ($resultado.ExitCode -eq 0) {
+    Write-Host "[DESCARGA] Iniciando descarga..." -ForegroundColor Cyan
+    Write-Host ("[CMD] {0} {1}" -f $yt.Source, ($args -join ' ')) -ForegroundColor DarkGray
+
+    $exit = Invoke-YtDlpWithProgress -ExePath $yt.Source -Args $args
+
+    if ($exit -eq 0) {
         Write-Host ("[OK] Descarga finalizada: {0}" -f $($script:ultimoTitulo)) -ForegroundColor Green
         [System.Windows.Forms.MessageBox]::Show(("Descarga finalizada:`n{0}" -f $($script:ultimoTitulo)),"Completado",
             [System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Information) | Out-Null
     } else {
-        Write-Host ("[ERROR] Falló la descarga. Código: {0}" -f $($resultado.ExitCode)) -ForegroundColor Red
-        Write-Host $resultado.StdOut
-        Write-Host $resultado.StdErr
-        [System.Windows.Forms.MessageBox]::Show(("Falló la descarga. Revisa conexión/URL/DRM. Detalle:`n{0}" -f $($resultado.StdErr)),"Error de descarga",
+        Write-Host ("[ERROR] Falló la descarga. Código: {0}" -f $exit) -ForegroundColor Red
+        [System.Windows.Forms.MessageBox]::Show("Falló la descarga. Revisa conexión/URL/DRM.","Error de descarga",
             [System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Error) | Out-Null
     }
 })
+
 
 # Botón Consola
 $btnConsola.Add_Click({
