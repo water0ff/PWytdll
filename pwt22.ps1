@@ -1,34 +1,3 @@
-No me muestra en consola el avance de descarga. Ayudame a que el codigo que me vayas dando siga siendo compatible con la mayoria de powershell.
-
-
-Consola:
-El usuario aceptó los riesgos. Corriendo programa...
-
-=============================================
-                   YTDLL
-              Versión: vAlfa 251109.1300
-=============================================
-[INIT] Cargando UI...
-[CHECK] Verificando Chocolatey...
-[OK] Chocolatey ya está instalado.
-[CHECK] Validando dependencias yt-dlp y ffmpeg...
-[CHECK] Verificando yt-dlp...
-[OK] yt-dlp detectado: 2025.11.03.233024
-[CHECK] Verificando ffmpeg...
-[OK] ffmpeg detectado: ffmpeg version 8.0-essentials_build-www.gyan.dev Copyright (c) 2000-2025 the FFmpeg developers
-[READY] Dependencias verificadas.
-[CONSULTA] Consultando URL: https://www.youtube.com/shorts/6OQ3Z2sEC9E
-[OK] Video consultado: B┴ILELE
-[DESCARGA] Carpeta seleccionada: C:\Users\water\Desktop
-[DESCARGA] Iniciando descarga...
-[CMD] C:\ProgramData\chocolatey\bin\yt-dlp.exe --newline --no-color --progress -f bestvideo+bestaudio --merge-output-format mp4 -P C:\Users\water\Desktop --progress-template download:%(progress._percent_str)s ETA:%(progress._eta_str)s SPEED:%(progress._speed_str)s https://www.youtube.com/shorts/6OQ3Z2sEC9E
-
-[OK] Descarga finalizada: B┴ILELE
-[EXIT] Cerrando aplicación por solicitud del usuario.
-Cancel
-PS C:\Users\water>
-
-
 # Crear la carpeta 'C:\Temp' si no existe
 if (!(Test-Path -Path "C:\Temp")) {
     New-Item -ItemType Directory -Path "C:\Temp" | Out-Null
