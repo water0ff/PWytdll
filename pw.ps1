@@ -33,7 +33,7 @@ Write-Host "El usuario aceptó los riesgos. Corriendo programa..." -ForegroundCo
     [System.Windows.Forms.Application]::EnableVisualStyles()
 # Crear el formulario
     $formPrincipal = New-Object System.Windows.Forms.Form
-    $formPrincipal.Size = New-Object System.Drawing.Size(1000, 600)  # Aumentado de 720x400
+    $formPrincipal.Size = New-Object System.Drawing.Size(300, 600)
     $formPrincipal.StartPosition = "CenterScreen"
     $formPrincipal.BackColor = [System.Drawing.Color]::White
     $formPrincipal.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::FixedDialog
@@ -223,26 +223,6 @@ function Create-TextBox {
     }
     return $textBox
 }
-#COMIENZA EL PROGRAMA ----------------------------------
-$global:lastReportedPct = -1  # Añadir al inicio del script
-$tabControl = New-Object System.Windows.Forms.TabControl
-    $tabControl.Size = New-Object System.Drawing.Size(990, 515)    # Original: 710x315
-    $tabControl.Location = New-Object System.Drawing.Point(5, 5)   # Pequeño margen
-    $tabAplicaciones = New-Object System.Windows.Forms.TabPage
-    $tabAplicaciones.Text = "Aplicaciones"
-    $tabProSql = New-Object System.Windows.Forms.TabPage
-    $tabProSql.Text = "Base de datos"
-    $tabProSql.AutoScroll = $true  # Habilitar scrollbar si el contenido excede el área
-    $tabControl.TabPages.Add($tabAplicaciones)
-    $tabControl.TabPages.Add($tabProSql)
-# Capturar estilos originales
-$script:originalForeColor = $dgvResults.DefaultCellStyle.ForeColor
-$script:originalHeaderBackColor = $dgvResults.ColumnHeadersDefaultCellStyle.BackColor
-$script:originalAutoSizeMode = $dgvResults.AutoSizeColumnsMode
-#FUERA DEL TAB
-    $btnExit = Create-Button -Text "Salir" -Location (New-Object System.Drawing.Point(350, 525)) `
-                                -Size (New-Object System.Drawing.Size(500, 30)) `
-                                -BackColor ([System.Drawing.Color]::FromArgb(255, 169, 169, 169))
 # Función para manejar MouseEnter y cambiar el color
 $changeColorOnHover = {
     param($sender, $eventArgs)
