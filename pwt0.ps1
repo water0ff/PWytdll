@@ -59,7 +59,7 @@ $formPrincipal.MaximizeBox = $false
 $formPrincipal.MinimizeBox = $false
 $defaultFont = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Regular)
 $boldFont    = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
-                                                                                                        $version = "Alfa 251109.1300"
+                                                                                                        $version = "Alfa 251109.1500"
 $formPrincipal.Text = ("YTDLL v{0}" -f $version)
 
 Write-Host "`n=============================================" -ForegroundColor DarkCyan
@@ -725,11 +725,6 @@ function Ensure-Tool {
     }
 }
 
-
-# ====== Estado de consulta ======
-$script:videoConsultado = $false
-$script:ultimaURL = $null
-$script:ultimoTitulo = $null
 # ====== Estado de consulta ======
 $script:videoConsultado   = $false
 $script:ultimaURL         = $null
@@ -801,35 +796,25 @@ $btnPickDestino = Create-IconButton -Text "📁" `
     -Location (New-Object System.Drawing.Point(346, 183)) `
     -ToolTipText "Cambiar carpeta de destino"
 
-# Evento del botón: abre FolderBrowserDialog partiendo del valor actual
-# Usar la carpeta configurada (sin preguntar)
-$dest = $script:ultimaRutaDescarga
-if ([string]::IsNullOrWhiteSpace($dest)) {
-    $dest = [Environment]::GetFolderPath('Desktop')
-    $script:ultimaRutaDescarga = $dest
-    $txtDestino.Text = $dest
-}
-if (-not (Test-Path -LiteralPath $dest)) {
-    try {
-        New-Item -ItemType Directory -Path $dest -Force | Out-Null
-        Write-Host ("[DESTINO] Carpeta creada: {0}" -f $dest) -ForegroundColor Cyan
-    } catch {
-        Write-Host ("[ERROR] No se pudo preparar la carpeta destino: {0}" -f $_) -ForegroundColor Red
-        [System.Windows.Forms.MessageBox]::Show(
-            "No se pudo preparar la carpeta de destino. Verifica permisos.",
-            "Error de destino",
-            [System.Windows.Forms.MessageBoxButtons]::OK,
-            [System.Windows.Forms.MessageBoxIcon]::Error
-        ) | Out-Null
-        return
-    }
-}
-Write-Host ("[DESCARGA] Carpeta destino: {0}" -f $dest) -ForegroundColor Cyan
-
-
 $formPrincipal.Controls.Add($lblDestino)
 $formPrincipal.Controls.Add($txtDestino)
 $formPrincipal.Controls.Add($btnPickDestino)
+
+$btnPickDestino.Add_Click({
+    $fbd = New-Object System.Windows.Forms.FolderBrowserDialog
+    $fbd.Description  = "Selecciona la carpeta de descarga"
+    $fbd.SelectedPath = if ([string]::IsNullOrWhiteSpace($script:ultimaRutaDescarga)) {
+        [Environment]::GetFolderPath('Desktop')
+    } else {
+        $script:ultimaRutaDescarga
+    }
+
+    if ($fbd.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+        $script:ultimaRutaDescarga = $fbd.SelectedPath
+        $txtDestino.Text = $script:ultimaRutaDescarga
+        Write-Host ("[DESTINO] Carpeta configurada: {0}" -f $script:ultimaRutaDescarga) -ForegroundColor Cyan
+    }
+})
 
 # ----- [NUEVO] Zona de vista previa -----
 $lblPreview = Create-Label -Text "Vista previa:" `
@@ -1088,16 +1073,30 @@ $btnDescargar.Add_Click({
         return
     }
 
-    # Preguntar DONDE guardar (GUI) y escribir la ruta en consola
-    $fbd = New-Object System.Windows.Forms.FolderBrowserDialog
-    $fbd.Description = "Selecciona la carpeta de descarga"
-    $fbd.SelectedPath = "C:\Temp"  # valor por defecto seguro
-    if ($fbd.ShowDialog() -ne [System.Windows.Forms.DialogResult]::OK) {
-        Write-Host "[CANCEL] Usuario canceló selección de carpeta." -ForegroundColor Yellow
-        return
+    # Usar la carpeta configurada (sin preguntar)
+    $dest = $script:ultimaRutaDescarga
+    if ([string]::IsNullOrWhiteSpace($dest)) {
+        $dest = [Environment]::GetFolderPath('Desktop')
+        $script:ultimaRutaDescarga = $dest
+        try { $txtDestino.Text = $dest } catch {}
     }
-    $script:ultimaRutaDescarga = $fbd.SelectedPath
-    Write-Host ("[DESCARGA] Carpeta seleccionada: {0}" -f $($script:ultimaRutaDescarga)) -ForegroundColor Cyan
+    if (-not (Test-Path -LiteralPath $dest)) {
+        try {
+            New-Item -ItemType Directory -Path $dest -Force | Out-Null
+            Write-Host ("[DESTINO] Carpeta creada: {0}" -f $dest) -ForegroundColor Cyan
+        } catch {
+            Write-Host ("[ERROR] No se pudo preparar la carpeta destino: {0}" -f $_) -ForegroundColor Red
+            [System.Windows.Forms.MessageBox]::Show(
+                "No se pudo preparar la carpeta de destino. Verifica permisos.",
+                "Error de destino",
+                [System.Windows.Forms.MessageBoxButtons]::OK,
+                [System.Windows.Forms.MessageBoxIcon]::Error
+            ) | Out-Null
+            return
+        }
+    }
+    Write-Host ("[DESCARGA] Carpeta destino: {0}" -f $dest) -ForegroundColor Cyan
+
 
     # ====== [NUEVO] Construcción de -f con combos ======
     $videoSel = Get-SelectedFormatId -Combo $cmbVideoFmt
@@ -1142,7 +1141,7 @@ $btnDescargar.Add_Click({
       "--progress","--no-color","--newline",
       "-f",$fSelector,
       "--merge-output-format",$mergeExt,
-      "-P",$script:ultimaRutaDescarga,
+      "-P",$dest,
       "--progress-template","download:%(progress._percent_str)s ETA:%(progress._eta_str)s SPEED:%(progress._speed_str)s",
       "--extractor-args","youtube:player_client=default,-web_safari,-web_embedded,-tv",
       $script:ultimaURL
@@ -1182,6 +1181,7 @@ $formPrincipal.Add_Shown({
         Ensure-Tool -CommandName "node"   -FriendlyName "Node.js" -ChocoPkg "nodejs-lts" -LabelRef ([ref]$lblNode) -VersionArgs "--version"
         Write-Host "[READY] Dependencias verificadas." -ForegroundColor Green
         Refresh-GateByDeps   # <--- NUEVO: bloquea/desbloquea botones según deps
+        try { $txtDestino.Text = $script:ultimaRutaDescarga } catch {}
 
     } catch {
         Write-Host ("[ERROR] Error al validar dependencias: {0}" -f $_) -ForegroundColor Red
