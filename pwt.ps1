@@ -41,7 +41,6 @@ Write-Host "[OK] El usuario aceptó los riesgos. Corriendo programa..." -Foregro
 $global:defaultInstructions = @"
 ----- CAMBIOS -----
 - Primer versión
-- 2
 "@
 
 # --- Cargar WinForms ---
