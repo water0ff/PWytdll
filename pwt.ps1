@@ -542,16 +542,15 @@ $btnDescargar.Add_Click({
     $script:ultimaRutaDescarga = $fbd.SelectedPath
     Write-Host ("[DESCARGA] Carpeta seleccionada: {0}" -f $($script:ultimaRutaDescarga)) -ForegroundColor Cyan
 
-        # ...tus args...
+        # Construcción de argumentos para yt-dlp (estable, sin mweb)
         $args = @(
           "--newline","--no-color","--progress",
           "-f","bestvideo+bestaudio","--merge-output-format","mp4",
           "-P",$script:ultimaRutaDescarga,
           "--progress-template","download:%(progress._percent_str)s ETA:%(progress._eta_str)s SPEED:%(progress._speed_str)s",
-          "--extractor-args","youtube:player_client=tv,mweb",  # <-- probar clientes alternos
+          "--extractor-args","youtube:player_client=default,android",  # <- adiós mweb
           $script:ultimaURL
         )
-
         
         Write-Host "[DESCARGA] Iniciando descarga..." -ForegroundColor Cyan
         Write-Host ("[CMD] {0} {1}" -f $yt.Source, ($args -join ' ')) -ForegroundColor DarkGray
