@@ -3,264 +3,260 @@
 # YT-DLP GUI Bootstrap - Daniel Tools
 # ============================================
 
-# --- Config inicial y carpeta temporal ---
-Write-Host "`n[INFO] Iniciando asistente..." -ForegroundColor Cyan
-
-# Crear C:\Temp y C:\Temp\icos
-if (!(Test-Path -Path "C:\Temp")) {
-    New-Item -ItemType Directory -Path "C:\Temp" | Out-Null
-    Write-Host "[OK] Carpeta 'C:\Temp' creada." -ForegroundColor Green
-} else {
-    Write-Host "[OK] Carpeta 'C:\Temp' existente." -ForegroundColor DarkGreen
-}
-$iconDir = "C:\Temp\icos"
-if (-not (Test-Path $iconDir)) {
-    New-Item -ItemType Directory -Path $iconDir -Force | Out-Null
-    Write-Host "[OK] Carpeta de íconos creada: $iconDir" -ForegroundColor Green
-} else {
-    Write-Host "[OK] Carpeta de íconos existente: $iconDir" -ForegroundColor DarkGreen
-}
-
-# --- Advertencia ALFA ---
-Write-Host "`n==============================================" -ForegroundColor Red
-Write-Host "           ADVERTENCIA DE VERSIÓN ALFA          " -ForegroundColor Red
-Write-Host "==============================================" -ForegroundColor Red
-Write-Host "Esta aplicación se encuentra en fase de desarrollo ALFA.`n" -ForegroundColor Yellow
-Write-Host "¿Acepta ejecutar esta aplicación bajo su propia responsabilidad? (Y/N)" -ForegroundColor Yellow
-$response = $Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown')
-while ($response.Character -notin 'Y','N') {
-    $response = $Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown')
-}
-if ($response.Character -ne 'Y') {
-    Write-Host "`n[ABORT] Ejecución cancelada por el usuario.`n" -ForegroundColor Red
-    exit
-}
-Clear-Host
-Write-Host "[OK] El usuario aceptó los riesgos. Corriendo programa..." -ForegroundColor Green
-
-# --- Variables globales ---
-$global:defaultInstructions = @"
------ CAMBIOS -----
-- Primer versión
-"@
-
-# --- Cargar WinForms ---
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 [System.Windows.Forms.Application]::EnableVisualStyles()
 
-# --- Versionado y fuentes ---
+# --- Utils de consola
+function Log([string]$msg, [ConsoleColor]$color = [ConsoleColor]::White) {
+    Write-Host $msg -ForegroundColor $color
+}
+
+# --- Crear carpetas base
+if (!(Test-Path -Path "C:\Temp")) { New-Item -ItemType Directory -Path "C:\Temp" | Out-Null; Log "[OK] Carpeta 'C:\Temp' creada." Green } else { Log "[OK] Carpeta 'C:\Temp' existente." DarkGreen }
+$iconDir = "C:\Temp\icos"
+if (-not (Test-Path $iconDir)) { New-Item -ItemType Directory -Path $iconDir -Force | Out-Null; Log "[OK] Carpeta de íconos creada: $iconDir" Green } else { Log "[OK] Carpeta de íconos existente: $iconDir" DarkGreen }
+
+# --- Advertencia ALFA
+Log "`n==============================================" Red
+Log "           ADVERTENCIA DE VERSIÓN ALFA          " Red
+Log "==============================================" Red
+Log "Esta aplicación se encuentra en fase de desarrollo ALFA.`n" Yellow
+Log "¿Acepta ejecutar esta aplicación bajo su propia responsabilidad? (Y/N)" Yellow
+$response = $Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown')
+while ($response.Character -notin 'Y','N') { $response = $Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown') }
+if ($response.Character -ne 'Y') { Log "`n[ABORT] Ejecución cancelada por el usuario.`n" Red; exit }
+Clear-Host
+Log "[OK] El usuario aceptó los riesgos. Corriendo programa..." Green
+
+# --- Variables globales
+$global:defaultInstructions = @"
+----- CAMBIOS -----
+- Primer versión
+"@
 $version     = "Alfa 251109.1123"
 $defaultFont = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Regular)
 $boldFont    = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
 
-Write-Host "`n=============================================" -ForegroundColor DarkCyan
-Write-Host "                   YTDLL                       " -ForegroundColor Green
-Write-Host "              Versión: v$($version)               " -ForegroundColor Green
-Write-Host "=============================================" -ForegroundColor DarkCyan
+Log "`n=============================================" DarkCyan
+Log "                   YTDLL                       " Green
+Log "              Versión: v$($version)               " Green
+Log "=============================================" DarkCyan
 
-# --- Utilidades UI básicas ---
+# --- UI helpers
 function Create-Form {
-    param(
-        [Parameter(Mandatory=$true)][string]$Title,
-        [System.Drawing.Size]$Size = (New-Object System.Drawing.Size(300, 600)),
-        [System.Windows.Forms.FormStartPosition]$StartPosition = [System.Windows.Forms.FormStartPosition]::CenterScreen,
-        [System.Windows.Forms.FormBorderStyle]$FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::FixedDialog,
-        [bool]$MaximizeBox = $false, [bool]$MinimizeBox = $false,
-        [bool]$TopMost = $false, [bool]$ControlBox = $true,
-        [System.Drawing.Color]$BackColor = [System.Drawing.Color]::White
-    )
-    $form = New-Object System.Windows.Forms.Form
-    $form.Text = $Title
-    $form.Size = $Size
-    $form.StartPosition = $StartPosition
-    $form.FormBorderStyle = $FormBorderStyle
-    $form.MaximizeBox = $MaximizeBox
-    $form.MinimizeBox = $MinimizeBox
-    $form.TopMost = $TopMost
-    $form.ControlBox = $ControlBox
-    $form.BackColor = $BackColor
-    return $form
+    param([string]$Title,[System.Drawing.Size]$Size=(New-Object System.Drawing.Size(340, 360)))
+    $f = New-Object System.Windows.Forms.Form
+    $f.Text=$Title; $f.Size=$Size; $f.StartPosition='CenterScreen'
+    $f.FormBorderStyle='FixedDialog'; $f.MaximizeBox=$false; $f.MinimizeBox=$false
+    $f.BackColor=[System.Drawing.Color]::White
+    return $f
 }
 function Create-Label {
-    param(
-        [string]$Text, [System.Drawing.Point]$Location,
-        [System.Drawing.Size]$Size = (New-Object System.Drawing.Size(260, 100)),
-        [System.Drawing.Color]$ForeColor = [System.Drawing.Color]::Black,
-        [System.Drawing.Font]$Font = $defaultFont,
-        [System.Windows.Forms.BorderStyle]$BorderStyle = [System.Windows.Forms.BorderStyle]::None,
-        [System.Drawing.ContentAlignment]$TextAlign = [System.Drawing.ContentAlignment]::TopLeft
-    )
-    $label = New-Object System.Windows.Forms.Label
-    $label.Text = $Text
-    $label.Location = $Location
-    $label.Size = $Size
-    $label.ForeColor = $ForeColor
-    $label.Font = $Font
-    $label.BorderStyle = $BorderStyle
-    $label.TextAlign = $TextAlign
-    $label.AutoSize = $false
-    $label.UseCompatibleTextRendering = $true
-    return $label
+    param([string]$Text,[int]$x,[int]$y,[int]$w=280,[int]$h=24,[System.Drawing.Font]$Font=$defaultFont)
+    $l = New-Object System.Windows.Forms.Label
+    $l.Text=$Text; $l.Location=New-Object System.Drawing.Point($x,$y); $l.Size=New-Object System.Drawing.Size($w,$h)
+    $l.Font=$Font; $l.AutoSize=$false; $l.UseCompatibleTextRendering=$true
+    return $l
 }
 function Create-Button {
-    param(
-        [string]$Text, [System.Drawing.Point]$Location,
-        [System.Drawing.Size]$Size = (New-Object System.Drawing.Size(120, 35)),
-        [System.Drawing.Color]$BackColor = [System.Drawing.Color]::White,
-        [System.Drawing.Color]$ForeColor = [System.Drawing.Color]::Black,
-        [System.Drawing.Font]$Font = $defaultFont
-    )
-    $btn = New-Object System.Windows.Forms.Button
-    $btn.Text = $Text
-    $btn.Location = $Location
-    $btn.Size = $Size
-    $btn.BackColor = $BackColor
-    $btn.ForeColor = $ForeColor
-    $btn.Font = $Font
-    return $btn
+    param([string]$Text,[int]$x,[int]$y,[int]$w=120,[int]$h=35)
+    $b = New-Object System.Windows.Forms.Button
+    $b.Text=$Text; $b.Location=New-Object System.Drawing.Point($x,$y); $b.Size=New-Object System.Drawing.Size($w,$h)
+    $b.Font=$defaultFont
+    return $b
 }
 
-# --- Progreso (opcional, para instalaciones) ---
+# --- Progreso simple (para installs/updates vía choco)
 function Show-ProgressBar {
-    $sizeProgress = New-Object System.Drawing.Size(400, 150)
-    $formProgress = Create-Form -Title "Progreso" -Size $sizeProgress -TopMost $true -ControlBox $false
-    $progressBar = New-Object System.Windows.Forms.ProgressBar
-    $progressBar.Size = New-Object System.Drawing.Size(360, 20)
-    $progressBar.Location = New-Object System.Drawing.Point(10, 50)
-    $progressBar.Style = [System.Windows.Forms.ProgressBarStyle]::Continuous
-    $progressBar.Maximum = 100
-    $type = $progressBar.GetType()
-    $flags = [Reflection.BindingFlags]::NonPublic -bor [Reflection.BindingFlags]::Instance
-    $type.GetField("DoubleBuffered", $flags).SetValue($progressBar, $true)
-
-    $lbl = New-Object System.Windows.Forms.Label
-    $lbl.Location = New-Object System.Drawing.Point(10, 20)
-    $lbl.Size = New-Object System.Drawing.Size(360, 20)
-    $lbl.Text = "0% Completado"
-    $lbl.TextAlign = [System.Drawing.ContentAlignment]::MiddleCenter
-
-    $formProgress.Controls.Add($progressBar)
-    $formProgress.Controls.Add($lbl)
-    $formProgress | Add-Member -MemberType NoteProperty -Name ProgressBar -Value $progressBar -Force
-    $formProgress | Add-Member -MemberType NoteProperty -Name Label -Value $lbl -Force
-
-    $formProgress.Show()
-    return $formProgress
+    $form = Create-Form -Title "Progreso"
+    $form.Size = New-Object System.Drawing.Size(420,150)
+    $bar = New-Object System.Windows.Forms.ProgressBar
+    $bar.Location=New-Object System.Drawing.Point(20,60); $bar.Size=New-Object System.Drawing.Size(360,20)
+    $bar.Style=[System.Windows.Forms.ProgressBarStyle]::Continuous; $bar.Maximum=100
+    $lbl = Create-Label -Text "0% Completado" -x 20 -y 20 -w 360 -h 24
+    $lbl.TextAlign=[System.Drawing.ContentAlignment]::MiddleCenter
+    $form.Controls.AddRange(@($lbl,$bar))
+    $form | Add-Member NoteProperty ProgressBar $bar -Force
+    $form | Add-Member NoteProperty Label $lbl -Force
+    $form.TopMost=$true; $form.ControlBox=$false
+    $form.Show(); return $form
 }
-function Update-ProgressBar {
-    param($ProgressForm, $CurrentStep, $TotalSteps)
-    $percent = [math]::Round(($CurrentStep / $TotalSteps) * 100)
-    if (-not $ProgressForm.IsDisposed) {
-        $ProgressForm.ProgressBar.Value = $percent
-        $ProgressForm.Label.Text = "$percent% Completado"
-        [System.Windows.Forms.Application]::DoEvents()
-    }
-}
-function Close-ProgressBar { param($ProgressForm) $ProgressForm.Close() }
+function Update-ProgressBar($pf,$curr,$total){ $p=[math]::Round(($curr/$total)*100); if(-not $pf.IsDisposed){$pf.ProgressBar.Value=$p; $pf.Label.Text="$p% Completado"; [System.Windows.Forms.Application]::DoEvents() } }
+function Close-ProgressBar($pf){ if($pf -and -not $pf.IsDisposed){ $pf.Close() } }
 
-# --- Instalación de Chocolatey (tu función) ---
+# --- Chocolatey
 function Install-Chocolatey {
-    Write-Host "[CHOCOLATEY] Iniciando instalación..." -ForegroundColor Cyan
-    try {
+    try{
+        Log "[CHOCOLATEY] Iniciando instalación..." Cyan
         Set-ExecutionPolicy Bypass -Scope Process -Force
         [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
         iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
-        Write-Host "[CHOCOLATEY] Instalación completada." -ForegroundColor Green
-
-        Write-Host "[CHOCOLATEY] Configurando cacheLocation..." -ForegroundColor Yellow
         choco config set cacheLocation C:\Choco\cache | Out-Null
-        Write-Host "[CHOCOLATEY] Configuración completada." -ForegroundColor Green
+        Log "[CHOCOLATEY] Instalación y configuración completadas." Green
         return $true
     } catch {
-        Write-Host "[ERROR] Falló la instalación de Chocolatey: $_" -ForegroundColor Red
+        Log "[ERROR] Falló la instalación de Chocolatey: $_" Red
         return $false
     }
 }
-
-# --- Verificar/Instalar Chocolatey ---
 function Ensure-Chocolatey {
-    if (Get-Command choco -ErrorAction SilentlyContinue) {
-        Write-Host "[OK] Chocolatey ya está instalado." -ForegroundColor Green
-        return $true
-    }
-
-    Write-Host "[WARN] Chocolatey no está instalado." -ForegroundColor Yellow
-    $resp = [System.Windows.Forms.MessageBox]::Show(
-        "Chocolatey no está instalado y es necesario para continuar." + [Environment]::NewLine +
-        "¿Desea instalarlo ahora?",
-        "Chocolatey requerido",
-        [System.Windows.Forms.MessageBoxButtons]::YesNo,
-        [System.Windows.Forms.MessageBoxIcon]::Question
-    )
-    if ($resp -eq [System.Windows.Forms.DialogResult]::No) {
-        Write-Host "[ABORT] El usuario rechazó instalar Chocolatey." -ForegroundColor Red
-        return $false
-    }
-
-    # (Opcional) barra de progreso visual
-    $p = Show-ProgressBar
-    Update-ProgressBar -ProgressForm $p -CurrentStep 1 -TotalSteps 5
-    $ok = Install-Chocolatey
-    Update-ProgressBar -ProgressForm $p -CurrentStep 5 -TotalSteps 5
-    Close-ProgressBar -ProgressForm $p
-
-    if (-not $ok) {
-        [System.Windows.Forms.MessageBox]::Show(
-            "Error al instalar Chocolatey. Por favor, inténtelo manualmente.",
-            "Error de instalación",
-            [System.Windows.Forms.MessageBoxButtons]::OK,
-            [System.Windows.Forms.MessageBoxIcon]::Error
-        ) | Out-Null
-        return $false
-    }
-
-    [System.Windows.Forms.MessageBox]::Show(
-        "Chocolatey se instaló correctamente. Es recomendable reiniciar PowerShell antes de continuar.",
-        "Instalación completada",
-        [System.Windows.Forms.MessageBoxButtons]::OK,
-        [System.Windows.Forms.MessageBoxIcon]::Information
-    ) | Out-Null
-
-    Write-Host "[OK] Chocolatey instalado correctamente." -ForegroundColor Green
+    if (Get-Command choco -ErrorAction SilentlyContinue) { Log "[OK] Chocolatey detectado." Green; return $true }
+    $ans=[System.Windows.Forms.MessageBox]::Show("Chocolatey es requerido. ¿Desea instalarlo ahora?","Chocolatey no encontrado",[System.Windows.Forms.MessageBoxButtons]::YesNo,[System.Windows.Forms.MessageBoxIcon]::Question)
+    if($ans -ne [System.Windows.Forms.DialogResult]::Yes){ Log "[ABORT] Usuario rechazó instalar Chocolatey." Red; return $false }
+    $p=Show-ProgressBar; Update-ProgressBar $p 1 4
+    $ok=Install-Chocolatey
+    Update-ProgressBar $p 4 4; Close-ProgressBar $p
+    if(-not $ok){ [System.Windows.Forms.MessageBox]::Show("Error al instalar Chocolatey.","Error",[System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Error) | Out-Null; return $false }
+    [System.Windows.Forms.MessageBox]::Show("Chocolatey instalado correctamente.","Listo",[System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Information) | Out-Null
     return $true
 }
 
-# --- (Opcional) Verificar privilegios de admin para instalar choco ---
+# --- Versionado de herramientas
+function Get-ExeVersion {
+    param([string]$Exe,[ValidateSet('yt-dlp','ffmpeg')]$Mode)
+    try{
+        if(-not (Get-Command $Exe -ErrorAction SilentlyContinue)){ return $null }
+        switch($Mode){
+            'yt-dlp' {
+                $v = & $Exe --version 2>$null
+                if([string]::IsNullOrWhiteSpace($v)){ return $null }
+                return ($v.Trim())
+            }
+            'ffmpeg' {
+                $line = (& $Exe -version 2>$null | Select-Object -First 1)
+                # Ej: "ffmpeg version 7.0.2-essentials_build ..."
+                if($line -match 'ffmpeg version ([^\s]+)'){ return $matches[1] }
+                return $null
+            }
+        }
+    } catch { return $null }
+}
+
+function Get-ChocoInstalledVersion {
+    param([string]$PackageId)
+    try{
+        $out = choco list --local-only --exact --limit-output $PackageId 2>$null
+        # Formato: package|version
+        if($out -match '^\s*'+[regex]::Escape($PackageId)+'\|(.+)$'){ return $matches[1].Trim() }
+        return $null
+    } catch { return $null }
+}
+
+function Get-ChocoLatestVersion {
+    param([string]$PackageId)
+    try{
+        $out = choco search $PackageId --exact --by-id-only -r 2>$null
+        # Formato: package|latestVersion
+        if($out -match '^\s*'+[regex]::Escape($PackageId)+'\|(.+)$'){ return $matches[1].Trim() }
+        return $null
+    } catch { return $null }
+}
+
+function Is-PackageOutdated {
+    param([string]$PackageId)
+    try{
+        $out = choco outdated -r 2>$null
+        # Filas: id|current|available|pinned?
+        foreach($line in ($out -split "`r?`n")){
+            if($line -match '^\s*'+[regex]::Escape($PackageId)+'\|'){ return $true }
+        }
+        return $false
+    } catch { return $false }
+}
+
+function Ensure-Tool {
+    param(
+        [ValidateSet('yt-dlp','ffmpeg')]$Tool,
+        [string]$ExeName,
+        [string]$ChocoId,
+        [System.Windows.Forms.Label]$TargetLabel
+    )
+    Log "[CHECK] Validando $Tool..." Cyan
+    $exeVersion = Get-ExeVersion -Exe $ExeName -Mode $Tool
+    $installedViaChocoVersion = Get-ChocoInstalledVersion -PackageId $ChocoId
+    $latest = Get-ChocoLatestVersion -PackageId $ChocoId
+    $outdated = Is-PackageOutdated -PackageId $ChocoId
+
+    if($null -eq $exeVersion){
+        Log "[MISS] $Tool no está instalado (no se encontró '$ExeName')." Yellow
+        $TargetLabel.Text = "$Tool: no instalado"
+        $ans=[System.Windows.Forms.MessageBox]::Show("$Tool no está instalado. ¿Desea instalarlo ahora con Chocolatey?","$Tool requerido",[System.Windows.Forms.MessageBoxButtons]::YesNo,[System.Windows.Forms.MessageBoxIcon]::Question)
+        if($ans -ne [System.Windows.Forms.DialogResult]::Yes){ Log "[ABORT] Usuario canceló instalación de $Tool." Red; return }
+        Log "[CHOCOLATEY] Instalando $Tool (choco install $ChocoId -y)..." Cyan
+        choco install $ChocoId -y
+        # Releer versión
+        $exeVersion = Get-ExeVersion -Exe $ExeName -Mode $Tool
+        if($exeVersion){ Log "[OK] $Tool instalado. Versión: $exeVersion" Green; $TargetLabel.Text="$Tool: $exeVersion (instalado)"; }
+        else { Log "[ERROR] No se detectó $Tool después de instalar." Red; $TargetLabel.Text="$Tool: error al instalar"; }
+        return
+    }
+
+    # Instalado
+    Log "[OK] $Tool detectado. Versión ejecutable: $exeVersion" Green
+
+    if($installedViaChocoVersion){ Log "[INFO] Versión en Chocolatey (local): $installedViaChocoVersion" DarkGreen }
+    if($latest){ Log "[INFO] Versión disponible (repos): $latest" DarkGreen }
+
+    if($outdated -and $latest){
+        $TargetLabel.Text = "$Tool: $exeVersion (desactualizado → $latest)"
+        $ans=[System.Windows.Forms.MessageBox]::Show("$Tool está desactualizado ($exeVersion → $latest). ¿Actualizar ahora?","Actualizar $Tool",[System.Windows.Forms.MessageBoxButtons]::YesNo,[System.Windows.Forms.MessageBoxIcon]::Information)
+        if($ans -eq [System.Windows.Forms.DialogResult]::Yes){
+            Log "[CHOCOLATEY] Actualizando $Tool (choco upgrade $ChocoId -y)..." Cyan
+            choco upgrade $ChocoId -y
+            $exeVersion = Get-ExeVersion -Exe $ExeName -Mode $Tool
+            if($exeVersion){ Log "[OK] Actualizado $Tool a $exeVersion" Green; $TargetLabel.Text="$Tool: $exeVersion (actualizado)" }
+            else { Log "[WARN] No se pudo determinar versión tras actualizar $Tool." Yellow }
+        } else {
+            Log "[SKIP] Usuario decidió no actualizar $Tool." DarkYellow
+        }
+    } else {
+        $TargetLabel.Text = "$Tool: $exeVersion (actualizado)"
+    }
+}
+
+# --- Verificar privilegios admin (recomendado para choco)
 $IsAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")
-if (-not $IsAdmin) {
-    Write-Host "[WARN] PowerShell no se está ejecutando como Administrador. Algunas instalaciones pueden fallar." -ForegroundColor Yellow
+if (-not $IsAdmin) { Log "[WARN] No estás en PowerShell (Admin). Algunas instalaciones/actualizaciones pueden fallar." Yellow }
+
+# --- Asegurar Chocolatey antes de UI
+if (-not (Ensure-Chocolatey)) { Log "[EXIT] Sin Chocolatey no se puede continuar." Red; return }
+
+# --- UI principal
+$form = Create-Form -Title "Daniel Tools v$version"
+
+$lblTitulo   = Create-Label -Text "YT-DLP GUI (ALFA)" -x 20 -y 16 -w 300 -h 26 -Font $boldFont
+$lblCambios  = Create-Label -Text $global:defaultInstructions -x 20 -y 50 -w 300 -h 70
+$lblYtTitle  = Create-Label -Text "yt-dlp:" -x 20 -y 130 -w 80 -h 22 -Font $boldFont
+$lblYtVer    = Create-Label -Text "Detectando..." -x 100 -y 130 -w 210 -h 22
+$lblFfTitle  = Create-Label -Text "ffmpeg:" -x 20 -y 160 -w 80 -h 22 -Font $boldFont
+$lblFfVer    = Create-Label -Text "Detectando..." -x 100 -y 160 -w 210 -h 22
+
+$btnRevisar  = Create-Button -Text "Revisar dependencias" -x 20 -y 200 -w 180 -h 34
+$btnExit     = Create-Button -Text "Salir" -x 220 -y 200 -w 80 -h 34
+
+$form.Controls.AddRange(@($lblTitulo,$lblCambios,$lblYtTitle,$lblYtVer,$lblFfTitle,$lblFfVer,$btnRevisar,$btnExit))
+
+# --- Acciones
+$btnExit.Add_Click({ Log "[UI] Cierre solicitado por el usuario." DarkYellow; $form.Close() })
+
+$checkDeps = {
+    try{
+        Log "[RUN] Revisando dependencias (yt-dlp / ffmpeg)..." Cyan
+        Ensure-Tool -Tool 'yt-dlp' -ExeName 'yt-dlp' -ChocoId 'yt-dlp' -TargetLabel $lblYtVer
+        Ensure-Tool -Tool 'ffmpeg' -ExeName 'ffmpeg' -ChocoId 'ffmpeg' -TargetLabel $lblFfVer
+        Log "[DONE] Revisión de dependencias finalizada." DarkCyan
+    } catch {
+        Log "[ERROR] Falla en revisión de dependencias: $_" Red
+    }
 }
 
-# --- Flujo principal: verificar choco y abrir interfaz ---
-if (-not (Ensure-Chocolatey)) {
-    Write-Host "[EXIT] No se puede continuar sin Chocolatey." -ForegroundColor Red
-    return
-}
+$btnRevisar.Add_Click($checkDeps)
 
-Write-Host "[OK] Preparando interfaz gráfica..." -ForegroundColor Green
+# Ejecutar revisión automáticamente al mostrar la ventana (para que alcance a dibujar primero)
+$form.Add_Shown({ $form.Activate(); Start-Sleep -Milliseconds 100; & $checkDeps })
 
-# --- Construir interfaz principal ---
-$formPrincipal = Create-Form -Title "Daniel Tools v$version" -Size (New-Object System.Drawing.Size(300, 600)) -BackColor ([System.Drawing.Color]::White)
-
-# Título
-$lblTitulo = Create-Label -Text "YT-DLP GUI (ALFA)" -Location (New-Object System.Drawing.Point(20,20)) -Size (New-Object System.Drawing.Size(260, 30)) -ForeColor ([System.Drawing.Color]::Black) -Font $boldFont
-$formPrincipal.Controls.Add($lblTitulo)
-
-# Label de cambios (usa $global:defaultInstructions)
-$lblCambios = Create-Label -Text $global:defaultInstructions -Location (New-Object System.Drawing.Point(20,60)) -Size (New-Object System.Drawing.Size(260, 80)) -ForeColor ([System.Drawing.Color]::Black) -Font $defaultFont -BorderStyle ([System.Windows.Forms.BorderStyle]::FixedSingle) -TextAlign ([System.Drawing.ContentAlignment]::TopLeft)
-$formPrincipal.Controls.Add($lblCambios)
-Write-Host "[OK] Label 'CAMBIOS' agregado a la interfaz." -ForegroundColor Green
-
-# Botón Salir
-$btnExit = Create-Button -Text "Salir" -Location (New-Object System.Drawing.Point(20,160))
-$btnExit.Add_Click({
-    Write-Host "[UI] Cierre solicitado por el usuario." -ForegroundColor DarkYellow
-    $formPrincipal.Close()
-})
-$formPrincipal.Controls.Add($btnExit)
-
-# Mostrar el formulario
-Write-Host "[RUN] Mostrando la interfaz..." -ForegroundColor Cyan
-$formPrincipal.ShowDialog() | Out-Null
-Write-Host "[END] Interfaz cerrada." -ForegroundColor DarkCyan
+# Mostrar UI
+Log "[RUN] Mostrando interfaz..." Cyan
+[void]$form.ShowDialog()
+Log "[END] Interfaz cerrada." DarkCyan
