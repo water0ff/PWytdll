@@ -1011,7 +1011,8 @@ function Invoke-Capture {
 function Invoke-YtDlpConsoleProgress {
     param(
         [Parameter(Mandatory=$true)][string]$ExePath,
-        [Parameter(Mandatory=$true)][string[]]$Args
+        [Parameter(Mandatory=$true)][string[]]$Args,
+        [switch]$UpdateUi  # <-- NUEVO: si va en true, pintamos el label
     )
 
     try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch {}
@@ -1021,7 +1022,6 @@ function Invoke-YtDlpConsoleProgress {
     $errFile = Join-Path $tmpDir ("yt-dlp-stderr_{0}.log" -f ([guid]::NewGuid()))
     $outFile = Join-Path $tmpDir ("yt-dlp-stdout_{0}.log" -f ([guid]::NewGuid()))
 
-    # Armar argumentos con comillas cuando hay espacios
     $argLine = ($Args | ForEach-Object { if ($_ -match '\s') { '"{0}"' -f $_ } else { $_ } }) -join ' '
 
     $proc = Start-Process -FilePath $ExePath `
@@ -1030,53 +1030,105 @@ function Invoke-YtDlpConsoleProgress {
         -RedirectStandardError $errFile `
         -RedirectStandardOutput $outFile
 
-    # Abrir ambos streams (stdout + stderr)
     $fsErr = [System.IO.File]::Open($errFile,[System.IO.FileMode]::OpenOrCreate,[System.IO.FileAccess]::Read,[System.IO.FileShare]::ReadWrite)
     $srErr = New-Object System.IO.StreamReader($fsErr)
     $fsOut = [System.IO.File]::Open($outFile,[System.IO.FileMode]::OpenOrCreate,[System.IO.FileAccess]::Read,[System.IO.FileShare]::ReadWrite)
     $srOut = New-Object System.IO.StreamReader($fsOut)
 
     $script:lastPct = -1
+    $phase = "Preparando…"
+
+    function Set-Ui([string]$txt) {
+        if ($UpdateUi -and $lblEstadoConsulta) { $lblEstadoConsulta.Text = $txt }
+    }
+
     function _PrintLine([string]$text) {
         if ([string]::IsNullOrWhiteSpace($text)) { return }
-        # 1) progress-template: "download: 12.3% ETA:00:10 SPEED:1.23MiB/s"
+
+        # ---- Detecciones de fase/estado ----
+        # Sleeping N seconds...
+        $mSleep = [regex]::Match($text, 'Sleeping\s+(?<sec>\d+(?:\.\d+)?)\s+seconds', 'IgnoreCase')
+        if ($mSleep.Success) {
+            $phase = "Esperando ${($mSleep.Groups['sec'].Value)}s…"
+            Set-Ui $phase
+            Write-Host ("`n{0}" -f $text)
+            return
+        }
+
+        # Comienzo de descarga de archivo (Destination:) -> puede ser video o audio
+        if ($text -match '^\[download\]\s+Destination:\s+.+?\.f\d+\.(mp4|mkv|webm|m4a)$') {
+            if ($text -match '\.f\d+\.webm$|\.m4a$') { $phase = "Descargando audio…" } else { $phase = "Descargando video…" }
+            Set-Ui $phase
+            Write-Host ("`n{0}" -f $text)
+            return
+        }
+
+        # Merging
+        if ($text -match '^\[Merger\]\s+Merging formats') {
+            $phase = "Fusionando (merging)…"
+            Set-Ui $phase
+            Write-Host ("`n{0}" -f $text)
+            return
+        }
+
+        # Deleting original file
+        if ($text -match '^Deleting original file') {
+            $phase = "Borrando temporales…"
+            Set-Ui $phase
+            Write-Host ("`n{0}" -f $text)
+            return
+        }
+
+        # Otras post-procesos
+        if ($text -match '^\[(ExtractAudio|Fixup|EmbedSubtitle|ModifyChapters)\]') {
+            $phase = "Post-procesando…"
+            Set-Ui $phase
+            Write-Host ("`n{0}" -f $text)
+            return
+        }
+
+        # Porcentaje/ETA/velocidad (dos variantes + fallback)
         $m = [regex]::Match($text, 'download:\s*(?<pct>\d+(?:\.\d+)?)%\s*(?:ETA:(?<eta>\S+))?\s*(?:SPEED:(?<spd>.+))?', 'IgnoreCase')
         if (-not $m.Success) {
-            # 2) clásico: "... 12.3% ... at 1.2MiB/s ETA 00:10"
             $m = [regex]::Match($text, '(?<pct>\d+(?:\.\d+)?)%\s+of.*?at\s+(?<spd>\S+)\s+ETA\s+(?<eta>\S+)', 'IgnoreCase')
             if (-not $m.Success) {
-                # 3) porcentaje suelto
                 $m = [regex]::Match($text, '(?<pct>\d+(?:\.\d+)?)%')
             }
         }
+
         if ($m.Success) {
             $pct = [int][math]::Min(100, [math]::Round([double]$m.Groups['pct'].Value))
             $eta = $m.Groups['eta'].Value
             $spd = $m.Groups['spd'].Value
             if ($pct -ne $script:lastPct) {
                 $script:lastPct = $pct
+                Set-Ui ("{0} {1}%  ETA {2}  {3}" -f ($phase -replace '\.\.\.$','…'), $pct, ($eta ? $eta : "--:--"), ($spd ? $spd : "")) 
                 Write-Host ("`r[PROGRESO] {0,3}%  ETA {1,-8}  {2,-16}" -f $pct, $eta, $spd) -NoNewline
             }
-        } else {
-            Write-Host ("`n{0}" -f $text)
+            return
         }
+
+        # Default: solo escribir
+        Write-Host ("`n{0}" -f $text)
     }
 
     try {
+        Set-Ui "Preparando descarga…"
         while (-not $proc.HasExited -or -not ($srErr.EndOfStream -and $srOut.EndOfStream)) {
             while (-not $srOut.EndOfStream) { _PrintLine ($srOut.ReadLine()) }
             while (-not $srErr.EndOfStream) { _PrintLine ($srErr.ReadLine()) }
-            Start-Sleep -Milliseconds 80
+            [System.Windows.Forms.Application]::DoEvents()  # <-- mantener UI fluida
+            Start-Sleep -Milliseconds 60
         }
     } finally {
         try { $srErr.Close(); $fsErr.Close() } catch {}
         try { $srOut.Close(); $fsOut.Close() } catch {}
         Write-Host ""
-        # Remove-Item -Path $errFile,$outFile -ErrorAction SilentlyContinue
     }
 
     return $proc.ExitCode
 }
+
 
 
 
@@ -1174,8 +1226,6 @@ $btnConsultar.Add_Click({
 })
 
 
-# Descargar (pregunta DÓNDE en entorno visual, y loguea en consola)
-# Descargar (pregunta DÓNDE, muestra progreso en consola + barra)
 $btnDescargar.Add_Click({
     if (-not $script:videoConsultado -or [string]::IsNullOrWhiteSpace($script:ultimaURL)) {
         [System.Windows.Forms.MessageBox]::Show("Primero usa 'Consultar' para validar la URL.","Requisito: Consultar",
@@ -1215,41 +1265,36 @@ $btnDescargar.Add_Click({
 
 
     # ====== [NUEVO] Construcción de -f con combos ======
-    $videoSel = Get-SelectedFormatId -Combo $cmbVideoFmt
-    $audioSel = Get-SelectedFormatId -Combo $cmbAudioFmt
-
-    # Lógica:
-    # - Si $videoSel es 'best' -> progresivo si existe; ignoramos audio.
-    # - Si $videoSel es format_id PROGRESIVO -> ignoramos audio.
-    # - Si $videoSel es 'bestvideo' o VIDEO-ONLY -> combinar con audio (o bestaudio).
-    # - Si nada seleccionado -> bestvideo+bestaudio.
-    $fSelector = $null
-    $mergeExt  = "mp4"   # por omisión, para --merge-output-format
-
-    if ($videoSel) {
-        if ($videoSel -eq "best") {
-            $fSelector = "best"
-        } elseif ($videoSel -eq "bestvideo") {
-            $fSelector = "bestvideo+" + ($(if ($audioSel) { $audioSel } else { "bestaudio" }))
+        $videoSel = Get-SelectedFormatId -Combo $cmbVideoFmt
+        $audioSel = Get-SelectedFormatId -Combo $cmbAudioFmt
+        
+        $fSelector = $null
+        $mergeExt  = "mp4"   # para --merge-output-format
+        
+        if ($videoSel) {
+            if ($videoSel -eq "best") {
+                $fSelector = "best"
+            } elseif ($videoSel -eq "bestvideo") {
+                $fSelector = "bestvideo+" + ($(if ($audioSel) { $audioSel } else { "bestaudio" }))
             } else {
                 # Es un format_id específico
                 $klass = $script:formatsIndex[$videoSel]
                 if ($klass -and $klass.Progressive) {
-                    # Evitar progresivos: forzar adaptativo (video-only + audio)
+                    # Evita progresivo: usa adaptativo (video-only + audio)
                     $fSelector = "bestvideo+" + ($(if ($audioSel) { $audioSel } else { "bestaudio" }))
                     $mergeExt  = "mp4"
-
-            } elseif ($klass -and $klass.VideoOnly) {
-                $fSelector = $videoSel + "+" + ($(if ($audioSel) { $audioSel } else { "bestaudio" }))
-            } else {
-                # Desconocido: intentar combinar con audio por seguridad
-                $fSelector = $videoSel + "+" + ($(if ($audioSel) { $audioSel } else { "bestaudio" }))
+                } elseif ($klass -and $klass.VideoOnly) {
+                    $fSelector = $videoSel + "+" + ($(if ($audioSel) { $audioSel } else { "bestaudio" }))
+                } else {
+                    # Desconocido: intenta combinar con audio por seguridad
+                    $fSelector = $videoSel + "+" + ($(if ($audioSel) { $audioSel } else { "bestaudio" }))
+                }
             }
+        } else {
+            # Nada seleccionado: omisión robusta
+            $fSelector = "bestvideo+bestaudio"
         }
-    } else {
-        # Nada seleccionado: omisión robusta
-        $fSelector = "bestvideo+bestaudio"
-    }
+
 
     # Construcción de argumentos finales
     $args = @(
@@ -1266,22 +1311,47 @@ $btnDescargar.Add_Click({
     Write-Host ("[DESCARGA] Selector de formato: -f `"{0}`"" -f $fSelector) -ForegroundColor DarkCyan
     Write-Host ("[CMD] {0} {1}" -f $yt.Source, ($args -join ' ')) -ForegroundColor DarkGray
 
-    $exit = Invoke-YtDlpConsoleProgress -ExePath $yt.Source -Args $args
+        # --- UI: bloquear durante la descarga y preparar label ---
+    $prevLbl = $lblEstadoConsulta.Text
+    $prevConsultar = $btnConsultar.Enabled
+    $prevDescargar = $btnDescargar.Enabled
+    $prevPickDest  = $btnPickDestino.Enabled
+    $prevCmbVid    = $cmbVideoFmt.Enabled
+    $prevCmbAud    = $cmbAudioFmt.Enabled
 
-
-
-    if ($exit -eq 0) {
-        Write-Host ("[OK] Descarga finalizada: {0}" -f $($script:ultimoTitulo)) -ForegroundColor Green
-        [System.Windows.Forms.MessageBox]::Show(("Descarga finalizada:`n{0}" -f $($script:ultimoTitulo)),"Completado",
-            [System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Information) | Out-Null
-    } else {
-        Write-Host ("[ERROR] Falló la descarga. Código: {0}" -f $exit) -ForegroundColor Red
-        [System.Windows.Forms.MessageBox]::Show("Falló la descarga. Revisa conexión/URL/DRM.","Error de descarga",
-            [System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Error) | Out-Null
-    }
+    $btnConsultar.Enabled = $false
+    $btnDescargar.Enabled = $false
+    $btnPickDestino.Enabled = $false
+    $cmbVideoFmt.Enabled = $false
+    $cmbAudioFmt.Enabled = $false
+    $lblEstadoConsulta.Text = "Preparando descarga…"
+        $oldCursor = [System.Windows.Forms.Cursor]::Current
+        [System.Windows.Forms.Cursor]::Current = [System.Windows.Forms.Cursors]::WaitCursor
+        try {
+            $exit = Invoke-YtDlpConsoleProgress -ExePath $yt.Source -Args $args -UpdateUi
+        
+            if ($exit -eq 0) {
+                $lblEstadoConsulta.Text = ("Completado: {0}" -f $script:ultimoTitulo)
+                Write-Host ("[OK] Descarga finalizada: {0}" -f $($script:ultimoTitulo)) -ForegroundColor Green
+                [System.Windows.Forms.MessageBox]::Show(("Descarga finalizada:`n{0}" -f $($script:ultimoTitulo)),"Completado",
+                    [System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Information) | Out-Null
+            } else {
+                $lblEstadoConsulta.Text = "Error durante la descarga"
+                Write-Host ("[ERROR] Falló la descarga. Código: {0}" -f $exit) -ForegroundColor Red
+                [System.Windows.Forms.MessageBox]::Show("Falló la descarga. Revisa conexión/URL/DRM.","Error de descarga",
+                    [System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Error) | Out-Null
+            }
+        } finally {
+            [System.Windows.Forms.Cursor]::Current = $oldCursor
+            # Restaurar estado de UI
+            $btnConsultar.Enabled = $prevConsultar
+            $btnDescargar.Enabled = $prevDescargar
+            $btnPickDestino.Enabled = $prevPickDest
+            $cmbVideoFmt.Enabled = $prevCmbVid
+            $cmbAudioFmt.Enabled = $prevCmbAud
+            $btnDescargar.Tag = $btnDescargar.BackColor
+        }
 })
-
-
 # Validación de Chocolatey y dependencias al iniciar la UI
 $formPrincipal.Add_Shown({
     try {
