@@ -276,11 +276,10 @@ function Ensure-Tool {
         [Parameter(Mandatory=$true)][string]$CommandName,
         [Parameter(Mandatory=$true)][string]$FriendlyName,
         [Parameter(Mandatory=$true)][string]$ChocoPkg,
-        [Parameter(Mandatory=$true)][ref]$LabelRef   # referencia al Label que se actualizará
+        [Parameter(Mandatory=$true)][ref]$LabelRef
     )
     $version = Get-ToolVersion -Command $CommandName -ArgsForVersion "--version" -Parse FirstLine
     if (-not $version) {
-        # No está instalado → preguntar
         $resp = [System.Windows.Forms.MessageBox]::Show(
             "$FriendlyName no está instalado. ¿Desea instalarlo ahora con Chocolatey?",
             "$FriendlyName no encontrado",
@@ -290,13 +289,12 @@ function Ensure-Tool {
         if ($resp -eq [System.Windows.Forms.DialogResult]::Yes) {
             try {
                 Start-Process -FilePath "choco" -ArgumentList @("install", $ChocoPkg, "-y") -NoNewWindow -Wait
-                # Volver a intentar la versión
                 $version = Get-ToolVersion -Command $CommandName -ArgsForVersion "--version" -Parse FirstLine
                 if (-not $version) { $version = "Instalado, versión no detectada" }
-                $LabelRef.Value.Text = "$FriendlyName: $version"
+                $LabelRef.Value.Text = "$($FriendlyName): $version"
                 $LabelRef.Value.ForeColor = [System.Drawing.Color]::ForestGreen
             } catch {
-                $LabelRef.Value.Text = "$FriendlyName: error al instalar"
+                $LabelRef.Value.Text = "$($FriendlyName): error al instalar"
                 $LabelRef.Value.ForeColor = [System.Drawing.Color]::Red
                 [System.Windows.Forms.MessageBox]::Show(
                     "No se pudo instalar $FriendlyName automáticamente.",
@@ -306,11 +304,11 @@ function Ensure-Tool {
                 ) | Out-Null
             }
         } else {
-            $LabelRef.Value.Text = "$FriendlyName: no instalado"
+            $LabelRef.Value.Text = "$($FriendlyName): no instalado"
             $LabelRef.Value.ForeColor = [System.Drawing.Color]::Red
         }
     } else {
-        $LabelRef.Value.Text = "$FriendlyName: $version"
+        $LabelRef.Value.Text = "$($FriendlyName): $version"
         $LabelRef.Value.ForeColor = [System.Drawing.Color]::ForestGreen
     }
 }
