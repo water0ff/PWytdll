@@ -279,14 +279,20 @@ function Show-ProgressBar {
     $formProgress = Create-Form `
         -Title "Progreso" -Size $sizeProgress -StartPosition ([System.Windows.Forms.FormStartPosition]::CenterScreen) `
         -FormBorderStyle ([System.Windows.Forms.FormBorderStyle]::FixedDialog) -TopMost $true -ControlBox $false
+
     $progressBar = New-Object System.Windows.Forms.ProgressBar
     $progressBar.Size = New-Object System.Drawing.Size(360, 20)
     $progressBar.Location = New-Object System.Drawing.Point(10, 50)
     $progressBar.Style = [System.Windows.Forms.ProgressBarStyle]::Continuous
     $progressBar.Maximum = 100
-    $type = $progressBar.GetType()
-    $flags = [Reflection.BindingFlags]::NonPublic -bor [Reflection.BindingFlags]::Instance
-    $type.GetField("DoubleBuffered", $flags).SetValue($progressBar, $true)
+
+    # Activar DoubleBuffered sólo si el campo existe en esta versión de .NET
+    try {
+        $type  = $progressBar.GetType()
+        $flags = [Reflection.BindingFlags]::NonPublic -bor [Reflection.BindingFlags]::Instance
+        $f     = $type.GetField("DoubleBuffered", $flags)
+        if ($f) { $f.SetValue($progressBar, $true) }
+    } catch { }
 
     $lblPercentage = New-Object System.Windows.Forms.Label
     $lblPercentage.Location = New-Object System.Drawing.Point(10, 20)
@@ -301,6 +307,7 @@ function Show-ProgressBar {
     $formProgress.Show()
     return $formProgress
 }
+
 function Update-ProgressBar {
     param($ProgressForm, $CurrentStep, $TotalSteps)
     $percent = [math]::Round(($CurrentStep / $TotalSteps) * 100)
@@ -374,18 +381,16 @@ function Invoke-Capture {
     return [pscustomobject]@{ ExitCode = $p.ExitCode; StdOut = $stdout; StdErr = $stderr }
 }
 # Invoca yt-dlp leyendo progreso en tiempo real y actualiza consola + barra
+# Invoca yt-dlp leyendo STDERR en tiempo real y actualiza consola + barra (sin hilos/eventos)
 function Invoke-YtDlpWithProgress {
     param(
         [Parameter(Mandatory=$true)][string]$ExePath,
-        [Parameter(Mandatory=$true)][string[]]$Args,
-        [Parameter()][int]$TotalSteps = 100
+        [Parameter(Mandatory=$true)][string[]]$Args
     )
 
-    # Creamos barra
     $progressForm = Show-ProgressBar
     $currentPct = 0
 
-    # Preparar proceso
     $psi = New-Object System.Diagnostics.ProcessStartInfo
     $psi.FileName = $ExePath
     $psi.Arguments = (($Args | ForEach-Object { if ($_ -match '\s') { '"{0}"' -f $_ } else { $_ } }) -join ' ')
@@ -396,64 +401,77 @@ function Invoke-YtDlpWithProgress {
 
     $p = New-Object System.Diagnostics.Process
     $p.StartInfo = $psi
+    [void]$p.Start()
 
-    # Función local para parsear líneas y extraer %/ETA/velocidad
-    $updateFromLine = {
-        param($line)
+    # Consumir stdout luego (no suele traer progreso); prevenimos bloqueos
+    $stdOutReader = $p.StandardOutput
+
+    # Función local para parsear una línea de progreso
+    function _UpdateFromLine([string]$line) {
         if ([string]::IsNullOrWhiteSpace($line)) { return }
 
-        # 1) Formato con progress-template: "download: 12.3% ETA:00:10 SPEED:1.23MiB/s"
+        $pct = $null; $eta = ""; $spd = ""
+
+        # 1) progress-template: "download: 12.3% ETA:00:10 SPEED:1.23MiB/s"
         $m = [regex]::Match($line, 'download:\s*(?<pct>\d+(?:\.\d+)?)%\s*(?:ETA:(?<eta>\S+))?\s*(?:SPEED:(?<spd>.+))?')
-        if (-not $m.Success) {
-            # 2) Formato clásico de yt-dlp: "[download]  12.3% of ... at 1.2MiB/s ETA 00:10"
+
+        if ($m.Success) {
+            $pct = $m.Groups['pct'].Value
+            $eta = $m.Groups['eta'].Value
+            $spd = $m.Groups['spd'].Value
+        } else {
+            # 2) formato clásico: "[download]  12.3% of ... at 1.2MiB/s ETA 00:10"
             $m2 = [regex]::Match($line, '(\d+(?:\.\d+)?)%\s+of.*?at\s+(?<spd>\S+)\s+ETA\s+(?<eta>\S+)')
             if ($m2.Success) {
-                $pct = [int][math]::Min(100,[math]::Round([double]$m2.Groups[1].Value))
+                $pct = $m2.Groups[1].Value
                 $eta = $m2.Groups['eta'].Value
                 $spd = $m2.Groups['spd'].Value
             } else {
-                # 3) A veces solo viene el %: "[download]  34.5% ..."
+                # 3) solo porcentaje: "[download]  34.5% ..."
                 $m3 = [regex]::Match($line, '(\d+(?:\.\d+)?)%')
-                if (-not $m3.Success) { return }
-                $pct = [int][math]::Min(100,[math]::Round([double]$m3.Groups[1].Value))
-                $eta = ""
-                $spd = ""
+                if ($m3.Success) { $pct = $m3.Groups[1].Value }
             }
-        } else {
-            $pct = [int][math]::Min(100,[math]::Round([double]$m.Groups['pct'].Value))
-            $eta = $m.Groups['eta'].Value
-            $spd = $m.Groups['spd'].Value
         }
 
-        # Actualiza consola en la MISMA línea
-        $msg = ("`r[PROGRESO] {0,3}%  ETA {1,-8}  {2,-12}" -f $pct, $eta, $spd).TrimEnd()
-        Write-Host $msg -NoNewline
+        if ($pct -ne $null) {
+            $pct = [int][math]::Min(100, [math]::Round([double]$pct))
+            # Consola (misma línea)
+            $msg = ("`r[PROGRESO] {0,3}%  ETA {1,-8}  {2,-12}" -f $pct, $eta, $spd).TrimEnd()
+            Write-Host $msg -NoNewline
 
-        # Actualiza barra
-        if ($pct -ne $currentPct) {
-            $currentPct = $pct
-            Update-ProgressBar -ProgressForm $progressForm -CurrentStep $currentPct -TotalSteps 100
+            # Barra + etiqueta
+            if ($pct -ne $currentPct -and -not $progressForm.IsDisposed) {
+                $script:currentPct = $pct
+                Update-ProgressBar -ProgressForm $progressForm -CurrentStep $pct -TotalSteps 100
+                $progressForm.Label.Text = ("{0}% Completado" -f $pct)
+            }
+            [System.Windows.Forms.Application]::DoEvents()
         }
     }
 
-    # Suscribir manejo de salida en vivo (yt-dlp suele sacar progreso a STDERR)
-    $p.add_OutputDataReceived({ param($s,$e) if ($e.Data) { & $updateFromLine $e.Data } })
-    $p.add_ErrorDataReceived( { param($s,$e) if ($e.Data) { & $updateFromLine $e.Data } })
-
-    [void]$p.Start()
-    $p.BeginOutputReadLine()
-    $p.BeginErrorReadLine()
+    # Leer STDERR línea a línea (yt-dlp manda progreso a STDERR)
+    $err = $p.StandardError
+    try {
+        while (-not $err.EndOfStream) {
+            $line = $err.ReadLine()
+            _UpdateFromLine $line
+        }
+    } catch {
+        # Ignorar si se cierra el stream al terminar el proceso
+    }
 
     $p.WaitForExit()
+    # Drenar stdout para evitar buffers colgados
+    try { [void]$stdOutReader.ReadToEnd() } catch {}
 
-    # Salto de línea para no dejar el cursor a mitad
+    # Salto de línea final para no dejar el cursor pegado
     Write-Host ""
 
-    # Cerrar barra
-    Close-ProgressBar $progressForm
+    if (-not $progressForm.IsDisposed) { Close-ProgressBar $progressForm }
 
     return $p.ExitCode
 }
+
 
 # ====== Eventos ======
 
