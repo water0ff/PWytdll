@@ -1,10 +1,5 @@
-# ============================================
-# YT-DLP GUI Bootstrap - Daniel Tools
-# ============================================
-
 # --- Config inicial y carpeta temporal ---
 Write-Host "`n[INFO] Iniciando asistente..." -ForegroundColor Cyan
-
 # Crear C:\Temp y C:\Temp\icos
 if (!(Test-Path -Path "C:\Temp")) {
     New-Item -ItemType Directory -Path "C:\Temp" | Out-Null
@@ -19,7 +14,6 @@ if (-not (Test-Path $iconDir)) {
 } else {
     Write-Host "[OK] Carpeta de íconos existente: $iconDir" -ForegroundColor DarkGreen
 }
-
 # --- Advertencia ALFA ---
 Write-Host "`n==============================================" -ForegroundColor Red
 Write-Host "           ADVERTENCIA DE VERSIÓN ALFA          " -ForegroundColor Red
@@ -38,10 +32,11 @@ Clear-Host
 Write-Host "[OK] El usuario aceptó los riesgos. Corriendo programa..." -ForegroundColor Green
 
 # --- Variables globales ---
-$global:defaultInstructions = @"
+${global:defaultInstructions} = @'
 ----- CAMBIOS -----
 - Primer versión
-"@
+- 2
+'@
 
 # --- Cargar WinForms ---
 Add-Type -AssemblyName System.Windows.Forms
@@ -49,7 +44,7 @@ Add-Type -AssemblyName System.Drawing
 [System.Windows.Forms.Application]::EnableVisualStyles()
 
 # --- Versionado y fuentes ---
-$version     = "Alfa 251109.1123"
+                                                                                                                        $version     = "Alfa 251109.1223"
 $defaultFont = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Regular)
 $boldFont    = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
 
