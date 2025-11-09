@@ -36,7 +36,10 @@ if ($response.Character -ne 'Y') {
 Clear-Host
 $global:defaultInstructions = @"
 ----- CAMBIOS -----
-- Primer versión
+- Se agregó vista previa del video.
+- Se agregó detalles de progreso de descarga en consola.
+- Se agregó dependencia Node.
+- Se agregó validar consulta de video para descargar.
 "@
 Write-Host "El usuario aceptó los riesgos. Corriendo programa..." -ForegroundColor Green
 
@@ -176,6 +179,129 @@ function Set-DownloadButtonVisual {
     # IMPORTANTE: actualizar Tag para que el MouseLeave restaure el color correcto
     $btnDescargar.Tag = $btnDescargar.BackColor
 }
+# ================== [NUEVO] Botones de acciones por dependencia ==================
+function Create-IconButton {
+    param(
+        [string]$Text,
+        [System.Drawing.Point]$Location,
+        [string]$ToolTipText
+    )
+    $btn = New-Object System.Windows.Forms.Button
+    $btn.Text = $Text
+    $btn.Size = New-Object System.Drawing.Size(26, 24) # compacto
+    $btn.Location = $Location
+    $btn.Font = New-Object System.Drawing.Font("Segoe UI Symbol", 10, [System.Drawing.FontStyle]::Bold)
+    $btn.FlatStyle = [System.Windows.Forms.FlatStyle]::Standard
+    $btn.BackColor = [System.Drawing.Color]::White
+    $btn.Tag = $btn.BackColor
+    $btn.Add_MouseEnter({ $this.BackColor = [System.Drawing.Color]::FromArgb(220,230,255) })
+    $btn.Add_MouseLeave({ $this.BackColor = $this.Tag })
+    if ($ToolTipText) { $toolTip.SetToolTip($btn, $ToolTipText) }
+    return $btn
+}
+
+function Refresh-DependencyLabel {
+    param(
+        [string]$CommandName,
+        [string]$FriendlyName,
+        [ref]$LabelRef,
+        [string]$VersionArgs = "--version",
+        [ValidateSet("FirstLine","Raw")][string]$Parse = "FirstLine"
+    )
+    $ver = Get-ToolVersion -Command $CommandName -ArgsForVersion $VersionArgs -Parse $Parse
+    if ($ver) {
+        $LabelRef.Value.Text = ("{0}: {1}" -f $FriendlyName, $ver)
+        $LabelRef.Value.ForeColor = [System.Drawing.Color]::ForestGreen
+    } else {
+        $LabelRef.Value.Text = ("{0}: no instalado" -f $FriendlyName)
+        $LabelRef.Value.ForeColor = [System.Drawing.Color]::Red
+    }
+}
+
+function Update-Dependency {
+    param(
+        [string]$ChocoPkg,
+        [string]$FriendlyName,
+        [string]$CommandName,
+        [ref]$LabelRef,
+        [string]$VersionArgs = "--version",
+        [ValidateSet("FirstLine","Raw")][string]$Parse = "FirstLine"
+    )
+    if (-not (Get-Command choco -ErrorAction SilentlyContinue)) {
+        [System.Windows.Forms.MessageBox]::Show(
+            "Chocolatey no está disponible. Instálalo para poder actualizar dependencias.",
+            "Chocolatey requerido",
+            [System.Windows.Forms.MessageBoxButtons]::OK,
+            [System.Windows.Forms.MessageBoxIcon]::Warning
+        ) | Out-Null
+        return
+    }
+    Write-Host ("[UPDATE] Actualizando {0} con choco upgrade {1} -y" -f $FriendlyName, $ChocoPkg) -ForegroundColor Cyan
+    try {
+        Start-Process -FilePath "choco" -ArgumentList @("upgrade",$ChocoPkg,"-y") -Wait -NoNewWindow
+        Refresh-DependencyLabel -CommandName $CommandName -FriendlyName $FriendlyName -LabelRef $LabelRef -VersionArgs $VersionArgs -Parse $Parse
+        [System.Windows.Forms.MessageBox]::Show(
+            ("{0} ha sido verificado/actualizado." -f $FriendlyName),
+            "Actualización completada",
+            [System.Windows.Forms.MessageBoxButtons]::OK,
+            [System.Windows.Forms.MessageBoxIcon]::Information
+        ) | Out-Null
+    } catch {
+        Write-Host ("[ERROR] Falló actualización de {0}: {1}" -f $FriendlyName, $_) -ForegroundColor Red
+        [System.Windows.Forms.MessageBox]::Show(
+            ("No se pudo actualizar {0}. Revisa la consola." -f $FriendlyName),
+            "Error de actualización",
+            [System.Windows.Forms.MessageBoxButtons]::OK,
+            [System.Windows.Forms.MessageBoxIcon]::Error
+        ) | Out-Null
+    }
+}
+
+function Uninstall-Dependency {
+    param(
+        [string]$ChocoPkg,
+        [string]$FriendlyName,
+        [ref]$LabelRef
+    )
+    if (-not (Get-Command choco -ErrorAction SilentlyContinue)) {
+        [System.Windows.Forms.MessageBox]::Show(
+            "Chocolatey no está disponible. Instálalo para poder desinstalar dependencias.",
+            "Chocolatey requerido",
+            [System.Windows.Forms.MessageBoxButtons]::OK,
+            [System.Windows.Forms.MessageBoxIcon]::Warning
+        ) | Out-Null
+        return
+    }
+    $r = [System.Windows.Forms.MessageBox]::Show(
+        ("¿Seguro que deseas desinstalar {0}?{1}{1}Esto podría requerir reiniciar PowerShell para refrescar el PATH." -f $FriendlyName, [Environment]::NewLine),
+        "Confirmar desinstalación",
+        [System.Windows.Forms.MessageBoxButtons]::YesNo,
+        [System.Windows.Forms.MessageBoxIcon]::Warning
+    )
+    if ($r -ne [System.Windows.Forms.DialogResult]::Yes) { return }
+
+    Write-Host ("[UNINSTALL] Desinstalando {0} con choco uninstall {1} -y" -f $FriendlyName,$ChocoPkg) -ForegroundColor Cyan
+    try {
+        Start-Process -FilePath "choco" -ArgumentList @("uninstall",$ChocoPkg,"-y") -Wait -NoNewWindow
+        $LabelRef.Value.Text = ("{0}: no instalado" -f $FriendlyName)
+        $LabelRef.Value.ForeColor = [System.Drawing.Color]::Red
+        [System.Windows.Forms.MessageBox]::Show(
+            ("{0} ha sido desinstalado.{1}{1}Te recomiendo cerrar y abrir PowerShell para refrescar el PATH." -f $FriendlyName,[Environment]::NewLine),
+            "Desinstalación completada",
+            [System.Windows.Forms.MessageBoxButtons]::OK,
+            [System.Windows.Forms.MessageBoxIcon]::Information
+        ) | Out-Null
+    } catch {
+        Write-Host ("[ERROR] Falló desinstalación de {0}: {1}" -f $FriendlyName, $_) -ForegroundColor Red
+        [System.Windows.Forms.MessageBox]::Show(
+            ("No se pudo desinstalar {0}. Revisa la consola." -f $FriendlyName),
+            "Error de desinstalación",
+            [System.Windows.Forms.MessageBoxButtons]::OK,
+            [System.Windows.Forms.MessageBoxIcon]::Error
+        ) | Out-Null
+    }
+}
+
 # ====== Consola: LOGS explícitos ======
 Write-Host "[INIT] Cargando UI..." -ForegroundColor Cyan
 
@@ -459,13 +585,50 @@ $lblCambios.AutoSize = $false
 $lblCambios.UseCompatibleTextRendering = $true
 $formPrincipal.Controls.Add($lblCambios)
 
-# Parte INFERIOR: dependencias + botones consola/salir
+
+
+
+
+
 $lblTituloDeps = Create-Label -Text "Dependencias:" -Location (New-Object System.Drawing.Point(20, 490)) -Size (New-Object System.Drawing.Size(260, 24)) -Font $boldFont
-$lblYtDlp      = Create-Label -Text "yt-dlp: verificando..." -Location (New-Object System.Drawing.Point(20, 520)) -Size (New-Object System.Drawing.Size(260, 24)) -Font $defaultFont -BorderStyle ([System.Windows.Forms.BorderStyle]::FixedSingle)
-$lblFfmpeg     = Create-Label -Text "ffmpeg: verificando..." -Location (New-Object System.Drawing.Point(20, 550)) -Size (New-Object System.Drawing.Size(260, 24)) -Font $defaultFont -BorderStyle ([System.Windows.Forms.BorderStyle]::FixedSingle)
-$lblNode       = Create-Label -Text "Node.js: verificando..." -Location (New-Object System.Drawing.Point(20, 580)) -Size (New-Object System.Drawing.Size(260, 24)) -Font $defaultFont -BorderStyle ([System.Windows.Forms.BorderStyle]::FixedSingle)
+$lblYtDlp      = Create-Label -Text "yt-dlp: verificando..." -Location (New-Object System.Drawing.Point(80, 520)) -Size (New-Object System.Drawing.Size(260, 24)) -Font $defaultFont -BorderStyle ([System.Windows.Forms.BorderStyle]::FixedSingle)
+$lblFfmpeg     = Create-Label -Text "ffmpeg: verificando..." -Location (New-Object System.Drawing.Point(80, 550)) -Size (New-Object System.Drawing.Size(260, 24)) -Font $defaultFont -BorderStyle ([System.Windows.Forms.BorderStyle]::FixedSingle)
+$lblNode       = Create-Label -Text "Node.js: verificando..." -Location (New-Object System.Drawing.Point(80, 580)) -Size (New-Object System.Drawing.Size(260, 24)) -Font $defaultFont -BorderStyle ([System.Windows.Forms.BorderStyle]::FixedSingle)
 $btnConsola = Create-Button -Text "Consola" -Location (New-Object System.Drawing.Point(20, 620)) -BackColor ([System.Drawing.Color]::White) -ForeColor ([System.Drawing.Color]::Black) -ToolTipText "Abrir PowerShell" -Size (New-Object System.Drawing.Size(120, 35))
 $btnExit    = Create-Button -Text "Salir"    -Location (New-Object System.Drawing.Point(160, 620)) -BackColor ([System.Drawing.Color]::Black) -ForeColor ([System.Drawing.Color]::White) -ToolTipText "Cerrar la aplicación" -Size (New-Object System.Drawing.Size(120, 35))
+$btnYtRefresh   = Create-IconButton -Text "↻" -Location (New-Object System.Drawing.Point(20, 520)) -ToolTipText "Buscar/actualizar yt-dlp"
+$btnYtUninstall = Create-IconButton -Text "✖" -Location (New-Object System.Drawing.Point(48, 520)) -ToolTipText "Desinstalar yt-dlp"
+$btnYtRefresh.Add_Click({
+    Update-Dependency -ChocoPkg "yt-dlp" -FriendlyName "yt-dlp" -CommandName "yt-dlp" -LabelRef ([ref]$lblYtDlp) -VersionArgs "--version" -Parse "FirstLine"
+})
+$btnYtUninstall.Add_Click({
+    Uninstall-Dependency -ChocoPkg "yt-dlp" -FriendlyName "yt-dlp" -LabelRef ([ref]$lblYtDlp)
+})
+$formPrincipal.Controls.Add($btnYtRefresh)
+$formPrincipal.Controls.Add($btnYtUninstall)
+$btnFfmpegRefresh   = Create-IconButton -Text "↻" -Location (New-Object System.Drawing.Point(20, 550)) -ToolTipText "Buscar/actualizar ffmpeg"
+$btnFfmpegUninstall = Create-IconButton -Text "✖" -Location (New-Object System.Drawing.Point(48, 550)) -ToolTipText "Desinstalar ffmpeg"
+$btnFfmpegRefresh.Add_Click({
+    Update-Dependency -ChocoPkg "ffmpeg" -FriendlyName "ffmpeg" -CommandName "ffmpeg" -LabelRef ([ref]$lblFfmpeg) -VersionArgs "-version" -Parse "FirstLine"
+})
+$btnFfmpegUninstall.Add_Click({
+    Uninstall-Dependency -ChocoPkg "ffmpeg" -FriendlyName "ffmpeg" -LabelRef ([ref]$lblFfmpeg)
+})
+$formPrincipal.Controls.Add($btnFfmpegRefresh)
+$formPrincipal.Controls.Add($btnFfmpegUninstall)
+
+# Node.js (paquete LTS en choco)
+$btnNodeRefresh   = Create-IconButton -Text "↻" -Location (New-Object System.Drawing.Point(20, 580)) -ToolTipText "Buscar/actualizar Node.js (LTS)"
+$btnNodeUninstall = Create-IconButton -Text "✖" -Location (New-Object System.Drawing.Point(48, 580)) -ToolTipText "Desinstalar Node.js (LTS)"
+$btnNodeRefresh.Add_Click({
+    Update-Dependency -ChocoPkg "nodejs-lts" -FriendlyName "Node.js" -CommandName "node" -LabelRef ([ref]$lblNode) -VersionArgs "--version" -Parse "FirstLine"
+})
+$btnNodeUninstall.Add_Click({
+    Uninstall-Dependency -ChocoPkg "nodejs-lts" -FriendlyName "Node.js" -LabelRef ([ref]$lblNode)
+})
+$formPrincipal.Controls.Add($btnNodeRefresh)
+$formPrincipal.Controls.Add($btnNodeUninstall)
+# ================== [FIN NUEVO] Botones de acciones por dependencia ==================
 
 $formPrincipal.Controls.Add($lblTituloDeps)
 $formPrincipal.Controls.Add($lblNode)
