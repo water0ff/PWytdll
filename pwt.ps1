@@ -16,6 +16,9 @@ try {
 
 $OutputEncoding = [System.Text.Encoding]::UTF8
 $env:PYTHONIOENCODING = 'utf-8'
+chcp 65001 | Out-Null               # Forzar code page de consola a UTF-8
+$env:PYTHONUTF8 = '1'               # Python/yt-dlp en modo UTF-8
+$PSStyle.OutputRendering = 'Ansi'   # Evita rarezas con ANSI/UTF-8 en PS 7+
 # Mostrar advertencia ALFA y solicitar confirmación
 Write-Host "`n==============================================" -ForegroundColor Red
 Write-Host "           ADVERTENCIA DE VERSIÓN ALFA          " -ForegroundColor Red
@@ -410,81 +413,69 @@ function Invoke-YtDlpConsoleProgress {
         [Parameter(Mandatory=$true)][string[]]$Args
     )
 
-    # Asegurar UTF-8 para que los títulos no salgan raros y -Progress de PowerShell no estorbe
     try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch {}
     $global:ProgressPreference = 'SilentlyContinue'
 
-    # Archivos temporales para redirección
     $tmpDir  = [System.IO.Path]::GetTempPath()
     $errFile = Join-Path $tmpDir ("yt-dlp-stderr_{0}.log" -f ([guid]::NewGuid()))
     $outFile = Join-Path $tmpDir ("yt-dlp-stdout_{0}.log" -f ([guid]::NewGuid()))
 
-    # Construir línea de argumentos (respetando espacios con comillas)
+    # Armar argumentos con comillas cuando hay espacios
     $argLine = ($Args | ForEach-Object { if ($_ -match '\s') { '"{0}"' -f $_ } else { $_ } }) -join ' '
 
-    # Lanzar proceso redirigiendo a archivos (sin UI)
     $proc = Start-Process -FilePath $ExePath `
         -ArgumentList $argLine `
         -NoNewWindow -PassThru `
         -RedirectStandardError $errFile `
         -RedirectStandardOutput $outFile
 
-    # Abrir el archivo de STDERR para “tail”
-    $fs = [System.IO.File]::Open($errFile,
-        [System.IO.FileMode]::OpenOrCreate,
-        [System.IO.FileAccess]::Read,
-        [System.IO.FileShare]::ReadWrite)
-    $sr = New-Object System.IO.StreamReader($fs)
+    # Abrir ambos streams (stdout + stderr)
+    $fsErr = [System.IO.File]::Open($errFile,[System.IO.FileMode]::OpenOrCreate,[System.IO.FileAccess]::Read,[System.IO.FileShare]::ReadWrite)
+    $srErr = New-Object System.IO.StreamReader($fsErr)
+    $fsOut = [System.IO.File]::Open($outFile,[System.IO.FileMode]::OpenOrCreate,[System.IO.FileAccess]::Read,[System.IO.FileShare]::ReadWrite)
+    $srOut = New-Object System.IO.StreamReader($fsOut)
 
-    $lastPct = -1
+    $script:lastPct = -1
     function _PrintLine([string]$text) {
         if ([string]::IsNullOrWhiteSpace($text)) { return }
         # 1) progress-template: "download: 12.3% ETA:00:10 SPEED:1.23MiB/s"
         $m = [regex]::Match($text, 'download:\s*(?<pct>\d+(?:\.\d+)?)%\s*(?:ETA:(?<eta>\S+))?\s*(?:SPEED:(?<spd>.+))?', 'IgnoreCase')
         if (-not $m.Success) {
-            # 2) formato clásico: "[download]  12.3% of ... at 1.2MiB/s ETA 00:10"
+            # 2) clásico: "... 12.3% ... at 1.2MiB/s ETA 00:10"
             $m = [regex]::Match($text, '(?<pct>\d+(?:\.\d+)?)%\s+of.*?at\s+(?<spd>\S+)\s+ETA\s+(?<eta>\S+)', 'IgnoreCase')
             if (-not $m.Success) {
                 # 3) porcentaje suelto
                 $m = [regex]::Match($text, '(?<pct>\d+(?:\.\d+)?)%')
             }
         }
-
         if ($m.Success) {
             $pct = [int][math]::Min(100, [math]::Round([double]$m.Groups['pct'].Value))
             $eta = $m.Groups['eta'].Value
             $spd = $m.Groups['spd'].Value
-            if ($pct -ne $lastPct) {
+            if ($pct -ne $script:lastPct) {
                 $script:lastPct = $pct
-                # Línea dinámica con retorno de carro (sin salto)
                 Write-Host ("`r[PROGRESO] {0,3}%  ETA {1,-8}  {2,-16}" -f $pct, $eta, $spd) -NoNewline
             }
         } else {
-            # Si no es línea de progreso, imprime como log normal (con salto)
             Write-Host ("`n{0}" -f $text)
         }
     }
 
     try {
-        while (-not $proc.HasExited -or -not $sr.EndOfStream) {
-            while (-not $sr.EndOfStream) {
-                $line = $sr.ReadLine()
-                _PrintLine $line
-            }
+        while (-not $proc.HasExited -or -not ($srErr.EndOfStream -and $srOut.EndOfStream)) {
+            while (-not $srOut.EndOfStream) { _PrintLine ($srOut.ReadLine()) }
+            while (-not $srErr.EndOfStream) { _PrintLine ($srErr.ReadLine()) }
             Start-Sleep -Milliseconds 80
         }
     } finally {
-        try { $sr.Close(); $fs.Close() } catch {}
-        # Asegura salto de línea final para no dejar la consola en la misma línea del \r
+        try { $srErr.Close(); $fsErr.Close() } catch {}
+        try { $srOut.Close(); $fsOut.Close() } catch {}
         Write-Host ""
-        # (Si quieres limpiar los logs, descomenta:)
         # Remove-Item -Path $errFile,$outFile -ErrorAction SilentlyContinue
     }
 
     return $proc.ExitCode
 }
-
-
 
 
 
@@ -550,15 +541,17 @@ $btnDescargar.Add_Click({
     $script:ultimaRutaDescarga = $fbd.SelectedPath
     Write-Host ("[DESCARGA] Carpeta seleccionada: {0}" -f $($script:ultimaRutaDescarga)) -ForegroundColor Cyan
 
-        # Construcción de argumentos para yt-dlp (estable, sin android ni clients web sabr)
+        # Construcción de argumentos:
         $args = @(
-          "--newline","--no-color","--progress",
+          "--encoding","utf-8",
+          "--progress", "--no-color", "--newline",
           "-f","bestvideo+bestaudio","--merge-output-format","mp4",
           "-P",$script:ultimaRutaDescarga,
           "--progress-template","download:%(progress._percent_str)s ETA:%(progress._eta_str)s SPEED:%(progress._speed_str)s",
           "--extractor-args","youtube:player_client=default,-web_safari,-web_embedded,-tv",
           $script:ultimaURL
         )
+
 
         
         Write-Host "[DESCARGA] Iniciando descarga..." -ForegroundColor Cyan
