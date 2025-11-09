@@ -46,7 +46,7 @@ Add-Type -AssemblyName System.Drawing
 
 # Crear el formulario
 $formPrincipal = New-Object System.Windows.Forms.Form
-$formPrincipal.Size = New-Object System.Drawing.Size(300, 700)
+$formPrincipal.Size = New-Object System.Drawing.Size(300, 760)
 $formPrincipal.StartPosition = "CenterScreen"
 $formPrincipal.BackColor = [System.Drawing.Color]::White
 $formPrincipal.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::FixedDialog
@@ -223,6 +223,70 @@ function Check-Chocolatey {
 }
 
 # ====== utilidades yt-dlp / ffmpeg ======
+# === [NUEVO] Utilidades de vista previa YouTube ===
+function Get-YouTubeVideoId {
+    param([Parameter(Mandatory=$true)][string]$Url)
+    # youtu.be/<id>
+    $m = [regex]::Match($Url, 'youtu\.be/([A-Za-z0-9_-]{11})', 'IgnoreCase')
+    if ($m.Success) { return $m.Groups[1].Value }
+
+    # youtube.com/watch?v=<id> (&...)
+    $m = [regex]::Match($Url, '[?&]v=([A-Za-z0-9_-]{11})', 'IgnoreCase')
+    if ($m.Success) { return $m.Groups[1].Value }
+
+    # /shorts/<id>
+    $m = [regex]::Match($Url, '/shorts/([A-Za-z0-9_-]{11})', 'IgnoreCase')
+    if ($m.Success) { return $m.Groups[1].Value }
+
+    # /embed/<id>
+    $m = [regex]::Match($Url, '/embed/([A-Za-z0-9_-]{11})', 'IgnoreCase')
+    if ($m.Success) { return $m.Groups[1].Value }
+
+    return $null
+}
+
+function Get-ImageFromUrl {
+    param([Parameter(Mandatory=$true)][string]$Url)
+    try {
+        $hc = [System.Net.Http.HttpClient]::new()
+        $bytes = $hc.GetByteArrayAsync($Url).Result
+        $ms = New-Object System.IO.MemoryStream(,$bytes)
+        return [System.Drawing.Image]::FromStream($ms)
+    } catch {
+        return $null
+    } finally {
+        if ($hc) { $hc.Dispose() }
+    }
+}
+
+function Show-PreviewFromUrl {
+    param(
+        [Parameter(Mandatory=$true)][string]$Url,
+        [string]$Titulo = $null
+    )
+    $picPreview.Image = $null
+    $id = Get-YouTubeVideoId -Url $Url
+    if (-not $id) { return }
+
+    # Intenta en orden de mayor calidad disponible
+    $candidatas = @(
+        "https://img.youtube.com/vi/$id/maxresdefault.jpg",
+        "https://img.youtube.com/vi/$id/sddefault.jpg",
+        "https://img.youtube.com/vi/$id/hqdefault.jpg",
+        "https://img.youtube.com/vi/$id/mqdefault.jpg",
+        "https://img.youtube.com/vi/$id/default.jpg"
+    )
+    foreach ($u in $candidatas) {
+        $img = Get-ImageFromUrl -Url $u
+        if ($img) {
+            $picPreview.Image = $img
+            if ($Titulo) { $toolTip.SetToolTip($picPreview, $Titulo) }
+            break
+        }
+    }
+}
+# === [FIN utilidades vista previa] ===
+
 function Get-ToolVersion {
     param(
         [Parameter(Mandatory=$true)][string]$Command,
@@ -358,6 +422,22 @@ $btnDescargar = Create-Button -Text "Descargar versión seleccionada" -Location 
 
 Set-DownloadButtonVisual -ok:$false
 
+# ----- [NUEVO] Zona de vista previa -----
+$lblPreview = Create-Label -Text "Vista previa:" `
+    -Location (New-Object System.Drawing.Point(20, 190)) `
+    -Size (New-Object System.Drawing.Size(260, 22)) `
+    -Font $boldFont
+
+$picPreview = New-Object System.Windows.Forms.PictureBox
+$picPreview.Location   = New-Object System.Drawing.Point(20, 215)
+$picPreview.Size       = New-Object System.Drawing.Size(260, 146)
+$picPreview.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
+$picPreview.SizeMode   = [System.Windows.Forms.PictureBoxSizeMode]::Zoom
+$picPreview.BackColor  = [System.Drawing.Color]::White
+
+$formPrincipal.Controls.Add($lblPreview)
+$formPrincipal.Controls.Add($picPreview)
+
 
 $formPrincipal.Controls.Add($lblUrl)
 $formPrincipal.Controls.Add($txtUrl)
@@ -366,20 +446,26 @@ $formPrincipal.Controls.Add($btnConsultar)
 $formPrincipal.Controls.Add($btnDescargar)
 
 # Parte MEDIA: cambios (si lo quieres conservar)
-$lblCambios = Create-Label -Text $global:defaultInstructions -Location (New-Object System.Drawing.Point(20, 195)) -Size (New-Object System.Drawing.Size(260, 100)) `
-    -BackColor ([System.Drawing.Color]::Transparent) -ForeColor ([System.Drawing.Color]::Black) -Font $defaultFont -BorderStyle ([System.Windows.Forms.BorderStyle]::FixedSingle) -TextAlign ([System.Drawing.ContentAlignment]::TopLeft)
+# Parte MEDIA: cambios (reubicado más abajo)
+$lblCambios = Create-Label -Text $global:defaultInstructions `
+    -Location (New-Object System.Drawing.Point(20, 370)) `
+    -Size (New-Object System.Drawing.Size(260, 100)) `
+    -BackColor ([System.Drawing.Color]::Transparent) `
+    -ForeColor ([System.Drawing.Color]::Black) `
+    -Font $defaultFont `
+    -BorderStyle ([System.Windows.Forms.BorderStyle]::FixedSingle) `
+    -TextAlign ([System.Drawing.ContentAlignment]::TopLeft)
 $lblCambios.AutoSize = $false
 $lblCambios.UseCompatibleTextRendering = $true
 $formPrincipal.Controls.Add($lblCambios)
 
 # Parte INFERIOR: dependencias + botones consola/salir
-$lblTituloDeps = Create-Label -Text "Dependencias:" -Location (New-Object System.Drawing.Point(20, 420)) -Size (New-Object System.Drawing.Size(260, 24)) -Font $boldFont
-$lblYtDlp      = Create-Label -Text "yt-dlp: verificando..." -Location (New-Object System.Drawing.Point(20, 450)) -Size (New-Object System.Drawing.Size(260, 24)) -Font $defaultFont -BorderStyle ([System.Windows.Forms.BorderStyle]::FixedSingle)
-$lblFfmpeg     = Create-Label -Text "ffmpeg: verificando..." -Location (New-Object System.Drawing.Point(20, 480)) -Size (New-Object System.Drawing.Size(260, 24)) -Font $defaultFont -BorderStyle ([System.Windows.Forms.BorderStyle]::FixedSingle)
-$lblNode       = Create-Label -Text "Node.js: verificando..." -Location (New-Object System.Drawing.Point(20, 510)) -Size (New-Object System.Drawing.Size(260, 24)) -Font $defaultFont -BorderStyle ([System.Windows.Forms.BorderStyle]::FixedSingle)
-
-$btnConsola = Create-Button -Text "Consola" -Location (New-Object System.Drawing.Point(20, 550)) -BackColor ([System.Drawing.Color]::White) -ForeColor ([System.Drawing.Color]::Black) -ToolTipText "Abrir PowerShell" -Size (New-Object System.Drawing.Size(120, 35))
-$btnExit    = Create-Button -Text "Salir"    -Location (New-Object System.Drawing.Point(160, 550)) -BackColor ([System.Drawing.Color]::Black) -ForeColor ([System.Drawing.Color]::White) -ToolTipText "Cerrar la aplicación" -Size (New-Object System.Drawing.Size(120, 35))
+$lblTituloDeps = Create-Label -Text "Dependencias:" -Location (New-Object System.Drawing.Point(20, 490)) -Size (New-Object System.Drawing.Size(260, 24)) -Font $boldFont
+$lblYtDlp      = Create-Label -Text "yt-dlp: verificando..." -Location (New-Object System.Drawing.Point(20, 520)) -Size (New-Object System.Drawing.Size(260, 24)) -Font $defaultFont -BorderStyle ([System.Windows.Forms.BorderStyle]::FixedSingle)
+$lblFfmpeg     = Create-Label -Text "ffmpeg: verificando..." -Location (New-Object System.Drawing.Point(20, 550)) -Size (New-Object System.Drawing.Size(260, 24)) -Font $defaultFont -BorderStyle ([System.Windows.Forms.BorderStyle]::FixedSingle)
+$lblNode       = Create-Label -Text "Node.js: verificando..." -Location (New-Object System.Drawing.Point(20, 580)) -Size (New-Object System.Drawing.Size(260, 24)) -Font $defaultFont -BorderStyle ([System.Windows.Forms.BorderStyle]::FixedSingle)
+$btnConsola = Create-Button -Text "Consola" -Location (New-Object System.Drawing.Point(20, 620)) -BackColor ([System.Drawing.Color]::White) -ForeColor ([System.Drawing.Color]::Black) -ToolTipText "Abrir PowerShell" -Size (New-Object System.Drawing.Size(120, 35))
+$btnExit    = Create-Button -Text "Salir"    -Location (New-Object System.Drawing.Point(160, 620)) -BackColor ([System.Drawing.Color]::Black) -ForeColor ([System.Drawing.Color]::White) -ToolTipText "Cerrar la aplicación" -Size (New-Object System.Drawing.Size(120, 35))
 
 $formPrincipal.Controls.Add($lblTituloDeps)
 $formPrincipal.Controls.Add($lblNode)
@@ -502,11 +588,13 @@ $btnConsultar.Add_Click({
         $script:videoConsultado = $true; $script:ultimaURL = $url; $script:ultimoTitulo = $titulo
         $lblEstadoConsulta.Text = ("Consultado: {0}" -f $titulo); $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::ForestGreen
         Set-DownloadButtonVisual -ok:$true
+        Show-PreviewFromUrl -Url $url -Titulo $titulo
         Write-Host ("[OK] Video consultado: {0}" -f $titulo) -ForegroundColor Green
     } else {
         $script:videoConsultado = $false; $script:ultimaURL = $null; $script:ultimoTitulo = $null
         $lblEstadoConsulta.Text = "Error al consultar la URL"; $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::Red
         Set-DownloadButtonVisual -ok:$false
+        $picPreview.Image = $null
         Write-Host "[ERROR] No se pudo consultar el video. STDOUT/ERR:" -ForegroundColor Red
         Write-Host $res.StdOut
         Write-Host $res.StdErr
