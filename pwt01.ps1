@@ -828,8 +828,8 @@ $btnYtUninstall.Add_Click({
 })
 $formPrincipal.Controls.Add($btnYtRefresh)
 $formPrincipal.Controls.Add($btnYtUninstall)
-$btnFfmpegRefresh   = Create-IconButton -Text "↻" -Location (New-Object System.Drawing.Point(20, 550)) -ToolTipText "Buscar/actualizar ffmpeg"
-$btnFfmpegUninstall = Create-IconButton -Text "✖" -Location (New-Object System.Drawing.Point(48, 550)) -ToolTipText "Desinstalar ffmpeg"
+$btnFfmpegRefresh   = Create-IconButton -Text "↻" -Location (New-Object System.Drawing.Point(20, 650)) -ToolTipText "Buscar/actualizar ffmpeg"
+$btnFfmpegUninstall = Create-IconButton -Text "✖" -Location (New-Object System.Drawing.Point(48, 650)) -ToolTipText "Desinstalar ffmpeg"
 $btnFfmpegRefresh.Add_Click({
     Update-Dependency -ChocoPkg "ffmpeg" -FriendlyName "ffmpeg" -CommandName "ffmpeg" -LabelRef ([ref]$lblFfmpeg) -VersionArgs "-version" -Parse "FirstLine"
 })
@@ -840,8 +840,8 @@ $formPrincipal.Controls.Add($btnFfmpegRefresh)
 $formPrincipal.Controls.Add($btnFfmpegUninstall)
 
 # Node.js (paquete LTS en choco)
-$btnNodeRefresh   = Create-IconButton -Text "↻" -Location (New-Object System.Drawing.Point(20, 580)) -ToolTipText "Buscar/actualizar Node.js (LTS)"
-$btnNodeUninstall = Create-IconButton -Text "✖" -Location (New-Object System.Drawing.Point(48, 580)) -ToolTipText "Desinstalar Node.js (LTS)"
+$btnNodeRefresh   = Create-IconButton -Text "↻" -Location (New-Object System.Drawing.Point(20, 680)) -ToolTipText "Buscar/actualizar Node.js (LTS)"
+$btnNodeUninstall = Create-IconButton -Text "✖" -Location (New-Object System.Drawing.Point(48, 680)) -ToolTipText "Desinstalar Node.js (LTS)"
 $btnNodeRefresh.Add_Click({
     Update-Dependency -ChocoPkg "nodejs-lts" -FriendlyName "Node.js" -CommandName "node" -LabelRef ([ref]$lblNode) -VersionArgs "--version" -Parse "FirstLine"
 })
