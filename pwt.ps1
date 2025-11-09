@@ -36,6 +36,7 @@ if ($response.Character -ne 'Y') {
 Clear-Host
 $global:defaultInstructions = @"
 ----- CAMBIOS -----
+- Ahora se debe tener una carpeta preconfigurada de destino, por omisión se usa el Escritorio.
 - Ahora permite que selecciones los formatos para video y audio.
 - Se agrega la opción para actualizar y desinstalar dependencias.
 - Se agregó vista previa del video.
@@ -296,7 +297,7 @@ function Fetch-Formats {
         return $false
     }
 
-    $obj = Invoke-Capture -ExePath $yt.Source -Args @("-J","--no-playlist",$Url)
+    $obj = Invoke-CaptureResponsive -ExePath $yt.Source -Args @("-J","--no-playlist",$Url) -WorkingText "Consultando formatos…"
     if ($obj.ExitCode -ne 0 -or [string]::IsNullOrWhiteSpace($obj.StdOut)) {
         Write-Host "[ERROR] No se pudo obtener JSON de formatos." -ForegroundColor Red
         Write-Host $obj.StdErr
@@ -895,6 +896,74 @@ $formPrincipal.Controls.Add($lblFfmpeg)
 $formPrincipal.Controls.Add($btnExit)
 
 # ====== Utilidad captura ======
+# === UI modeless "Trabajando..." ===
+function New-WorkingBox {
+    param([string]$Text)
+    $f = New-Object System.Windows.Forms.Form
+    $f.Text = "Trabajando..."
+    $f.Size = New-Object System.Drawing.Size(320,110)
+    $f.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::FixedDialog
+    $f.StartPosition = "CenterParent"
+    $f.MaximizeBox = $false; $f.MinimizeBox = $false; $f.ControlBox = $false
+    $f.TopMost = $true
+    $lbl = New-Object System.Windows.Forms.Label
+    $lbl.Text = $Text; $lbl.AutoSize = $false
+    $lbl.Size = New-Object System.Drawing.Size(300,30)
+    $lbl.Location = New-Object System.Drawing.Point(10,10)
+    $lbl.TextAlign = "MiddleCenter"
+    $prg = New-Object System.Windows.Forms.ProgressBar
+    $prg.Style = "Marquee"
+    $prg.MarqueeAnimationSpeed = 25
+    $prg.Size = New-Object System.Drawing.Size(300,20)
+    $prg.Location = New-Object System.Drawing.Point(10,45)
+    $f.Controls.Add($lbl); $f.Controls.Add($prg)
+    $f.Show() | Out-Null
+    return @{ Form = $f; Label = $lbl }
+}
+
+# Lanza un proceso pero manteniendo la UI viva (bombea DoEvents)
+function Invoke-CaptureResponsive {
+    param(
+        [Parameter(Mandatory=$true)][string]$ExePath,
+        [string[]]$Args = @(),
+        [string]$WorkingText = "Procesando..."
+    )
+    # Muestra el cuadro "Trabajando..."
+    $wb = New-WorkingBox -Text $WorkingText
+
+    # Prepara proceso sin bloquear
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName  = $ExePath
+    $psi.Arguments = (($Args | ForEach-Object { if ($_ -match '\s') { '"{0}"' -f $_ } else { $_ } }) -join ' ')
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError  = $true
+    $psi.UseShellExecute = $false
+    $psi.CreateNoWindow  = $true
+
+    $p = New-Object System.Diagnostics.Process
+    $p.StartInfo = $psi
+    [void]$p.Start()
+
+    # Mientras corre, mantener la UI fluida
+        $dot = 0
+        while (-not $p.HasExited) {
+            [System.Windows.Forms.Application]::DoEvents()
+            $dot = ($dot + 1) % 4
+            try {
+                # Cambia el texto del cuadro y/o del label principal
+                $wb.Label.Text = $WorkingText + ("." * $dot)
+                if ($lblEstadoConsulta) { $lblEstadoConsulta.Text = $WorkingText + ("." * $dot) }
+            } catch {}
+            Start-Sleep -Milliseconds 120
+        }
+
+
+    $stdout = $p.StandardOutput.ReadToEnd()
+    $stderr = $p.StandardError.ReadToEnd()
+    try { $wb.Form.Close(); $wb.Form.Dispose() } catch {}
+    return [pscustomobject]@{ ExitCode = $p.ExitCode; StdOut = $stdout; StdErr = $stderr }
+}
+
 function Invoke-Capture {
     param([Parameter(Mandatory=$true)][string]$ExePath,[string[]]$Args=@())
     $psi = New-Object System.Diagnostics.ProcessStartInfo
@@ -1000,14 +1069,21 @@ $btnConsultar.Add_Click({
         return
     }
     Write-Host ("[CONSULTA] Consultando URL: {0}" -f $url) -ForegroundColor Cyan
-    try { $yt = Get-Command yt-dlp -ErrorAction Stop } catch {
-        Write-Host "[ERROR] yt-dlp no disponible. Valida dependencias." -ForegroundColor Red
-        [System.Windows.Forms.MessageBox]::Show("yt-dlp no está disponible. Valídalo en Dependencias.","yt-dlp no encontrado",
-            [System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Error) | Out-Null
-        return
-    }
-    $res = Invoke-Capture -ExePath $yt.Source -Args @("--no-playlist","--get-title",$url)
-    $titulo = ($res.StdOut + "`n" + $res.StdErr).Trim() -split "`r?`n" | Where-Object { $_.Trim() -ne "" } | Select-Object -First 1
+        try { $yt = Get-Command yt-dlp -ErrorAction Stop } catch {
+            Write-Host "[ERROR] yt-dlp no disponible. Valida dependencias." -ForegroundColor Red
+            [System.Windows.Forms.MessageBox]::Show("yt-dlp no está disponible. Valídalo en Dependencias.","yt-dlp no encontrado",
+                [System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Error) | Out-Null
+            return
+        }
+        
+        # <<< CAMBIO CLAVE: llamada no bloqueante con spinner >>>
+        $res = Invoke-CaptureResponsive -ExePath $yt.Source `
+                -Args @("--no-playlist","--get-title",$url) `
+                -WorkingText "Consultando URL…"
+        
+        $titulo = ($res.StdOut + "`n" + $res.StdErr).Trim() -split "`r?`n" |
+                  Where-Object { $_.Trim() -ne "" } | Select-Object -First 1
+
     if ($res.ExitCode -eq 0 -and $titulo) {
         $script:videoConsultado = $true; $script:ultimaURL = $url; $script:ultimoTitulo = $titulo
         $lblEstadoConsulta.Text = ("Consultado: {0}" -f $titulo); $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::ForestGreen
