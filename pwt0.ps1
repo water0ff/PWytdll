@@ -55,7 +55,7 @@ $formPrincipal.MaximizeBox = $false
 $formPrincipal.MinimizeBox = $false
 $defaultFont = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Regular)
 $boldFont    = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
-                                                                                                        $version = "Alfa 251110.0947"
+                                                                                                        $version = "Alfa 251110.1005"
 $formPrincipal.Text = ("YTDLL v{0}" -f $version)
 Write-Host "`n=============================================" -ForegroundColor DarkCyan
 Write-Host "                   YTDLL                       " -ForegroundColor Green
@@ -185,17 +185,17 @@ function Set-DownloadButtonVisual {
         $btnDescargar.ForeColor = [System.Drawing.Color]::White
         $toolTip.SetToolTip($btnDescargar, "Aún no consultado: al hacer clic validará la URL (no descargará)")
     }
-    elseif (-not $script:formatsEnumerated) {
-        # <<--- NUEVO: caso de falla de formatos => NO verde
-        $btnDescargar.Enabled   = $false
-        $btnDescargar.BackColor = [System.Drawing.Color]::DarkOrange
-        $btnDescargar.ForeColor = [System.Drawing.Color]::White
-        $toolTip.SetToolTip($btnDescargar, "No fue posible extraer los formatos. Presiona 'Consultar' para reintentar.")
-        if ($lblEstadoConsulta) {
-            $lblEstadoConsulta.Text = "No fue posible extraer formatos. Vuelve a consultar."
-            $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::DarkOrange
+        elseif (-not $script:formatsEnumerated) {
+            # Estado "naranja", pero DEJAR HABILITADO para reintentar consulta con el mismo botón
+            $btnDescargar.Enabled   = $true
+            $btnDescargar.BackColor = [System.Drawing.Color]::DarkOrange
+            $btnDescargar.ForeColor = [System.Drawing.Color]::White
+            $toolTip.SetToolTip($btnDescargar, "No se pudieron extraer formatos. Presiona 'Descargar' para volver a consultar.")
+            if ($lblEstadoConsulta) {
+                $lblEstadoConsulta.Text = "No fue posible extraer formatos. Presiona 'Descargar' para volver a consultar."
+                $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::DarkOrange
+            }
         }
-    }
     else {
         # OK para descargar
         $btnDescargar.BackColor = [System.Drawing.Color]::ForestGreen
@@ -302,7 +302,11 @@ function Fetch-Formats {
     }
 
     try {
-        $obj = Invoke-CaptureResponsive -ExePath $yt.Source -Args @("-J","--no-playlist",$Url) -WorkingText "Consultando formatos…"
+        $obj = Invoke-CaptureResponsive -ExePath $yt.Source -Args @(
+            "-J","--no-playlist",
+            "--extractor-args","youtube:player_client=default,-web_safari,-web_embedded,-tv",
+            $Url
+        ) -WorkingText "Consultando formatos…"
         if ($obj.ExitCode -ne 0 -or [string]::IsNullOrWhiteSpace($obj.StdOut)) {
             Write-Host "[ERROR] No se pudo obtener JSON de formatos." -ForegroundColor Red
             Write-Host $obj.StdErr
@@ -1183,14 +1187,24 @@ $btnConsultar.Add_Click({
     }
 })
 $btnDescargar.Add_Click({
-    if ($script:videoConsultado -and -not $script:formatsEnumerated) {
-        [System.Windows.Forms.MessageBox]::Show(
-            "No fue posible extraer los formatos. Presiona 'Consultar' para reintentar.",
-            "Falta de formatos",
-            [System.Windows.Forms.MessageBoxButtons]::OK,
-            [System.Windows.Forms.MessageBoxIcon]::Warning
-        ) | Out-Null
+        if ($script:videoConsultado -and -not $script:formatsEnumerated) {
+        $ok = Invoke-ConsultaFromUI -Url ($txtUrl.Text.Trim())
         Set-DownloadButtonVisual
+        if ($ok -and $script:formatsEnumerated) {
+            [System.Windows.Forms.MessageBox]::Show(
+                "Consulta lista. Vuelve a presionar 'Descargar' para iniciar la descarga.",
+                "Consulta completada",
+                [System.Windows.Forms.MessageBoxButtons]::OK,
+                [System.Windows.Forms.MessageBoxIcon]::Information
+            ) | Out-Null
+        } else {
+            [System.Windows.Forms.MessageBox]::Show(
+                "No fue posible extraer formatos. Verifica conexión/URL y vuelve a intentar.",
+                "Falta de formatos",
+                [System.Windows.Forms.MessageBoxButtons]::OK,
+                [System.Windows.Forms.MessageBoxIcon]::Warning
+            ) | Out-Null
+        }
         return
     }
     Refresh-GateByDeps
