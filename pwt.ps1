@@ -12,7 +12,6 @@ $script:LogFile = "C:\Temp\ytdll_history.txt"
 if (-not (Test-Path -LiteralPath $script:LogFile)) {
     New-Item -ItemType File -Path $script:LogFile -Force | Out-Null
 }
-
 function Get-HistoryUrls {
     try {
         $content = Get-Content -LiteralPath $script:LogFile -ErrorAction Stop -Raw
@@ -26,13 +25,10 @@ function Add-HistoryUrl {
     param([Parameter(Mandatory=$true)][string]$Url)
     $u = $Url.Trim()
     if ([string]::IsNullOrWhiteSpace($u)) { return }
-    # No guardar placeholders
     if ($u -eq $global:UrlPlaceholder) { return }
-    # Validar rudamente que parezca URL
     if ($u -notmatch '^(https?://|www\.)') { return }
     $list = Get-HistoryUrls
     if ($list -notcontains $u) {
-        # Limitar a 200 entradas
         $newList = @($u) + $list
         if ($newList.Count -gt 200) { $newList = $newList[0..199] }
         try {
@@ -40,7 +36,6 @@ function Add-HistoryUrl {
         } catch {}
     }
 }
-
 function Clear-History {
     try { Clear-Content -LiteralPath $script:LogFile -ErrorAction Stop } catch {}
 }
@@ -50,9 +45,9 @@ try {
 } catch {}
 $OutputEncoding = [System.Text.Encoding]::UTF8
 $env:PYTHONIOENCODING = 'utf-8'
-chcp 65001 | Out-Null               # Forzar code page de consola a UTF-8
-$env:PYTHONUTF8 = '1'               # Python/yt-dlp en modo UTF-8
-$PSStyle.OutputRendering = 'Ansi'   # Evita rarezas con ANSI/UTF-8 en PS 7+
+chcp 65001 | Out-Null
+$env:PYTHONUTF8 = '1'
+$PSStyle.OutputRendering = 'Ansi'
 $global:defaultInstructions = @"
 ----- CAMBIOS -----
 - Ahora ya guarda un log con URLS consultadas.
@@ -71,7 +66,7 @@ $global:defaultInstructions = @"
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 [System.Windows.Forms.Application]::EnableVisualStyles()
-                                                                                                $version = "beta 251110.1500"
+                                                                                                $version = "beta 251110.1640"
 $formPrincipal = New-Object System.Windows.Forms.Form
 $formPrincipal.Size = New-Object System.Drawing.Size(400, 800)
 $formPrincipal.StartPosition = "CenterScreen"
@@ -185,7 +180,18 @@ function Set-DownloadButtonVisual {
     $haveFfm  = Test-CommandExists -Name "ffmpeg"
     $haveNode = if ($script:RequireNode) { Test-CommandExists -Name "node" } else { $true }
     $depsOk = $haveYt -and $haveFfm -and $haveNode
-
+    if ($chkVideo -and $chkAudio) {
+        $atLeastOne = $chkVideo.Checked -or $chkAudio.Checked
+        if (-not $atLeastOne) {
+            $btnDescargar.Enabled   = $false
+            $btnDescargar.BackColor = [System.Drawing.Color]::Black
+            $btnDescargar.ForeColor = [System.Drawing.Color]::White
+            $btnDescargar.Text      = "Descargar"
+            $toolTip.SetToolTip($btnDescargar, "Activa Video o Audio para continuar")
+            $btnDescargar.Tag = $btnDescargar.BackColor
+            return
+        }
+    }
     if (-not $depsOk) {
         $btnDescargar.Enabled   = $false
         $btnDescargar.BackColor = [System.Drawing.Color]::Black
@@ -195,23 +201,18 @@ function Set-DownloadButtonVisual {
         $btnDescargar.Tag = $btnDescargar.BackColor
         return
     }
-
     $currentUrl = Get-CurrentUrl
     $isConsulted = $script:videoConsultado -and
                    -not [string]::IsNullOrWhiteSpace($script:ultimaURL) -and
                    ($script:ultimaURL -eq $currentUrl)
-
-    # Estado por defecto (no consultado)
     $btnDescargar.Enabled = $true
     $btnDescargar.Text    = "Descargar"
-
     if (-not $isConsulted) {
         $btnDescargar.BackColor = [System.Drawing.Color]::DodgerBlue
         $btnDescargar.ForeColor = [System.Drawing.Color]::White
         $toolTip.SetToolTip($btnDescargar, "Aún no consultado: al hacer clic validará la URL (no descargará)")
     }
         elseif (-not $script:formatsEnumerated) {
-            # Estado "naranja", pero DEJAR HABILITADO para reintentar consulta con el mismo botón
             $btnDescargar.Enabled   = $true
             $btnDescargar.BackColor = [System.Drawing.Color]::DarkOrange
             $btnDescargar.ForeColor = [System.Drawing.Color]::White
@@ -222,12 +223,10 @@ function Set-DownloadButtonVisual {
             }
         }
     else {
-        # OK para descargar
         $btnDescargar.BackColor = [System.Drawing.Color]::ForestGreen
         $btnDescargar.ForeColor = [System.Drawing.Color]::White
         $toolTip.SetToolTip($btnDescargar, "Consulta válida: listo para descargar")
     }
-
     $btnDescargar.Tag = $btnDescargar.BackColor
 }
 $script:RequireNode = $true
@@ -235,7 +234,6 @@ function Test-CommandExists {
     param([Parameter(Mandatory=$true)][string]$Name)
     try { Get-Command $Name -ErrorAction Stop | Out-Null; return $true } catch { return $false }
 }
-
 function Refresh-GateByDeps {
     $haveYt   = Test-CommandExists -Name "yt-dlp"
     $haveFfm  = Test-CommandExists -Name "ffmpeg"
@@ -256,9 +254,9 @@ function Refresh-GateByDeps {
         if ($picPreview) { $picPreview.Image = $null }
     }
 }
-$script:formatsIndex = @{}   # format_id -> objeto con metadatos (tipo, codecs, label)
-$script:formatsVideo = @()   # lista de objetos mostrables en Combo Video
-$script:formatsAudio = @()   # lista de objetos mostrables en Combo Audio
+$script:formatsIndex = @{}
+$script:formatsVideo = @()
+$script:formatsAudio = @()
 $script:ExcludedFormatIds = @('18','22','95','96')
 function New-FormatDisplay {
     param(
@@ -326,7 +324,6 @@ function Format-ExtractorsInline {
             ($_ -notmatch '^\s*ERROR')   -and
             ($_ -notmatch '^\s*Deprecation')
         }
-
     $tokens = foreach ($ln in $lines) {
         $clean = $ln -replace '\s+\(.*?\)\s*$',''
         $parts = $clean -split '[\s,]+' | Where-Object { $_ }
@@ -334,11 +331,9 @@ function Format-ExtractorsInline {
             if ($p -match '^[A-Za-z0-9][\w:-]+$') { $p }
         }
     }
-
     $uniq = [System.Collections.Generic.List[string]]::new()
     $seen = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
     foreach ($t in $tokens) { if ($seen.Add($t)) { $null = $uniq.Add($t) } }
-
     $sb = [System.Text.StringBuilder]::new()
     $lineLen = 0
     for ($i=0; $i -lt $uniq.Count; $i++) {
@@ -355,16 +350,14 @@ function Format-ExtractorsInline {
         [void]$sb.Append($tok)
         $lineLen += $addLen
     }
-
     [pscustomobject]@{
         Text  = $sb.ToString()
         Count = $uniq.Count
-        List  = $uniq           # <--- NUEVO: lista utilizable para filtrar
+        List  = $uniq
     }
 }
-
 function Print-FormatsTable {
-    param([array]$formats)  # array del JSON .formats
+    param([array]$formats)
     Write-Host "`n[FORMATOS] Disponibles (similar a yt-dlp -F):" -ForegroundColor Cyan
     Write-Host ("{0,-9} {1,-5} {2,-10} {3,-7} {4,-9} {5}" -f "format_id","ext","res","vcodec","acodec","nota/tamaño/tbr") -ForegroundColor DarkGray
     foreach ($f in $formats) {
@@ -378,28 +371,21 @@ function Print-FormatsTable {
 }
 $script:bestProgId   = $null
 $script:bestProgRank = -1
-
-
-
-
 function Fetch-Formats {
     param([Parameter(Mandatory=$true)][string]$Url)
     $script:formatsIndex.Clear()
     $script:formatsVideo = @()
     $script:formatsAudio = @()
-    $script:formatsEnumerated = $false   # <-- reset
-
+    $script:formatsEnumerated = $false
     try { $yt = Get-Command yt-dlp -ErrorAction Stop } catch {
         Write-Host "[ERROR] yt-dlp no disponible para listar formatos." -ForegroundColor Red
         return $false
     }
-
     $prevLabel = $null
     if ($lblEstadoConsulta) {
         $prevLabel = $lblEstadoConsulta.Text
         $lblEstadoConsulta.Text = "Consultando formatos…"
     }
-
     try {
         $obj = Invoke-CaptureResponsive -ExePath $yt.Source -Args @(
             "-J","--no-playlist",
@@ -411,7 +397,6 @@ function Fetch-Formats {
             Write-Host $obj.StdErr
             return $false
         }
-
         try { $json = $obj.StdOut | ConvertFrom-Json } catch {
             Write-Host "[ERROR] JSON inválido al listar formatos." -ForegroundColor Red
             return $false
@@ -421,41 +406,30 @@ function Fetch-Formats {
             Write-Host "[WARN] El extractor no devolvió lista de formatos." -ForegroundColor Yellow
             return $false
         }
-
         Print-FormatsTable -formats $json.formats
-        # reset para cada consulta
         $script:bestProgId   = $null
         $script:bestProgRank = -1
-
         foreach ($f in $json.formats) {
             $klass = Classify-Format $f
-            # Evitar el pseudo-formato "download" (marcado como watermarked)
             if ($klass.Progressive -and $klass.Id -ne 'download') {
-                # ranking sencillo: mayor altura + mayor tbr
                 $height = [int]($klass.VRes ? $klass.VRes : 0)
                 $tbr    = [int]($klass.Tbr  ? $klass.Tbr  : 0)
-                $rank   = ($height * 100000) + $tbr  # peso alto a la resolución
-            
+                $rank   = ($height * 100000) + $tbr
                 if ($rank -gt $script:bestProgRank) {
                     $script:bestProgRank = $rank
                     $script:bestProgId   = $klass.Id
                 }
             }
-
             $script:formatsIndex[$klass.Id] = $klass
             if ($klass.Progressive -and $script:ExcludedFormatIds -contains $klass.Id) { continue }
-
             $res = if ($klass.VRes) { "{0}p" -f $klass.VRes } else { "" }
             $sz  = Human-Size $klass.Filesize
             $tbr = if ($klass.Tbr) { "{0}k" -f [math]::Round($klass.Tbr) } else { "" }
-
             if     ($klass.Progressive) { $script:formatsVideo += (New-FormatDisplay -Id $klass.Id -Label ("{0} {1} {2}/{3} (progresivo) {4} {5}" -f $klass.Ext,$res,$klass.VCodec,$klass.ACodec,$sz,$tbr)) }
             elseif ($klass.VideoOnly)   { $script:formatsVideo += (New-FormatDisplay -Id $klass.Id -Label ("{0} {1} {2} (v-only) {3} {4}" -f $klass.Ext,$res,$klass.VCodec,$sz,$tbr)) }
             elseif ($klass.AudioOnly)   { $script:formatsAudio += (New-FormatDisplay -Id $klass.Id -Label ("{0} ~{1} {2} (a-only) {3}" -f $klass.Ext,$klass.ABr,$klass.ACodec,$sz)) }
         }
-            # Headers “best*” (único lugar donde se agregan)
             $progOnly = Is-ProgressiveOnlySite $script:lastExtractor
-            
             $headersVideo = @("best — mejor calidad (progresivo si existe; si no, adaptativo)")
             if (-not $progOnly) {
                 $headersVideo += "bestvideo — mejor video (sin audio; usar con audio)"
@@ -470,41 +444,33 @@ function Fetch-Formats {
         if ($lblEstadoConsulta -and $prevLabel) { $lblEstadoConsulta.Text = $prevLabel }
     }
 }
-
 function Get-Metadata {
     param([Parameter(Mandatory=$true)][string]$Url)
-
     try { $yt = Get-Command yt-dlp -ErrorAction Stop } catch { return $null }
-
     $obj = Invoke-CaptureResponsive -ExePath $yt.Source -Args @(
         "-J", "--no-playlist",
         $Url
     ) -WorkingText "Leyendo metadatos…"
-
     if ($obj.ExitCode -ne 0 -or [string]::IsNullOrWhiteSpace($obj.StdOut)) { return $null }
-
     try { $json = $obj.StdOut | ConvertFrom-Json } catch { return $null }
-
     $thumb = Get-BestThumbnailUrl -Json $json
     [pscustomobject]@{
         Title      = $json.title
-        Extractor  = $json.extractor         # p.ej. 'twitch', 'youtube', 'twitter', etc.
+        Extractor  = $json.extractor
         Domain     = $json.webpage_url_domain
         Thumbnail  = $thumb
         Duration   = $json.duration
         Uploader   = $json.uploader
-        Json       = $json                   # por si lo quieres reutilizar
+        Json       = $json
     }
 }
 function Get-SelectedFormatId {
     param([System.Windows.Forms.ComboBox]$Combo)
     if (-not $Combo) { return $null }
     if (-not $Combo.SelectedItem) { return $null }
-
     $t = [string]$Combo.SelectedItem
     if ([string]::IsNullOrWhiteSpace($t)) { return $null }
-
-    if ($t -like "best*") { return ($t -split '\s')[0] } # best / bestvideo / bestaudio
+    if ($t -like "best*") { return ($t -split '\s')[0] }
     return ($t -split '\s')[0]
 }
 function Create-IconButton {
@@ -515,7 +481,7 @@ function Create-IconButton {
     )
     $btn = New-Object System.Windows.Forms.Button
     $btn.Text = $Text
-    $btn.Size = New-Object System.Drawing.Size(26, 24) # compacto
+    $btn.Size = New-Object System.Drawing.Size(26, 24)
     $btn.Location = $Location
     $btn.Font = New-Object System.Drawing.Font("Segoe UI Symbol", 10, [System.Drawing.FontStyle]::Bold)
     $btn.FlatStyle = [System.Windows.Forms.FlatStyle]::Standard
@@ -562,17 +528,16 @@ function Refresh-DependencyLabel {
         $LabelRef.Value.Text = ("{0}: no instalado" -f $FriendlyName)
         $LabelRef.Value.ForeColor = [System.Drawing.Color]::Red
     }
-    Refresh-GateByDeps   # <-- NUEVO
+    Refresh-GateByDeps
 }
 function Get-DownloadExtras {
     param([string]$Extractor, [string]$Domain)
-
     switch -Regex ($Extractor) {
         'twitch' {
             return @("--hls-use-mpegts", "--retries","10", "--retry-sleep","1", "-N","4")
         }
         'vimeo'  { return @("-N","4") }
-        'douyin|tiktok' { return @("-N","4") } # hls segmentado suele ir mejor con paralelo
+        'douyin|tiktok' { return @("-N","4") }
         default { return @() }
     }
 }
@@ -613,7 +578,7 @@ function Update-Dependency {
             [System.Windows.Forms.MessageBoxIcon]::Error
         ) | Out-Null
     } finally {
-        Refresh-GateByDeps   # <-- re-evalúa y bloquea/habilita Consultar/Descargar
+        Refresh-GateByDeps
     }
 }
 function Uninstall-Dependency {
@@ -658,7 +623,7 @@ function Uninstall-Dependency {
             [System.Windows.Forms.MessageBoxIcon]::Error
         ) | Out-Null
     } finally {
-        Refresh-GateByDeps   # <-- re-evalúa y bloquea/habilita Consultar/Descargar
+        Refresh-GateByDeps
     }
 }
 Write-Host "[INIT] Cargando UI..." -ForegroundColor Cyan
@@ -764,9 +729,7 @@ function Show-PreviewImage {
         [string]$Titulo = $null
     )
     try {
-        # Si es webp, probablemente no lo soporte GDI+ => falla rápido
         if ($ImageUrl -match '\.webp($|\?)') { return $false }
-
         $img = Get-ImageFromUrl -Url $ImageUrl
         if ($img) {
             $picPreview.Image = $img
@@ -780,19 +743,14 @@ function Show-PreviewImage {
 }
 function Get-BestThumbnailUrl {
     param([Parameter(Mandatory=$true)]$Json)
-    # 1) Campo 'thumbnail' directo
     if ($Json.thumbnail -and [string]::IsNullOrWhiteSpace($Json.thumbnail) -eq $false) {
         return [string]$Json.thumbnail
     }
-    # 2) Lista 'thumbnails' => elegimos la de mayor ancho o mayor 'preference'
     if ($Json.thumbnails -and $Json.thumbnails.Count -gt 0) {
-        # 2a) Intenta elegir NO-webp si existe
         $ordered = $Json.thumbnails | Sort-Object @{Expression='preference';Descending=$true},
                                                   @{Expression='width';Descending=$true}
         $thumbNonWebp = $ordered | Where-Object { $_.url -and ($_.url -notmatch '\.webp($|\?)') } | Select-Object -First 1
         if ($thumbNonWebp -and $thumbNonWebp.url) { return [string]$thumbNonWebp.url }
-        
-        # 2b) Si no hay, toma la mejor aunque sea webp
         $thumb = $ordered | Select-Object -First 1
         if ($thumb -and $thumb.url) { return [string]$thumb.url }
     }
@@ -832,7 +790,6 @@ function Invoke-ConsultaFromUI {
     $lblEstadoConsulta.Text = ("Consultado: {0}" -f $titulo)
     $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::ForestGreen
     Write-Host ("`t[OK] Video consultado: {0}" -f $titulo) -ForegroundColor Green
-    # dentro de Invoke-ConsultaFromUI, después de obtener título OK...
     $cmbVideoFmt.Items.Clear()
         $prevLabelText = $lblEstadoConsulta.Text
         $lblEstadoConsulta.Text = "Consultando formatos…"
@@ -840,16 +797,13 @@ function Invoke-ConsultaFromUI {
         $script:lastExtractor = $meta?.Extractor
         $script:lastDomain    = $meta?.Domain
         if ($meta -and $meta.Thumbnail) { $script:lastThumbUrl = $meta.Thumbnail }
-
         try {
             if (Fetch-Formats -Url $Url) {
                 foreach ($i in $script:formatsVideo) { [void]$cmbVideoFmt.Items.Add($i) }
                 foreach ($i in $script:formatsAudio) { [void]$cmbAudioFmt.Items.Add($i) }
                 if ($cmbVideoFmt.Items.Count -gt 0) {
                     $progOnly = Is-ProgressiveOnlySite $script:lastExtractor
-                
                     if ($progOnly -and $script:bestProgId) {
-                        # Selecciona el mejor ID progresivo real (no alias)
                         $idx = 0
                         for ($n=0; $n -lt $cmbVideoFmt.Items.Count; $n++) {
                             if ($cmbVideoFmt.Items[$n].ToString().StartsWith($script:bestProgId)) { $idx = $n; break }
@@ -857,7 +811,6 @@ function Invoke-ConsultaFromUI {
                         $cmbVideoFmt.SelectedIndex = $idx
                         try { $cmbAudioFmt.Enabled = $false } catch {}
                     } else {
-                        # Sitios adaptativos (YTB/Vimeo…): prioriza bestvideo, luego best
                         $idx = 0
                         for ($n=0; $n -lt $cmbVideoFmt.Items.Count; $n++) {
                             $s = $cmbVideoFmt.Items[$n].ToString()
@@ -868,7 +821,6 @@ function Invoke-ConsultaFromUI {
                         try { $cmbAudioFmt.Enabled = $true } catch {}
                     }
                 }
-
                 if ($cmbAudioFmt.Items.Count -gt 0) {
                     $idx = 0
                     for ($n=0; $n -lt $cmbAudioFmt.Items.Count; $n++) {
@@ -878,7 +830,6 @@ function Invoke-ConsultaFromUI {
                 }
             }
             else {
-                # <<--- NUEVO: sin formatos => bloquear descarga y pedir reintento
                 $script:formatsEnumerated = $false
                 $cmbVideoFmt.Items.Clear()
                 $cmbAudioFmt.Items.Clear()
@@ -896,7 +847,7 @@ function Invoke-ConsultaFromUI {
         if ($script:lastThumbUrl) {
             Show-PreviewImage -ImageUrl $script:lastThumbUrl -Titulo $titulo
         } else {
-            $picPreview.Image = $null  # sin fallback YouTube (multi-sitio real)
+            $picPreview.Image = $null
         }
             if ($script:formatsEnumerated) {
         Add-HistoryUrl -Url $Url
@@ -1068,7 +1019,6 @@ function Initialize-AppHeadless {
     Add-Type -AssemblyName System.Windows.Forms
     Add-Type -AssemblyName System.Drawing
     [System.Windows.Forms.Application]::EnableVisualStyles()
-
     if (-not (Check-Chocolatey)) {
         Write-Host "[EXIT] Falta Chocolatey o se requiere reinicio." -ForegroundColor Yellow
         return $false
@@ -1078,7 +1028,6 @@ function Initialize-AppHeadless {
     if ($script:RequireNode) {
         if (-not (Ensure-ToolHeadless -CommandName "node" -FriendlyName "Node.js" -ChocoPkg "nodejs-lts" -VersionArgs "--version")) { return $false }
     }
-
     return $true
 }
 if (-not (Initialize-AppHeadless)) {
@@ -1105,8 +1054,8 @@ function Show-AppInfo {
         -Location (New-Object System.Drawing.Point(20,76)) `
         -Size (New-Object System.Drawing.Size(460,20)) `
         -Font $boldFont
-    $psBlue = [System.Drawing.Color]::FromArgb(1,36,86)      # Azul PS clásico
-    $psText = [System.Drawing.Color]::Gainsboro              # Texto claro
+    $psBlue = [System.Drawing.Color]::FromArgb(1,36,86)
+    $psText = [System.Drawing.Color]::Gainsboro
     $fontCambios = New-Object System.Drawing.Font("Consolas", 10)
     if ($fontCambios.Name -ne "Consolas") {
         $fontCambios = New-Object System.Drawing.Font("Lucida Console", 10)
@@ -1121,7 +1070,7 @@ function Show-AppInfo {
     $txtCamb.ForeColor  = $psText
     $txtCamb.Font       = $fontCambios
     $txtCamb.Multiline  = $true
-    $txtCamb.WordWrap   = $false                              # NO envolver; respeta renglones
+    $txtCamb.WordWrap   = $false
     $txtCamb.ScrollBars = [System.Windows.Forms.RichTextBoxScrollBars]::Both
     $txtCamb.DetectUrls = $false
     $txtCamb.Text       = $logCambios
@@ -1145,32 +1094,26 @@ function Show-AppInfo {
         ("ffmpeg: " + ($ffVer  ? $ffVer : "no instalado"))
         ($script:RequireNode ? ("Node.js: " + ($ndVer ? $ndVer : "no instalado")) : $null)
     ) | Where-Object { $_ } | Out-String
-
     $lblLinks = Create-Label -Text "Proyectos:" `
         -Location (New-Object System.Drawing.Point(20, 378)) `
         -Size (New-Object System.Drawing.Size(460, 22)) `
         -Font $boldFont
-
     $lnkApp = New-LinkLabel -Text "PWytdll (GitHub)" `
               -Url "https://github.com/water0ff/PWytdll/tree/main" `
               -Location (New-Object System.Drawing.Point(20, 404)) `
               -Size (New-Object System.Drawing.Size(460, 20))
-
     $lnkYt  = New-LinkLabel -Text "yt-dlp" `
               -Url "https://github.com/yt-dlp/yt-dlp" `
               -Location (New-Object System.Drawing.Point(20, 428)) `
               -Size (New-Object System.Drawing.Size(460, 20))
-
     $lnkFf  = New-LinkLabel -Text "FFmpeg" `
               -Url "https://ffmpeg.org/" `
               -Location (New-Object System.Drawing.Point(20, 452)) `
               -Size (New-Object System.Drawing.Size(460, 20))
-
     $lnkNd  = New-LinkLabel -Text "Node.js" `
               -Url "https://nodejs.org/" `
               -Location (New-Object System.Drawing.Point(20, 476)) `
               -Size (New-Object System.Drawing.Size(460, 20))
-
     $btnCerrar = Create-Button -Text "Cerrar" `
         -Location (New-Object System.Drawing.Point(380, 506)) `
         -Size (New-Object System.Drawing.Size(100, 30)) `
@@ -1178,7 +1121,6 @@ function Show-AppInfo {
         -ForeColor ([System.Drawing.Color]::White) `
         -ToolTipText "Cerrar esta ventana"
     $btnCerrar.Add_Click({ $f.Close() })
-
     $f.Controls.AddRange(@(
         $lblTitulo,$lblVer,$lblCamb,$txtCamb,
         $lblDeps,$txtDeps,
@@ -1195,18 +1137,42 @@ $script:formatsEnumerated = $false
 $script:cookiesPath = $null
 $script:ultimaRutaDescarga = [Environment]::GetFolderPath('Desktop')
 $global:UrlPlaceholder = "Escribe la URL del video"
+# --- Checkboxes de modo ---
+$chkVideo = New-Object System.Windows.Forms.CheckBox
+$chkVideo.Text = "Video"
+$chkVideo.Checked = $true
+$chkVideo.Location = New-Object System.Drawing.Point(10, 235)
+$chkVideo.AutoSize = $true
+$chkAudio = New-Object System.Windows.Forms.CheckBox
+$chkAudio.Text = "Audio"
+$chkAudio.Checked = $true
+$chkAudio.Location = New-Object System.Drawing.Point(10, 290)
+$chkAudio.AutoSize = $true
+# Habilitar/Deshabilitar combos según checks y asegurar "al menos uno"
+$chkVideo.Add_CheckedChanged({
+    $cmbVideoFmt.Enabled = $chkVideo.Checked
+    if (-not $chkVideo.Checked -and -not $chkAudio.Checked) { $chkVideo.Checked = $true }
+    Set-DownloadButtonVisual
+})
+$chkAudio.Add_CheckedChanged({
+    $cmbAudioFmt.Enabled = $chkAudio.Checked
+    if (-not $chkAudio.Checked -and -not $chkVideo.Checked) { $chkAudio.Checked = $true }
+    Set-DownloadButtonVisual
+})
+$formPrincipal.Controls.Add($chkVideo)
+$formPrincipal.Controls.Add($chkAudio)
 $lblVideoFmt = Create-Label -Text "Formato de VIDEO:" `
     -Location (New-Object System.Drawing.Point(20, 235)) `
     -Size (New-Object System.Drawing.Size(360, 20)) -Font $boldFont
 $cmbVideoFmt = Create-ComboBox `
-    -Location (New-Object System.Drawing.Point(20, 258)) `
-    -Size (New-Object System.Drawing.Size(360, 28))
+    -Location (New-Object System.Drawing.Point(30, 258)) `
+    -Size (New-Object System.Drawing.Size(350, 28))
 $lblAudioFmt = Create-Label -Text "Formato de AUDIO:" `
     -Location (New-Object System.Drawing.Point(20, 290)) `
     -Size (New-Object System.Drawing.Size(360, 20)) -Font $boldFont
 $cmbAudioFmt = Create-ComboBox `
-    -Location (New-Object System.Drawing.Point(20, 313)) `
-    -Size (New-Object System.Drawing.Size(360, 28))
+    -Location (New-Object System.Drawing.Point(30, 313)) `
+    -Size (New-Object System.Drawing.Size(350, 28))
 $formPrincipal.Controls.Add($lblVideoFmt)
 $formPrincipal.Controls.Add($cmbVideoFmt)
 $formPrincipal.Controls.Add($lblAudioFmt)
@@ -1221,10 +1187,8 @@ $txtUrl = Create-TextBox `
     -ForeColor ([System.Drawing.Color]::Gray)
 # --- Menú de historial para $txtUrl ---
 $ctxUrlHistory = New-Object System.Windows.Forms.ContextMenuStrip
-
 function Show-UrlHistoryMenu {
     $ctxUrlHistory.Items.Clear()
-
     $items = @(Get-HistoryUrls)
     if (-not $items -or $items.Count -eq 0) {
         $miEmpty = New-Object System.Windows.Forms.ToolStripMenuItem
@@ -1232,7 +1196,6 @@ function Show-UrlHistoryMenu {
         $miEmpty.Enabled = $false
         [void]$ctxUrlHistory.Items.Add($miEmpty)
     } else {
-        # Cargar entradas (máximo 12 para no hacer menú kilométrico)
         $top = [Math]::Min(12, $items.Count)
         for ($i=0; $i -lt $top; $i++) {
             $urlItem = New-Object System.Windows.Forms.ToolStripMenuItem
@@ -1249,11 +1212,9 @@ function Show-UrlHistoryMenu {
             [void]$ctxUrlHistory.Items.Add($urlItem)
         }
     }
-
     if ($ctxUrlHistory.Items.Count -gt 0) {
         [void]$ctxUrlHistory.Items.Add((New-Object System.Windows.Forms.ToolStripSeparator))
     }
-
     $miClear = New-Object System.Windows.Forms.ToolStripMenuItem
     $miClear.Text = "Borrar historial"
     $miClear.ForeColor = [System.Drawing.Color]::Crimson
@@ -1268,8 +1229,6 @@ function Show-UrlHistoryMenu {
         }
     })
     [void]$ctxUrlHistory.Items.Add($miClear)
-
-    # Mostrar el menú justo debajo del TextBox
     $pt = New-Object System.Drawing.Point(0, $txtUrl.Height)
     $ctxUrlHistory.Show($txtUrl, $pt)
 }
@@ -1278,9 +1237,8 @@ $txtUrl.Add_GotFocus({
         $this.Text = ""
         $this.ForeColor = [System.Drawing.Color]::Black
     }
-    Show-UrlHistoryMenu   # abrir historial al primer foco
+    Show-UrlHistoryMenu
 })
-
 $txtUrl.Add_MouseUp({
     param($s,$e)
     if ($e.Button -eq [System.Windows.Forms.MouseButtons]::Right) {
@@ -1289,7 +1247,6 @@ $txtUrl.Add_MouseUp({
 })
 # Asignar también como ContextMenuStrip por si el usuario presiona la tecla menú
 $txtUrl.ContextMenuStrip = $ctxUrlHistory
-
 $txtUrl.Add_LostFocus({
     if ([string]::IsNullOrWhiteSpace($this.Text)) {
         $this.Text = $global:UrlPlaceholder
@@ -1342,68 +1299,50 @@ $btnPickCookies.Add_Click({
         [System.Windows.Forms.MessageBox]::Show("Cookies configuradas: $($script:cookiesPath)","OK") | Out-Null
     }
 })
-if ($script:cookiesPath) {
-    $args += @("--cookies", $script:cookiesPath)
-}
 $btnSites = Create-Button -Text "Sitios compatibles" `
     -Location (New-Object System.Drawing.Point(200, 720)) `
     -Size (New-Object System.Drawing.Size(180, 35)) `
     -BackColor ([System.Drawing.Color]::White) `
     -ForeColor ([System.Drawing.Color]::Black) `
     -ToolTipText "Mostrar extractores de yt-dlp"
-
 $formPrincipal.Controls.Add($btnSites)
 $btnSites.Add_Click({
     try { $yt = Get-Command yt-dlp -ErrorAction Stop } catch {
         [System.Windows.Forms.MessageBox]::Show("yt-dlp no está disponible.","Error") | Out-Null
         return
     }
-
     $res = Invoke-CaptureResponsive -ExePath $yt.Source -Args @("--list-extractors") -WorkingText "Obteniendo sitios…"
         $raw = ($res.StdOut + "`r`n" + $res.StdErr)
         $fmt  = Format-ExtractorsInline -RawText $raw -WrapAt 120
         $allSites = [System.Collections.ArrayList]::new()
         $null = $allSites.AddRange($fmt.List)
-        
-        # --- Diálogo con buscador ---
         $dlg = Create-Form -Title ("Sitios compatibles — {0} detectados" -f $fmt.Count) `
                            -Size (New-Object System.Drawing.Size(900, 560))
-        
-        # Cuadro de búsqueda (placeholder)
         $txtFiltro = Create-TextBox -Location (New-Object System.Drawing.Point(10,10)) `
                                     -Size (New-Object System.Drawing.Size(780,28)) `
                                     -Text "(buscar sitio)"
         $txtFiltro.ForeColor = [System.Drawing.Color]::Gray
-        
         $txtFiltro.Add_GotFocus({
             if ($this.Text -eq "(buscar sitio)") { $this.Text = ""; $this.ForeColor = [System.Drawing.Color]::Black }
         })
         $txtFiltro.Add_LostFocus({
             if ([string]::IsNullOrWhiteSpace($this.Text)) { $this.Text = "(buscar sitio)"; $this.ForeColor = [System.Drawing.Color]::Gray }
         })
-        
-        # Contador (resultado/total)
         $lblCount = Create-Label -Text ("0/{0}" -f $allSites.Count) `
             -Location (New-Object System.Drawing.Point(800, 12)) `
             -Size (New-Object System.Drawing.Size(80,28)) `
             -TextAlign ([System.Drawing.ContentAlignment]::MiddleRight)
-        
-        # Lista filtrable
         $lst = New-Object System.Windows.Forms.ListBox
         $lst.Location = New-Object System.Drawing.Point(10, 44)
         $lst.Size     = New-Object System.Drawing.Size(864, 440)
         $lst.Font     = New-Object System.Drawing.Font("Consolas", 9)
         $lst.IntegralHeight = $false
-        
-        # Botones
         $btnCopy = Create-Button -Text "Copiar selección" `
             -Location (New-Object System.Drawing.Point(664, 490)) `
             -Size (New-Object System.Drawing.Size(120, 30))
         $btnClose = Create-Button -Text "Cerrar" `
             -Location (New-Object System.Drawing.Point(794, 490)) `
             -Size (New-Object System.Drawing.Size(80, 30))
-        
-        # Carga inicial
         function Refresh-List([string]$term) {
             $lst.BeginUpdate()
             try {
@@ -1420,14 +1359,10 @@ $btnSites.Add_Click({
             }
         }
         Refresh-List $null
-        
-        # Filtrado en vivo
         $txtFiltro.Add_TextChanged({
-            if ($this.ForeColor -eq [System.Drawing.Color]::Gray) { return } # aún placeholder
+            if ($this.ForeColor -eq [System.Drawing.Color]::Gray) { return }
             Refresh-List $this.Text.Trim()
         })
-        
-        # Copiar con botón / doble clic / Enter
         $btnCopy.Add_Click({
             if ($lst.SelectedItem) {
                 try { [System.Windows.Forms.Clipboard]::SetText([string]$lst.SelectedItem) } catch {}
@@ -1441,18 +1376,14 @@ $btnSites.Add_Click({
                 $e.Handled = $true
             }
         })
-        
         $btnClose.Add_Click({ $dlg.Close() })
-        
         $dlg.Controls.Add($txtFiltro)
         $dlg.Controls.Add($lblCount)
         $dlg.Controls.Add($lst)
         $dlg.Controls.Add($btnCopy)
         $dlg.Controls.Add($btnClose)
         $dlg.ShowDialog() | Out-Null
-
 })
-
 $lblDestino = Create-Label -Text "Carpeta de destino:" `
     -Location (New-Object System.Drawing.Point(20, 180)) `
     -Size (New-Object System.Drawing.Size(360, 20)) -Font $boldFont
@@ -1588,7 +1519,6 @@ function Invoke-CaptureResponsive {
             [System.Windows.Forms.Application]::DoEvents()
             $dot = ($dot + 1) % 4
             if ($lblEstadoConsulta) { $lblEstadoConsulta.Text = $WorkingText + ("." * $dot) }
-
             if ($sw.Elapsed.TotalSeconds -ge $TimeoutSec) {
                 try { $proc.Kill() } catch {}
                 throw "Tiempo de espera agotado ($TimeoutSec s) en '$WorkingText'."
@@ -1630,56 +1560,41 @@ function Invoke-YtDlpConsoleProgress {
     )
     try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch {}
     $global:ProgressPreference = 'SilentlyContinue'
-
     $tmpDir  = [System.IO.Path]::GetTempPath()
     $errFile = Join-Path $tmpDir ("yt-dlp-stderr_{0}.log" -f ([guid]::NewGuid()))
     $outFile = Join-Path $tmpDir ("yt-dlp-stdout_{0}.log" -f ([guid]::NewGuid()))
-
     $argLine = ($Args | ForEach-Object { if ($_ -match '\s') { '"{0}"' -f $_ } else { $_ } }) -join ' '
-
     $proc = Start-Process -FilePath $ExePath `
         -ArgumentList $argLine `
         -NoNewWindow -PassThru `
         -RedirectStandardError  $errFile `
         -RedirectStandardOutput $outFile
-
     $fsErr = [System.IO.File]::Open($errFile,[System.IO.FileMode]::OpenOrCreate,[System.IO.FileAccess]::Read,[System.IO.FileShare]::ReadWrite)
     $srErr = New-Object System.IO.StreamReader($fsErr)
     $fsOut = [System.IO.File]::Open($outFile,[System.IO.FileMode]::OpenOrCreate,[System.IO.FileAccess]::Read,[System.IO.FileShare]::ReadWrite)
     $srOut = New-Object System.IO.StreamReader($fsOut)
-
     $script:lastPct        = -1
     $script:lastLineSig    = $null
     $script:hlsDurationSec = $null
     $phase = "Preparando…"
-
     function Set-Ui([string]$txt) {
         if ($UpdateUi -and $lblEstadoConsulta) { $lblEstadoConsulta.Text = $txt }
     }
-
     function _PrintLine([string]$text) {
         if ([string]::IsNullOrWhiteSpace($text)) { return }
-
-        # Captura duración global de ffmpeg
         $mDur = [regex]::Match($text, 'Duration:\s*(?<h>\d{2}):(?<m>\d{2}):(?<s>\d{2}(?:\.\d+)?)')
         if ($mDur.Success) {
             $h=[int]$mDur.Groups['h'].Value; $m=[int]$mDur.Groups['m'].Value; $s=[double]$mDur.Groups['s'].Value
             $script:hlsDurationSec = ($h*3600 + $m*60 + $s)
             return
         }
-
-        # Oculta ruido común
         if ($text -match "^\[(?:hls|https)\s@.*\]\s+Opening\s+'.+\.ts'") { return }
         if ($text -match '^\s*(Input\s+#0,|Output\s+#0|Press \[q\] to stop)') { return }
-
-        # Estados útiles
         if ($text -match 'Sleeping\s+(\d+(?:\.\d+)?)\s+seconds') { Set-Ui "Esperando $($Matches[1])s…"; Write-Host "`n$text"; return }
         if ($text -match '^\[download\]\s+Destination:')         { $phase = "Descargando…"; Set-Ui $phase; Write-Host "`n$text"; return }
         if ($text -match '^\[Merger\]\s+Merging formats')        { $phase = "Fusionando…"; Set-Ui $phase; Write-Host "`n$text"; return }
         if ($text -match '^Deleting original file')              { $phase = "Borrando temporales…"; Set-Ui $phase; Write-Host "`n$text"; return }
         if ($text -match '^\[(ExtractAudio|Fixup|EmbedSubtitle|ModifyChapters)\]') { $phase = "Post-procesando…"; Set-Ui $phase; Write-Host "`n$text"; return }
-
-        # Progreso yt-dlp (porcentaje)
         $m = [regex]::Match($text, 'download:\s*(?<pct>\d+(?:\.\d+)?)%\s*(?:ETA:(?<eta>\S+))?\s*(?:SPEED:(?<spd>.+))?', 'IgnoreCase')
         if (-not $m.Success) { $m = [regex]::Match($text, '(?<pct>\d+(?:\.\d+)?)%\s+of.*?at\s+(?<spd>\S+)\s+ETA\s+(?<eta>\S+)', 'IgnoreCase') }
         if (-not $m.Success) { $m = [regex]::Match($text, '(?<pct>\d+(?:\.\d+)?)%') }
@@ -1693,8 +1608,6 @@ function Invoke-YtDlpConsoleProgress {
             }
             return
         }
-
-        # Progreso ffmpeg (stats con \r)
         $mFfm = [regex]::Match($text, '^frame=\s*\d+.*time=\d{2}:\d{2}:\d{2}(?:\.\d+)?\s+.*speed=\S+')
         if ($mFfm.Success) {
             $line = ($text -replace '\s+',' ').Trim()
@@ -1706,36 +1619,25 @@ function Invoke-YtDlpConsoleProgress {
             }
             return
         }
-
-        # Cualquier otra línea útil
-        Write-Host "`n$text"
+            Write-Host "`n$text"
     }
-
     try {
         Set-Ui "Preparando descarga…"
         $bufErr = ""; $bufOut = ""
-
         while (-not $proc.HasExited) {
-            # Leer “lo nuevo” (incluye líneas con solo \r)
             $bufOut += $srOut.ReadToEnd()
             $bufErr += $srErr.ReadToEnd()
-
             foreach ($chunk in @($bufOut, $bufErr)) {
                 if ([string]::IsNullOrEmpty($chunk)) { continue }
                 $parts = [regex]::Split($chunk, "\r\n|\n|\r")
                 for ($i=0; $i -lt $parts.Length-1; $i++) { _PrintLine $parts[$i] }
             }
-
-            # Conservar el último fragmento (puede ser línea parcial sin \n)
             if ($bufOut) { $bufOut = ([regex]::Split($bufOut, "\r\n|\n|\r") | Select-Object -Last 1) } 
             if ($bufErr) { $bufErr = ([regex]::Split($bufErr, "\r\n|\n|\r") | Select-Object -Last 1) }
-
             [System.Windows.Forms.Application]::DoEvents()
             Start-Sleep -Milliseconds 80
         }
-
-        # Vaciar lo pendiente al terminar
-        $bufOut += $srOut.ReadToEnd()
+   $bufOut += $srOut.ReadToEnd()
         $bufErr += $srErr.ReadToEnd()
         foreach ($line in ([regex]::Split(($bufOut + "`n" + $bufErr), "\r\n|\n|\r"))) { _PrintLine $line }
     }
@@ -1744,7 +1646,6 @@ function Invoke-YtDlpConsoleProgress {
         try { $srOut.Close(); $fsOut.Close() } catch {}
         Write-Host ""
     }
-
     return $proc.ExitCode
 }
 $btnConsultar.Add_Click({
@@ -1815,7 +1716,6 @@ $btnConsultar.Add_Click({
                     $cmbAudioFmt.SelectedIndex = $idx
                 }
                 } else {
-                    # <<--- SIN FORMATOS: bloquear descarga y pedir reintento
                     $script:formatsEnumerated = $false
                     $cmbVideoFmt.Items.Clear()
                     $cmbAudioFmt.Items.Clear()
@@ -1835,212 +1735,228 @@ $btnConsultar.Add_Click({
         function Is-ProgressiveOnlySite([string]$extractor) {
             return ($extractor -match '(tiktok|douyin|instagram|twitter|x)')
         }
-$btnDescargar.Add_Click({
-        if ($script:videoConsultado -and -not $script:formatsEnumerated) {
-        $ok = Invoke-ConsultaFromUI -Url (Get-CurrentUrl)
-        Set-DownloadButtonVisual
-        if ($ok -and $script:formatsEnumerated) {
-            [System.Windows.Forms.MessageBox]::Show(
-                "Consulta lista. Vuelve a presionar 'Descargar' para iniciar la descarga.",
-                "Consulta completada",
-                [System.Windows.Forms.MessageBoxButtons]::OK,
-                [System.Windows.Forms.MessageBoxIcon]::Information
-            ) | Out-Null
-        } else {
-            [System.Windows.Forms.MessageBox]::Show(
-                "No fue posible extraer formatos. Verifica conexión/URL y vuelve a intentar.",
-                "Falta de formatos",
-                [System.Windows.Forms.MessageBoxButtons]::OK,
-                [System.Windows.Forms.MessageBoxIcon]::Warning
-            ) | Out-Null
-        }
-        return
-    }
-    Refresh-GateByDeps
-    $currentUrl = Get-CurrentUrl
-    $ready = $script:videoConsultado -and
-             -not [string]::IsNullOrWhiteSpace($script:ultimaURL) -and
-             ($script:ultimaURL -eq $currentUrl)
-    if (-not $ready) {
-        if ([string]::IsNullOrWhiteSpace($currentUrl)) {
-            [System.Windows.Forms.MessageBox]::Show("Escribe una URL de YouTube.","Falta URL",
-                [System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Warning) | Out-Null
-            return
-        }
-        $ok = Invoke-ConsultaFromUI -Url $currentUrl
-        Set-DownloadButtonVisual
-        if ($ok) {
-            [System.Windows.Forms.MessageBox]::Show("Consulta lista. Vuelve a presionar Descargar para iniciar la descarga.",
-                "Consulta completada",
-                [System.Windows.Forms.MessageBoxButtons]::OK,
-                [System.Windows.Forms.MessageBoxIcon]::Information) | Out-Null
-        }
-        return
-    }
-    try { $yt = Get-Command yt-dlp -ErrorAction Stop } catch {
-        [System.Windows.Forms.MessageBox]::Show("yt-dlp no está disponible. Valídalo en Dependencias.","yt-dlp no encontrado",
-            [System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Error) | Out-Null
-        return
-    }
-    $dest = $script:ultimaRutaDescarga
-    if ([string]::IsNullOrWhiteSpace($dest)) {
-        $dest = [Environment]::GetFolderPath('Desktop')
-        $script:ultimaRutaDescarga = $dest
-        try { $txtDestino.Text = $dest } catch {}
-    }
-    if (-not (Test-Path -LiteralPath $dest)) {
-        try { New-Item -ItemType Directory -Path $dest -Force | Out-Null }
-        catch {
-            [System.Windows.Forms.MessageBox]::Show("No se pudo preparar la carpeta de destino.","Error de destino",
-                [System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Error) | Out-Null
-            return
-        }
-    }
-        function Is-TwitchUrl([string]$u) {
-            return $u -match '(^https?://)?(www\.)?twitch\.tv/' 
-        }
-        $videoSel = Get-SelectedFormatId -Combo $cmbVideoFmt
-        $audioSel = Get-SelectedFormatId -Combo $cmbAudioFmt
-        $fSelector = $null
-        $mergeExt  = "mp4"
-        
-        if (Is-TwitchUrl $script:ultimaURL) {
-            # En Twitch, usa calidades progresivas; si el usuario dejó 'bestvideo', cámbialo a 'best'
-            if ($videoSel -and $videoSel -notmatch '^best(video)?$') {
-                $fSelector = $videoSel
-            } else {
-                $fSelector = "best"
-            }
-        }
-        elseif (Is-ProgressiveOnlySite $script:lastExtractor) {
-            # TikTok/Douyin/Instagram/Twitter usan formatos progresivos (A+V juntos)
-            # Si el usuario dejó best/bestvideo, usa el mejor ID concreto detectado
-            if ($videoSel -match '^best(video)?$') {
-                $fSelector = ($script:bestProgId ? $script:bestProgId : "best")
-            } else {
-                # Si eligió una id concreta (p.ej. "download" o "h264_..."), respétala
-                $fSelector = $videoSel
-            }
-        
-            # En progresivos no hace falta forzar merge:
-            $mergeExt = $null
-        
-            # Desactiva audio para evitar confusión visual (ya lo haces)
-            try { $cmbAudioFmt.Enabled = $false } catch {}
-        }
-        else {
-            # YouTube, Vimeo, etc. (tu lógica actual con combinación v-only + audio)
-            if ($videoSel) {
-                if ($videoSel -eq "best") {
-                    $fSelector = "best"
-                } elseif ($videoSel -eq "bestvideo") {
-                    $fSelector = "bestvideo+" + ($(if ($audioSel) { $audioSel } else { "bestaudio" }))
+        $btnDescargar.Add_Click({
+            if ($script:videoConsultado -and -not $script:formatsEnumerated) {
+                $ok = Invoke-ConsultaFromUI -Url (Get-CurrentUrl)
+                Set-DownloadButtonVisual
+                if ($ok -and $script:formatsEnumerated) {
+                    [System.Windows.Forms.MessageBox]::Show(
+                        "Consulta lista. Vuelve a presionar 'Descargar' para iniciar la descarga.",
+                        "Consulta completada",
+                        [System.Windows.Forms.MessageBoxButtons]::OK,
+                        [System.Windows.Forms.MessageBoxIcon]::Information
+                    ) | Out-Null
                 } else {
-                    $klass = $script:formatsIndex[$videoSel]
-                    if ($klass -and $klass.Progressive) {
-                        $fSelector = $videoSel
-                    } elseif ($klass -and $klass.VideoOnly) {
-                        $fSelector = $videoSel + "+" + ($(if ($audioSel) { $audioSel } else { "bestaudio" }))
+                    [System.Windows.Forms.MessageBox]::Show(
+                        "No fue posible extraer formatos. Verifica conexión/URL y vuelve a intentar.",
+                        "Falta de formatos",
+                        [System.Windows.Forms.MessageBoxButtons]::OK,
+                        [System.Windows.Forms.MessageBoxIcon]::Warning
+                    ) | Out-Null
+                }
+                return
+            }
+            Refresh-GateByDeps
+            $currentUrl = Get-CurrentUrl
+            $ready = $script:videoConsultado -and
+                     -not [string]::IsNullOrWhiteSpace($script:ultimaURL) -and
+                     ($script:ultimaURL -eq $currentUrl)
+            if (-not $ready) {
+                if ([string]::IsNullOrWhiteSpace($currentUrl)) {
+                    [System.Windows.Forms.MessageBox]::Show("Escribe una URL de YouTube.","Falta URL",
+                        [System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Warning) | Out-Null
+                    return
+                }
+                $ok = Invoke-ConsultaFromUI -Url $currentUrl
+                Set-DownloadButtonVisual
+                if ($ok) {
+                    [System.Windows.Forms.MessageBox]::Show("Consulta lista. Vuelve a presionar Descargar para iniciar la descarga.",
+                        "Consulta completada",
+                        [System.Windows.Forms.MessageBoxButtons]::OK,
+                        [System.Windows.Forms.MessageBoxIcon]::Information) | Out-Null
+                }
+                return
+            }
+            try { $yt = Get-Command yt-dlp -ErrorAction Stop } catch {
+                [System.Windows.Forms.MessageBox]::Show("yt-dlp no está disponible. Valídalo en Dependencias.","yt-dlp no encontrado",
+                    [System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Error) | Out-Null
+                return
+            }
+            $dest = $script:ultimaRutaDescarga
+            if ([string]::IsNullOrWhiteSpace($dest)) {
+                $dest = [Environment]::GetFolderPath('Desktop')
+                $script:ultimaRutaDescarga = $dest
+                try { $txtDestino.Text = $dest } catch {}
+            }
+            if (-not (Test-Path -LiteralPath $dest)) {
+                try { New-Item -ItemType Directory -Path $dest -Force | Out-Null }
+                catch {
+                    [System.Windows.Forms.MessageBox]::Show("No se pudo preparar la carpeta de destino.","Error de destino",
+                        [System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Error) | Out-Null
+                    return
+                }
+            }
+            function Get-ItemExtFromCombo([string]$s) {
+                if ([string]::IsNullOrWhiteSpace($s)) { return $null }
+                $m = [regex]::Match($s, '\b(m4a|mp3|webm|opus|ogg|wav|aac|flac|alac)\b', 'IgnoreCase')
+                return ($m.Success ? $m.Value.ToLowerInvariant() : $null)
+            }
+            function Is-TwitchUrl([string]$u) { return $u -match '(^https?://)?(www\.)?twitch\.tv/' }
+            $videoSel = Get-SelectedFormatId -Combo $cmbVideoFmt
+            $audioSel = Get-SelectedFormatId -Combo $cmbAudioFmt
+            $useVideo = $true; if ($chkVideo) { $useVideo = $chkVideo.Checked }
+            $useAudio = $true; if ($chkAudio) { $useAudio = $chkAudio.Checked }
+            $fSelector = $null
+            $mergeExt  = "mp4"
+            $extractAudio = $false
+            $audioFormatOut = $null
+            $progOnly = Is-ProgressiveOnlySite $script:lastExtractor
+            if ($useVideo -and $useAudio) {
+                if (Is-TwitchUrl $script:ultimaURL) {
+                    if ($videoSel -and $videoSel -notmatch '^best(video)?$') { $fSelector = $videoSel } else { $fSelector = "best" }
+                    $mergeExt = $null
+                }
+                elseif ($progOnly) {
+                    if ($videoSel -match '^best(video)?$') {
+                        $fSelector = ($script:bestProgId ? $script:bestProgId : "best")
                     } else {
-                        $fSelector = $videoSel + "+" + ($(if ($audioSel) { $audioSel } else { "bestaudio" }))
+                        $fSelector = $videoSel
+                    }
+                    $mergeExt = $null
+                    try { $cmbAudioFmt.Enabled = $false } catch {}
+                }
+                else {
+                    if ($videoSel) {
+                        if ($videoSel -eq "best") {
+                            $fSelector = "best"
+                        } elseif ($videoSel -eq "bestvideo") {
+                            $fSelector = "bestvideo+" + ($(if ($audioSel) { $audioSel } else { "bestaudio" }))
+                        } else {
+                            $klass = $script:formatsIndex[$videoSel]
+                            if ($klass -and $klass.Progressive) {
+                                $fSelector = $videoSel
+                                $mergeExt = $null
+                            } elseif ($klass -and $klass.VideoOnly) {
+                                $fSelector = $videoSel + "+" + ($(if ($audioSel) { $audioSel } else { "bestaudio" }))
+                            } else {
+                                $fSelector = $videoSel + "+" + ($(if ($audioSel) { $audioSel } else { "bestaudio" }))
+                            }
+                        }
+                    } else {
+                        $fSelector = "bestvideo+" + ($(if ($audioSel) { $audioSel } else { "bestaudio" }))
                     }
                 }
-            } else {
-                $fSelector = "best"
             }
-        }
-
-    $prevLbl = $lblEstadoConsulta.Text
-    $prevPickDest  = $btnPickDestino.Enabled
-    $prevCmbVid    = $cmbVideoFmt.Enabled
-    $prevCmbAud    = $cmbAudioFmt.Enabled
-    $btnPickDestino.Enabled = $false
-    $cmbVideoFmt.Enabled = $false
-    $cmbAudioFmt.Enabled = $false
-    $lblEstadoConsulta.Text = "Preparando descarga…"
-    $baseTitle = if ($script:ultimoTitulo) { $script:ultimoTitulo } else {
-        $vid = Get-YouTubeVideoId -Url $script:ultimaURL
-        if ($vid) { "video_$vid" } else { "video" }
-    }
-    $baseTitle = Get-SafeFileName -Name $baseTitle
-    $finalExt = $mergeExt
-    if ([string]::IsNullOrWhiteSpace($finalExt)) { $finalExt = "mp4" }
-    $targetPath = Join-Path $dest ("{0}.{1}" -f $baseTitle, $finalExt)
-    $idx = 2
-    while (Test-Path -LiteralPath $targetPath) {
-        $targetPath = Join-Path $dest ("{0}_{1}.{2}" -f $baseTitle, $idx, $finalExt)
-        $idx++
-    }
-    Write-Host ("[OUTPUT] Archivo destino: {0}" -f $targetPath) -ForegroundColor Cyan
-        $args = @("--encoding","utf-8","--progress","--no-color","--newline",
-                  "-f", $fSelector,
-                  "-o", $targetPath,
-                  "--progress-template","download:%(progress._percent_str)s ETA:%(progress._eta_str)s SPEED:%(progress._speed_str)s",
-                  "--extractor-args","youtube:player_client=default,-web_safari,-web_embedded,-tv")
-        
-        if ($mergeExt) {
-            $args = @("--encoding","utf-8","--progress","--no-color","--newline",
-                      "-f", $fSelector,
-                      "--merge-output-format", $mergeExt,
-                      "-o", $targetPath,
-                      "--progress-template","download:%(progress._percent_str)s ETA:%(progress._eta_str)s SPEED:%(progress._speed_str)s",
-                      "--extractor-args","youtube:player_client=default,-web_safari,-web_embedded,-tv")
-        }
-        $args += @(
-            "--no-part",               # Evita .part corruptos
-            "--ignore-config"          # Ignora errores de configuración externa
-        )
-    if ($script:cookiesPath) {
-            $args += @("--cookies", $script:cookiesPath)
-        }
-    $args += $script:ultimaURL
-    if (Is-TwitchUrl $script:ultimaURL) {
-            $args += @(
-                "--hls-use-mpegts",
-                "--retries","10","--retry-sleep","1",
-                "-N","4"
+            elseif ($useVideo -and -not $useAudio) {
+                if (Is-TwitchUrl $script:ultimaURL) {
+                    $fSelector = "best"
+                    $mergeExt = $null
+                }
+                elseif ($progOnly) {
+                    if ($videoSel -match '^best(video)?$') {
+                        $fSelector = ($script:bestProgId ? $script:bestProgId : "best")
+                    } else {
+                        $fSelector = $videoSel
+                    }
+                    $mergeExt = $null
+                }
+                else {
+                    if (-not $videoSel -or $videoSel -eq "best") {
+                        $videoSel = "bestvideo"
+                    }
+                    $fSelector = $videoSel
+                    $mergeExt = $null
+                }
+            }
+            elseif ($useAudio -and -not $useVideo) {
+                $extractAudio = $true
+                $fSelector = ($(if ($audioSel) { $audioSel } else { "bestaudio" }))
+                $audioFormatOut = Get-ItemExtFromCombo (($cmbAudioFmt.SelectedItem)?.ToString())
+                if (-not $audioFormatOut) { $audioFormatOut = "m4a" }
+                $mergeExt = $null
+            }
+            if (-not $fSelector -or [string]::IsNullOrWhiteSpace($fSelector)) {
+                if ($useVideo -and $useAudio) {
+                    if ($progOnly -or Is-TwitchUrl $script:ultimaURL) { $fSelector = "best" }
+                    else { $fSelector = "bestvideo+bestaudio" }
+                }
+                elseif ($useVideo -and -not $useAudio) {
+                    $fSelector = ($progOnly -or Is-TwitchUrl $script:ultimaURL) ? "best" : "bestvideo"
+                }
+                else {
+                    $fSelector = "bestaudio"
+                }
+            }
+            $fnTemplate     = "%(title).200s.%(ext)s"
+            $targetTemplate = Join-Path $dest $fnTemplate
+            Write-Host ("[OUTPUT] Usando plantilla destino: {0}" -f $targetTemplate) -ForegroundColor Cyan
+            $args = @(
+                "--encoding","utf-8","--progress","--no-color","--newline",
+                "-f", $fSelector,
+                "-o", $targetTemplate,
+                "--progress-template","download:%(progress._percent_str)s ETA:%(progress._eta_str)s SPEED:%(progress._speed_str)s",
+                "--extractor-args","youtube:player_client=default,-web_safari,-web_embedded,-tv",
+                "--no-part",
+                "--ignore-config"
             )
-            $args += (Get-DownloadExtras -Extractor $script:lastExtractor -Domain $script:lastDomain)
-    }
-    $oldCursor = [System.Windows.Forms.Cursor]::Current
-    [System.Windows.Forms.Cursor]::Current = [System.Windows.Forms.Cursors]::WaitCursor
-    try {
-        $exit = Invoke-YtDlpConsoleProgress -ExePath $yt.Source -Args $args -UpdateUi
-        if ($exit -ne 0) {
-            $lastErr = $lblEstadoConsulta.Text + " "  # opcional, no siempre contiene stderr
-            # Si era sitio progresivo y el usuario dejó best/bestvideo, reintentar con ID concreto
-            if (Is-ProgressiveOnlySite $script:lastExtractor -and $videoSel -match '^best(video)?$' -and $script:bestProgId) {
-                Write-Host "[RETRY] Alias falló; reintento con ID concreto: $($script:bestProgId)" -ForegroundColor Yellow
-                # Reconstituye args con el ID concreto
-                $args = @("--encoding","utf-8","--progress","--no-color","--newline",
-                          "-f", $script:bestProgId,
-                          "-o", $targetPath,
-                          "--progress-template","download:%(progress._percent_str)s ETA:%(progress._eta_str)s SPEED:%(progress._speed_str)s",
-                          "--extractor-args","youtube:player_client=default,-web_safari,-web_embedded,-tv")
-                $exit = Invoke-YtDlpConsoleProgress -ExePath $yt.Source -Args $args -UpdateUi
+            if ($mergeExt) {
+                $args += @("--merge-output-format", $mergeExt)
             }
-        }
-        if ($exit -eq 0) {
-            Add-HistoryUrl -Url $script:ultimaURL
-            $lblEstadoConsulta.Text = ("Completado: {0}" -f $script:ultimoTitulo)
-            [System.Windows.Forms.MessageBox]::Show(("Descarga finalizada:`n{0}" -f $script:ultimoTitulo),
-                "Completado",[System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Information) | Out-Null
-        } else {
-            $lblEstadoConsulta.Text = "Error durante la descarga"
-            [System.Windows.Forms.MessageBox]::Show("Falló la descarga. Revisa conexión/URL/DRM.","Error de descarga",
-                [System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Error) | Out-Null
-        }
-    } finally {
-        [System.Windows.Forms.Cursor]::Current = $oldCursor
-        $btnPickDestino.Enabled = $prevPickDest
-        $cmbVideoFmt.Enabled    = $prevCmbVid
-        $cmbAudioFmt.Enabled    = $prevCmbAud
-        Set-DownloadButtonVisual
-    }
-})
-# Sin mostrar la UI aún, rellenamos etiquetas con las versiones reales
-Refresh-DependencyLabel -CommandName "yt-dlp" -FriendlyName "yt-dlp" -LabelRef ([ref]$lblYtDlp) -VersionArgs "--version" -Parse "FirstLine"
-Refresh-DependencyLabel -CommandName "ffmpeg" -FriendlyName "ffmpeg" -LabelRef ([ref]$lblFfmpeg) -VersionArgs "-version" -Parse "FirstLine"
+            if ($script:cookiesPath) {
+                $args += @("--cookies", $script:cookiesPath)
+            }
+            if ($extractAudio) {
+                $args += @("--extract-audio","--audio-format", $audioFormatOut)
+            }
+            $args += $script:ultimaURL
+            if (Is-TwitchUrl $script:ultimaURL) {
+                $args += @("--hls-use-mpegts","--retries","10","--retry-sleep","1","-N","4")
+                $args += (Get-DownloadExtras -Extractor $script:lastExtractor -Domain $script:lastDomain)
+            }
+            $oldCursor = [System.Windows.Forms.Cursor]::Current
+            $prevPickDest = $btnPickDestino.Enabled
+            $prevCmbVid   = $cmbVideoFmt.Enabled
+            $prevCmbAud   = $cmbAudioFmt.Enabled
+            $btnPickDestino.Enabled = $false
+            $cmbVideoFmt.Enabled    = $false
+            $cmbAudioFmt.Enabled    = $false
+            [System.Windows.Forms.Cursor]::Current = [System.Windows.Forms.Cursors]::WaitCursor
+            try {
+                $exit = Invoke-YtDlpConsoleProgress -ExePath $yt.Source -Args $args -UpdateUi
+                if ($exit -ne 0 -and $progOnly -and ($fSelector -match '^best(video)?$') -and $script:bestProgId) {
+                    Write-Host "[RETRY] Alias falló; reintento con ID concreto: $($script:bestProgId)" -ForegroundColor Yellow
+                    $retryArgs = @(
+                        "--encoding","utf-8","--progress","--no-color","--newline",
+                        "-f", $script:bestProgId,
+                        "-o", $targetTemplate,
+                        "--progress-template","download:%(progress._percent_str)s ETA:%(progress._eta_str)s SPEED:%(progress._speed_str)s",
+                        "--extractor-args","youtube:player_client=default,-web_safari,-web_embedded,-tv",
+                        "--no-part","--ignore-config",
+                        $script:ultimaURL
+                    )
+                    $exit = Invoke-YtDlpConsoleProgress -ExePath $yt.Source -Args $retryArgs -UpdateUi
+                }
+                if ($exit -eq 0) {
+                    Add-HistoryUrl -Url $script:ultimaURL
+                    $lblEstadoConsulta.Text = ("Completado: {0}" -f $script:ultimoTitulo)
+                    [System.Windows.Forms.MessageBox]::Show(("Descarga finalizada:`n{0}" -f $script:ultimoTitulo),
+                        "Completado",[System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Information) | Out-Null
+                } else {
+                    $lblEstadoConsulta.Text = "Error durante la descarga"
+                    [System.Windows.Forms.MessageBox]::Show("Falló la descarga. Revisa conexión/URL/DRM.","Error de descarga",
+                        [System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Error) | Out-Null
+                }
+            }
+            finally {
+                [System.Windows.Forms.Cursor]::Current = $oldCursor
+                $btnPickDestino.Enabled = $prevPickDest
+                $cmbVideoFmt.Enabled    = $prevCmbVid
+                $cmbAudioFmt.Enabled    = $prevCmbAud
+                Set-DownloadButtonVisual
+            }
+        })
+    Refresh-DependencyLabel -CommandName "yt-dlp" -FriendlyName "yt-dlp" -LabelRef ([ref]$lblYtDlp) -VersionArgs "--version" -Parse "FirstLine"
+    Refresh-DependencyLabel -CommandName "ffmpeg" -FriendlyName "ffmpeg" -LabelRef ([ref]$lblFfmpeg) -VersionArgs "-version" -Parse "FirstLine"
 if ($script:RequireNode) {
     Refresh-DependencyLabel -CommandName "node" -FriendlyName "Node.js" -LabelRef ([ref]$lblNode) -VersionArgs "--version" -Parse "FirstLine"
 }
