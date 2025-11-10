@@ -15,7 +15,8 @@ if (-not (Test-Path -LiteralPath $script:LogFile)) {
 
 function Get-HistoryUrls {
     try {
-        Get-Content -LiteralPath $script:LogFile -ErrorAction Stop |
+        $content = Get-Content -LiteralPath $script:LogFile -ErrorAction Stop -Raw
+        $content -split "`r?`n" |
             ForEach-Object { $_.Trim() } |
             Where-Object { $_ -and ($_ -notmatch '^\s*$') } |
             Select-Object -Unique
