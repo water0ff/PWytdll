@@ -206,7 +206,7 @@ function Refresh-GateByDeps {
         $script:videoConsultado = $false
         $script:ultimaURL       = $null
         $script:ultimoTitulo    = $null
-        Set-DownloadButtonVisual -ok:$false
+        Set-DownloadButtonVisual
         $lblEstadoConsulta.Text = "Estado: sin consultar"
         $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::Black
         if ($picPreview) { $picPreview.Image = $null }
@@ -1086,7 +1086,7 @@ $btnConsultar.Add_Click({
         if ($res.ExitCode -ne 0 -or -not $titulo) {
             $script:videoConsultado = $false; $script:ultimaURL = $null; $script:ultimoTitulo = $null
             $lblEstadoConsulta.Text = "Error al consultar la URL"; $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::Red
-            Set-DownloadButtonVisual -ok:$false
+            Set-DownloadButtonVisual
             $picPreview.Image = $null
             Write-Host "[ERROR] No se pudo consultar el video. STDOUT/ERR:" -ForegroundColor Red
             Write-Host $res.StdOut
@@ -1148,7 +1148,7 @@ $btnDescargar.Add_Click({
         $ok = Invoke-ConsultaFromUI -Url $currentUrl
         Set-DownloadButtonVisual
         if ($ok) {
-            [System.Windows.Forms.MessageBox]::Show("Consulta lista. Vuelve a presionar “Descargar” para iniciar la descarga.",
+            [System.Windows.Forms.MessageBox]::Show("Consulta lista. Vuelve a presionar Descargar para iniciar la descarga.",
                 "Consulta completada",
                 [System.Windows.Forms.MessageBoxButtons]::OK,
                 [System.Windows.Forms.MessageBoxIcon]::Information) | Out-Null
@@ -1213,7 +1213,7 @@ $btnDescargar.Add_Click({
       "--extractor-args","youtube:player_client=default,-web_safari,-web_embedded,-tv",
       $script:ultimaURL
     )
-    $oldCursor = [System.Windows.Forms.Cursors]::Default
+    $oldCursor = [System.Windows.Forms.Cursor]::Current
     [System.Windows.Forms.Cursor]::Current = [System.Windows.Forms.Cursors]::WaitCursor
     try {
         $exit = Invoke-YtDlpConsoleProgress -ExePath $yt.Source -Args $args -UpdateUi
