@@ -888,8 +888,10 @@ function Invoke-ConsultaFromUI {
         } else {
             $picPreview.Image = $null  # sin fallback YouTube (multi-sitio real)
         }
+            if ($script:formatsEnumerated) {
+        Add-HistoryUrl -Url $Url
+    }
     return $true
-    Add-HistoryUrl -Url $Url
 }
 function Get-ToolVersion {
     param(
@@ -1786,6 +1788,7 @@ $btnConsultar.Add_Click({
         $lblEstadoConsulta.Text = "Consultando formatos…"
         try {
             if (Fetch-Formats -Url $url) {
+                Add-HistoryUrl -Url $url
                 foreach ($i in $script:formatsVideo) { [void]$cmbVideoFmt.Items.Add($i) }
                 foreach ($i in $script:formatsAudio) { [void]$cmbAudioFmt.Items.Add($i) }
                 if ($cmbVideoFmt.Items.Count -gt 0) {
@@ -2010,7 +2013,7 @@ $btnDescargar.Add_Click({
             }
         }
         if ($exit -eq 0) {
-            Add-HistoryUrl -Url $Url
+            Add-HistoryUrl -Url $script:ultimaURL
             $lblEstadoConsulta.Text = ("Completado: {0}" -f $script:ultimoTitulo)
             [System.Windows.Forms.MessageBox]::Show(("Descarga finalizada:`n{0}" -f $script:ultimoTitulo),
                 "Completado",[System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Information) | Out-Null
