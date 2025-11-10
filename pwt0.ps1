@@ -7,6 +7,42 @@ if (-not (Test-Path $iconDir)) {
     New-Item -ItemType Directory -Path $iconDir -Force | Out-Null
     Write-Host "Carpeta de íconos creada: $iconDir"
 }
+# --- Historial de URLs ---
+$script:LogFile = "C:\Temp\ytdll_history.txt"
+if (-not (Test-Path -LiteralPath $script:LogFile)) {
+    New-Item -ItemType File -Path $script:LogFile -Force | Out-Null
+}
+
+function Get-HistoryUrls {
+    try {
+        Get-Content -LiteralPath $script:LogFile -ErrorAction Stop |
+            ForEach-Object { $_.Trim() } |
+            Where-Object { $_ -and ($_ -notmatch '^\s*$') } |
+            Select-Object -Unique
+    } catch { @() }
+}
+function Add-HistoryUrl {
+    param([Parameter(Mandatory=$true)][string]$Url)
+    $u = $Url.Trim()
+    if ([string]::IsNullOrWhiteSpace($u)) { return }
+    # No guardar placeholders
+    if ($u -eq $global:UrlPlaceholder) { return }
+    # Validar rudamente que parezca URL
+    if ($u -notmatch '^(https?://|www\.)') { return }
+    $list = Get-HistoryUrls
+    if ($list -notcontains $u) {
+        # Limitar a 200 entradas
+        $newList = @($u) + $list
+        if ($newList.Count -gt 200) { $newList = $newList[0..199] }
+        try {
+            Set-Content -LiteralPath $script:LogFile -Value $newList -Encoding UTF8
+        } catch {}
+    }
+}
+
+function Clear-History {
+    try { Clear-Content -LiteralPath $script:LogFile -ErrorAction Stop } catch {}
+}
 try {
   [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
   [Console]::InputEncoding  = [System.Text.Encoding]::UTF8
@@ -18,6 +54,7 @@ $env:PYTHONUTF8 = '1'               # Python/yt-dlp en modo UTF-8
 $PSStyle.OutputRendering = 'Ansi'   # Evita rarezas con ANSI/UTF-8 en PS 7+
 $global:defaultInstructions = @"
 ----- CAMBIOS -----
+- Ahora ya guarda un log con URLS consultadas.
 - Se agrea funcionalidad para ver y buscar sitios compatibles.
 - Soporte para VODS de twitch / vista previa.
 - Se agregó botón ? para información de sistema.
@@ -33,7 +70,7 @@ $global:defaultInstructions = @"
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 [System.Windows.Forms.Application]::EnableVisualStyles()
-                                                                                                $version = "beta 251110.1354"
+                                                                                                $version = "beta 251110.1418"
 $formPrincipal = New-Object System.Windows.Forms.Form
 $formPrincipal.Size = New-Object System.Drawing.Size(400, 800)
 $formPrincipal.StartPosition = "CenterScreen"
@@ -852,6 +889,7 @@ function Invoke-ConsultaFromUI {
             $picPreview.Image = $null  # sin fallback YouTube (multi-sitio real)
         }
     return $true
+    Add-HistoryUrl -Url $Url
 }
 function Get-ToolVersion {
     param(
@@ -1169,6 +1207,72 @@ $txtUrl = Create-TextBox `
     -Text $global:UrlPlaceholder `
     -BackColor ([System.Drawing.Color]::White) `
     -ForeColor ([System.Drawing.Color]::Gray)
+# --- Menú de historial para $txtUrl ---
+$ctxUrlHistory = New-Object System.Windows.Forms.ContextMenuStrip
+
+function Show-UrlHistoryMenu {
+    $ctxUrlHistory.Items.Clear()
+
+    $items = Get-HistoryUrls
+    if (-not $items -or $items.Count -eq 0) {
+        $miEmpty = New-Object System.Windows.Forms.ToolStripMenuItem
+        $miEmpty.Text = "(Sin historial)"
+        $miEmpty.Enabled = $false
+        [void]$ctxUrlHistory.Items.Add($miEmpty)
+    } else {
+        # Cargar entradas (máximo 12 para no hacer menú kilométrico)
+        $top = [Math]::Min(12, $items.Count)
+        for ($i=0; $i -lt $top; $i++) {
+            $urlItem = New-Object System.Windows.Forms.ToolStripMenuItem
+            $urlItem.Text = $items[$i]
+            $urlItem.ToolTipText = $items[$i]
+            $urlItem.add_Click({
+                $txtUrl.Text = $this.Text
+                $txtUrl.ForeColor = [System.Drawing.Color]::Black
+                $txtUrl.Select($txtUrl.Text.Length, 0)
+            })
+            [void]$ctxUrlHistory.Items.Add($urlItem)
+        }
+    }
+
+    if ($ctxUrlHistory.Items.Count -gt 0) {
+        [void]$ctxUrlHistory.Items.Add((New-Object System.Windows.Forms.ToolStripSeparator))
+    }
+
+    $miClear = New-Object System.Windows.Forms.ToolStripMenuItem
+    $miClear.Text = "Borrar historial"
+    $miClear.ForeColor = [System.Drawing.Color]::Crimson
+    $miClear.add_Click({
+        $r = [System.Windows.Forms.MessageBox]::Show(
+            "¿Seguro que deseas borrar el historial de URLs?",
+            "Confirmar", [System.Windows.Forms.MessageBoxButtons]::YesNo,
+            [System.Windows.Forms.MessageBoxIcon]::Question
+        )
+        if ($r -eq [System.Windows.Forms.DialogResult]::Yes) {
+            Clear-History
+        }
+    })
+    [void]$ctxUrlHistory.Items.Add($miClear)
+
+    # Mostrar el menú justo debajo del TextBox
+    $pt = New-Object System.Drawing.Point(0, $txtUrl.Height)
+    $ctxUrlHistory.Show($txtUrl, $pt)
+}
+
+# Mostrar al enfocar o al hacer clic derecho
+$txtUrl.Add_GotFocus({
+    if ($this.Text -ne $global:UrlPlaceholder) {
+        Show-UrlHistoryMenu
+    }
+})
+$txtUrl.Add_MouseUp({
+    param($s,$e)
+    if ($e.Button -eq [System.Windows.Forms.MouseButtons]::Right) {
+        Show-UrlHistoryMenu
+    }
+})
+# Asignar también como ContextMenuStrip por si el usuario presiona la tecla menú
+$txtUrl.ContextMenuStrip = $ctxUrlHistory
 $txtUrl.Add_GotFocus({
     if ($this.Text -eq $global:UrlPlaceholder) {
         $this.Text = ""
@@ -1906,6 +2010,7 @@ $btnDescargar.Add_Click({
             }
         }
         if ($exit -eq 0) {
+            Add-HistoryUrl -Url $Url
             $lblEstadoConsulta.Text = ("Completado: {0}" -f $script:ultimoTitulo)
             [System.Windows.Forms.MessageBox]::Show(("Descarga finalizada:`n{0}" -f $script:ultimoTitulo),
                 "Completado",[System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Information) | Out-Null
