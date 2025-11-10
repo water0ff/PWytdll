@@ -18,7 +18,7 @@ $env:PYTHONUTF8 = '1'               # Python/yt-dlp en modo UTF-8
 $PSStyle.OutputRendering = 'Ansi'   # Evita rarezas con ANSI/UTF-8 en PS 7+
 $global:defaultInstructions = @"
 ----- CAMBIOS -----
-- Se agrea funcionalidad para todos los sitios.
+- Se agrea funcionalidad para ver y buscar sitios compatibles.
 - Soporte para VODS de twitch / vista previa.
 - Se agregó botón ? para información de sistema.
 - Ahora ya solo existe 1 botón para consultar y descargar.
@@ -269,9 +269,8 @@ function Get-SafeFileName {
 function Format-ExtractorsInline {
     param(
         [Parameter(Mandatory=$true)][string]$RawText,
-        [int]$WrapAt = 120   # cambia si quieres líneas más cortas/largas
+        [int]$WrapAt = 120
     )
-    # 1) Parte líneas, remueve warnings y notas en paréntesis
     $lines = $RawText -split "`r?`n" |
         ForEach-Object { $_.Trim() } |
         Where-Object {
@@ -281,22 +280,18 @@ function Format-ExtractorsInline {
             ($_ -notmatch '^\s*Deprecation')
         }
 
-    # 2) En cada línea, elimina " (…)" y separa en tokens por espacios o comas
     $tokens = foreach ($ln in $lines) {
-        $clean = $ln -replace '\s+\(.*?\)\s*$', ''      # quita cola entre paréntesis
+        $clean = $ln -replace '\s+\(.*?\)\s*$',''
         $parts = $clean -split '[\s,]+' | Where-Object { $_ }
         foreach ($p in $parts) {
-            # Acepta nombres estilo 10play, 10play:season, 17live:vod, etc.
             if ($p -match '^[A-Za-z0-9][\w:-]+$') { $p }
         }
     }
 
-    # 3) Unicos, orden estable
     $uniq = [System.Collections.Generic.List[string]]::new()
     $seen = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
     foreach ($t in $tokens) { if ($seen.Add($t)) { $null = $uniq.Add($t) } }
 
-    # 4) Une con " | " e inserta saltos de línea alrededor de WrapAt
     $sb = [System.Text.StringBuilder]::new()
     $lineLen = 0
     for ($i=0; $i -lt $uniq.Count; $i++) {
@@ -314,12 +309,13 @@ function Format-ExtractorsInline {
         $lineLen += $addLen
     }
 
-    # Devuelve texto y conteo
     [pscustomobject]@{
         Text  = $sb.ToString()
         Count = $uniq.Count
+        List  = $uniq           # <--- NUEVO: lista utilizable para filtrar
     }
 }
+
 function Print-FormatsTable {
     param([array]$formats)  # array del JSON .formats
     Write-Host "`n[FORMATOS] Disponibles (similar a yt-dlp -F):" -ForegroundColor Cyan
@@ -1250,40 +1246,97 @@ $btnSites.Add_Click({
     }
 
     $res = Invoke-CaptureResponsive -ExePath $yt.Source -Args @("--list-extractors") -WorkingText "Obteniendo sitios…"
-    $raw = ($res.StdOut + "`r`n" + $res.StdErr)
+        $raw = ($res.StdOut + "`r`n" + $res.StdErr)
+        $fmt  = Format-ExtractorsInline -RawText $raw -WrapAt 120
+        $allSites = [System.Collections.ArrayList]::new()
+        $null = $allSites.AddRange($fmt.List)
+        
+        # --- Diálogo con buscador ---
+        $dlg = Create-Form -Title ("Sitios compatibles — {0} detectados" -f $fmt.Count) `
+                           -Size (New-Object System.Drawing.Size(900, 560))
+        
+        # Cuadro de búsqueda (placeholder)
+        $txtFiltro = Create-TextBox -Location (New-Object System.Drawing.Point(10,10)) `
+                                    -Size (New-Object System.Drawing.Size(780,28)) `
+                                    -Text "(buscar sitio)"
+        $txtFiltro.ForeColor = [System.Drawing.Color]::Gray
+        
+        $txtFiltro.Add_GotFocus({
+            if ($this.Text -eq "(buscar sitio)") { $this.Text = ""; $this.ForeColor = [System.Drawing.Color]::Black }
+        })
+        $txtFiltro.Add_LostFocus({
+            if ([string]::IsNullOrWhiteSpace($this.Text)) { $this.Text = "(buscar sitio)"; $this.ForeColor = [System.Drawing.Color]::Gray }
+        })
+        
+        # Contador (resultado/total)
+        $lblCount = Create-Label -Text ("0/{0}" -f $allSites.Count) `
+            -Location (New-Object System.Drawing.Point(800, 12)) `
+            -Size (New-Object System.Drawing.Size(80,28)) `
+            -TextAlign ([System.Drawing.ContentAlignment]::MiddleRight)
+        
+        # Lista filtrable
+        $lst = New-Object System.Windows.Forms.ListBox
+        $lst.Location = New-Object System.Drawing.Point(10, 44)
+        $lst.Size     = New-Object System.Drawing.Size(864, 440)
+        $lst.Font     = New-Object System.Drawing.Font("Consolas", 9)
+        $lst.IntegralHeight = $false
+        
+        # Botones
+        $btnCopy = Create-Button -Text "Copiar selección" `
+            -Location (New-Object System.Drawing.Point(664, 490)) `
+            -Size (New-Object System.Drawing.Size(120, 30))
+        $btnClose = Create-Button -Text "Cerrar" `
+            -Location (New-Object System.Drawing.Point(794, 490)) `
+            -Size (New-Object System.Drawing.Size(80, 30))
+        
+        # Carga inicial
+        function Refresh-List([string]$term) {
+            $lst.BeginUpdate()
+            try {
+                $lst.Items.Clear()
+                $items = $allSites
+                if ($term -and $term -ne "(buscar sitio)") {
+                    $rx = [regex]::Escape($term)
+                    $items = $allSites | Where-Object { $_ -match $rx }
+                }
+                $items | ForEach-Object { [void]$lst.Items.Add($_) }
+                $lblCount.Text = ("{0}/{1}" -f $lst.Items.Count, $allSites.Count)
+            } finally {
+                $lst.EndUpdate()
+            }
+        }
+        Refresh-List $null
+        
+        # Filtrado en vivo
+        $txtFiltro.Add_TextChanged({
+            if ($this.ForeColor -eq [System.Drawing.Color]::Gray) { return } # aún placeholder
+            Refresh-List $this.Text.Trim()
+        })
+        
+        # Copiar con botón / doble clic / Enter
+        $btnCopy.Add_Click({
+            if ($lst.SelectedItem) {
+                try { [System.Windows.Forms.Clipboard]::SetText([string]$lst.SelectedItem) } catch {}
+            }
+        })
+        $lst.Add_DoubleClick({ if ($lst.SelectedItem) { try { [System.Windows.Forms.Clipboard]::SetText([string]$lst.SelectedItem) } catch {} } })
+        $lst.Add_KeyDown({
+            param($s,$e)
+            if ($e.KeyCode -eq 'Enter' -and $lst.SelectedItem) {
+                try { [System.Windows.Forms.Clipboard]::SetText([string]$lst.SelectedItem) } catch {}
+                $e.Handled = $true
+            }
+        })
+        
+        $btnClose.Add_Click({ $dlg.Close() })
+        
+        $dlg.Controls.Add($txtFiltro)
+        $dlg.Controls.Add($lblCount)
+        $dlg.Controls.Add($lst)
+        $dlg.Controls.Add($btnCopy)
+        $dlg.Controls.Add($btnClose)
+        $dlg.ShowDialog() | Out-Null
 
-    # Formatear "en línea" con tuberías
-    $fmt = Format-ExtractorsInline -RawText $raw -WrapAt 120
-
-    # Diálogo
-    $dlg = Create-Form -Title ("Sitios compatibles (extractores) — {0} encontrados" -f $fmt.Count) `
-                       -Size (New-Object System.Drawing.Size(900, 560))
-
-    $txt = New-Object System.Windows.Forms.TextBox
-    $txt.Multiline = $true
-    $txt.ReadOnly  = $true
-    $txt.ScrollBars = "Both"
-    $txt.WordWrap   = $false         # mantenlo en falso; ya insertamos saltos por nosotros
-    $txt.Font = New-Object System.Drawing.Font("Consolas", 9)
-    $txt.Location = New-Object System.Drawing.Point(10,10)
-    $txt.Size     = New-Object System.Drawing.Size(864, 470)
-    $txt.Text     = $fmt.Text
-
-    $btnCopy = Create-Button -Text "Copiar" -Location (New-Object System.Drawing.Point(664, 490)) -Size (New-Object System.Drawing.Size(100, 30))
-    $btnCopy.Add_Click({
-        try {
-            [System.Windows.Forms.Clipboard]::SetText($txt.Text)
-            [System.Windows.Forms.MessageBox]::Show("Copiado al portapapeles.","OK") | Out-Null
-        } catch {}
-    })
-
-    $btnClose = Create-Button -Text "Cerrar" -Location (New-Object System.Drawing.Point(774, 490)) -Size (New-Object System.Drawing.Size(100, 30))
-    $btnClose.Add_Click({ $dlg.Close() })
-
-    $dlg.Controls.Add($txt)
-    $dlg.Controls.Add($btnCopy)
-    $dlg.Controls.Add($btnClose)
-    $dlg.ShowDialog() | Out-Null
 })
 
 $lblDestino = Create-Label -Text "Carpeta de destino:" `
