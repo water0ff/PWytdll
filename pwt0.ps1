@@ -1297,6 +1297,9 @@ $txtUrl.Add_LostFocus({
     }
 })
 $txtUrl.Add_TextChanged({ Set-DownloadButtonVisual })
+$btnPickCookies = Create-IconButton -Text "🍪" `
+    -Location (New-Object System.Drawing.Point(334, 10)) `
+    -ToolTipText "Seleccionar cookies.txt (opcional)"
 $btnInfo = Create-IconButton -Text "?" `
     -Location (New-Object System.Drawing.Point(354, 10)) `
     -ToolTipText "Información de la aplicación"
@@ -1329,10 +1332,6 @@ $btnDescargar = Create-Button -Text "Descargar" `
     -ForeColor ([System.Drawing.Color]::White) `
     -ToolTipText "Descargar usando bestvideo+bestaudio -> mp4"
     Set-DownloadButtonVisual
-$btnPickCookies = Create-IconButton -Text "🍪" `
-    -Location (New-Object System.Drawing.Point(314, 183)) `
-    -ToolTipText "Seleccionar cookies.txt (opcional)"
-
 $formPrincipal.Controls.Add($btnPickCookies)
 $btnPickCookies.Add_Click({
     $ofd = New-Object System.Windows.Forms.OpenFileDialog
