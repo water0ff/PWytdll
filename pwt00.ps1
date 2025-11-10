@@ -295,6 +295,15 @@ function Human-Size {
     while ($n -ge 1024 -and $p -lt $units.Count-1) { $n/=1024; $p++ }
     return ("{0:N1}{1}" -f $n, $units[$p])
 }
+function Format-Count {
+    param(
+        [Parameter(Mandatory=$true)][int]$Count,
+        [Parameter(Mandatory=$true)][string]$Singular,
+        [Parameter(Mandatory=$true)][string]$Plural
+    )
+    if ($Count -eq 1) { return "1 $Singular" }
+    return ("{0} {1}" -f $Count, $Plural)
+}
 function Get-SafeFileName {
     param([Parameter(Mandatory=$true)][string]$Name)
     $invalid = ([IO.Path]::GetInvalidFileNameChars() -join '')
@@ -1264,15 +1273,21 @@ function Show-UrlHistoryMenu {
     $pt = New-Object System.Drawing.Point(0, $txtUrl.Height)
     $ctxUrlHistory.Show($txtUrl, $pt)
 }
+$btnHistory = Create-IconButton -Text "▼" `
+    -Location (New-Object System.Drawing.Point(354, 45)) `
+    -ToolTipText "Historial de URLs"
+$formPrincipal.Controls.Add($btnHistory)
+$btnHistory.Add_Click({ Show-UrlHistoryMenu })
 
 # Mostrar al enfocar o al hacer clic derecho
 $txtUrl.Add_GotFocus({
     if ($this.Text -eq $global:UrlPlaceholder) {
         $this.Text = ""
         $this.ForeColor = [System.Drawing.Color]::Black
-        Show-UrlHistoryMenu   # ← aparece en el primer foco también
     }
+    Show-UrlHistoryMenu   # abrir historial al primer foco
 })
+
 $txtUrl.Add_MouseUp({
     param($s,$e)
     if ($e.Button -eq [System.Windows.Forms.MouseButtons]::Right) {
@@ -1281,12 +1296,7 @@ $txtUrl.Add_MouseUp({
 })
 # Asignar también como ContextMenuStrip por si el usuario presiona la tecla menú
 $txtUrl.ContextMenuStrip = $ctxUrlHistory
-$txtUrl.Add_GotFocus({
-    if ($this.Text -eq $global:UrlPlaceholder) {
-        $this.Text = ""
-        $this.ForeColor = [System.Drawing.Color]::Black
-    }
-})
+
 $txtUrl.Add_LostFocus({
     if ([string]::IsNullOrWhiteSpace($this.Text)) {
         $this.Text = $global:UrlPlaceholder
