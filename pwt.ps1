@@ -33,7 +33,7 @@ $global:defaultInstructions = @"
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 [System.Windows.Forms.Application]::EnableVisualStyles()
-                                                                                                $version = "beta 251110.1200"
+                                                                                                $version = "beta 251110.1328"
 $formPrincipal = New-Object System.Windows.Forms.Form
 $formPrincipal.Size = New-Object System.Drawing.Size(400, 800)
 $formPrincipal.StartPosition = "CenterScreen"
@@ -1613,21 +1613,35 @@ $btnDescargar.Add_Click({
         function Is-TwitchUrl([string]$u) {
             return $u -match '(^https?://)?(www\.)?twitch\.tv/' 
         }
+        function Is-ProgressiveOnlySite([string]$extractor) {
+            return ($extractor -match '(tiktok|douyin|instagram|twitter|x)')
+        }
         $videoSel = Get-SelectedFormatId -Combo $cmbVideoFmt
         $audioSel = Get-SelectedFormatId -Combo $cmbAudioFmt
         $fSelector = $null
         $mergeExt  = "mp4"
+        
         if (Is-TwitchUrl $script:ultimaURL) {
-            if ($videoSel -and $videoSel -ne "bestvideo" -and $videoSel -ne "best") {
-                # Asumimos que es un ID progresivo tipo 1080p60/720p60/480p/etc.
+            # En Twitch, usa calidades progresivas; si el usuario dejó 'bestvideo', cámbialo a 'best'
+            if ($videoSel -and $videoSel -notmatch '^best(video)?$') {
                 $fSelector = $videoSel
-            } elseif ($videoSel -eq "bestvideo") {
-                # En Twitch no hay 'bestvideo' separado del audio; mejor 'best'
-                $fSelector = "best"
             } else {
                 $fSelector = "best"
             }
-        } else {
+        }
+        elseif (Is-ProgressiveOnlySite $script:lastExtractor) {
+            # TikTok/Douyin/Instagram/Twitter son típicamente progresivos
+            if ($videoSel -and $videoSel -notmatch '^best(video)?$') {
+                # Si el usuario eligió una id concreta (p.ej. "download" en TikTok), respétala
+                $fSelector = $videoSel
+            } else {
+                $fSelector = "best"
+            }
+            # Opcional: desactiva el combo de audio para evitar confusiones
+            try { $cmbAudioFmt.Enabled = $false } catch {}
+        }
+        else {
+            # YouTube, Vimeo, etc. (tu lógica actual con combinación v-only + audio)
             if ($videoSel) {
                 if ($videoSel -eq "best") {
                     $fSelector = "best"
@@ -1636,22 +1650,18 @@ $btnDescargar.Add_Click({
                 } else {
                     $klass = $script:formatsIndex[$videoSel]
                     if ($klass -and $klass.Progressive) {
-                        # Progresivo: ya trae audio+video juntos => usa el ID directo
                         $fSelector = $videoSel
-                        # salida final seguirá siendo mp4 (mergeExt ya es "mp4"), pero no habrá merge
                     } elseif ($klass -and $klass.VideoOnly) {
-                        # Pistas separadas: combina con audio
                         $fSelector = $videoSel + "+" + ($(if ($audioSel) { $audioSel } else { "bestaudio" }))
                     } else {
-                        # Cualquier otro caso: intenta combinación segura
                         $fSelector = $videoSel + "+" + ($(if ($audioSel) { $audioSel } else { "bestaudio" }))
                     }
                 }
             } else {
-                # Sin selección: intenta 'best' (progresivo si existe; si no, adaptativo)
                 $fSelector = "best"
             }
         }
+
     $prevLbl = $lblEstadoConsulta.Text
     $prevPickDest  = $btnPickDestino.Enabled
     $prevCmbVid    = $cmbVideoFmt.Enabled
@@ -1686,17 +1696,17 @@ $btnDescargar.Add_Click({
             "--no-part",               # Evita .part corruptos
             "--ignore-config"          # Ignora errores de configuración externa
         )
+    if ($script:cookiesPath) {
+            $args += @("--cookies", $script:cookiesPath)
+        }
     $args += $script:ultimaURL
     if (Is-TwitchUrl $script:ultimaURL) {
-        # Usar downloader nativo de yt-dlp (muestra progreso correctamente)
-        # HLS con múltiples fragmentos concurrentes para acelerar y mantener progreso
-        $args += @(
-            "--hls-use-mpegts",
-            "--retries","10","--retry-sleep","1",
-            "-N","4"                         # o ajusta 2-8 según tu red
+            $args += @(
+                "--hls-use-mpegts",
+                "--retries","10","--retry-sleep","1",
+                "-N","4"
+            )
             $args += (Get-DownloadExtras -Extractor $script:lastExtractor -Domain $script:lastDomain)
-        )
-        # IMPORTANTE: No forzar --downloader ffmpeg aquí, para que yt-dlp pinte el progreso.
     }
     $oldCursor = [System.Windows.Forms.Cursor]::Current
     [System.Windows.Forms.Cursor]::Current = [System.Windows.Forms.Cursors]::WaitCursor
