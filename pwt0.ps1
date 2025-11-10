@@ -18,6 +18,7 @@ $env:PYTHONUTF8 = '1'               # Python/yt-dlp en modo UTF-8
 $PSStyle.OutputRendering = 'Ansi'   # Evita rarezas con ANSI/UTF-8 en PS 7+
 $global:defaultInstructions = @"
 ----- CAMBIOS -----
+- Se agrega twitch vista previa.
 - Soporte para VODS de twitch
 - Se agregó botón ? para información de sistema.
 - Ahora ya solo existe 1 botón para consultar y descargar.
@@ -312,7 +313,7 @@ function Fetch-Formats {
             Write-Host "[ERROR] JSON inválido al listar formatos." -ForegroundColor Red
             return $false
         }
-
+        $script:lastThumbUrl = Get-BestThumbnailUrl -Json $json
         if (-not $json.formats -or $json.formats.Count -eq 0) {
             Write-Host "[WARN] El extractor no devolvió lista de formatos." -ForegroundColor Yellow
             return $false
@@ -594,6 +595,36 @@ function Show-PreviewFromUrl {
         }
     }
 }
+function Show-PreviewImage {
+    param(
+        [Parameter(Mandatory=$true)][string]$ImageUrl,
+        [string]$Titulo = $null
+    )
+    try {
+        $img = Get-ImageFromUrl -Url $ImageUrl
+        if ($img) {
+            $picPreview.Image = $img
+            if ($Titulo) { $toolTip.SetToolTip($picPreview, $Titulo) }
+        }
+    } catch {}
+}
+
+function Get-BestThumbnailUrl {
+    param([Parameter(Mandatory=$true)]$Json)
+    # 1) Campo 'thumbnail' directo
+    if ($Json.thumbnail -and [string]::IsNullOrWhiteSpace($Json.thumbnail) -eq $false) {
+        return [string]$Json.thumbnail
+    }
+    # 2) Lista 'thumbnails' => elegimos la de mayor ancho o mayor 'preference'
+    if ($Json.thumbnails -and $Json.thumbnails.Count -gt 0) {
+        $thumb = $Json.thumbnails |
+            Sort-Object @{Expression='preference';Descending=$true},
+                        @{Expression='width';Descending=$true} |
+            Select-Object -First 1
+        if ($thumb -and $thumb.url) { return [string]$thumb.url }
+    }
+    return $null
+}
 function Invoke-ConsultaFromUI {
     param(
         [Parameter(Mandatory=$true)][string]$Url
@@ -627,11 +658,9 @@ function Invoke-ConsultaFromUI {
     $script:ultimoTitulo    = $titulo
     $lblEstadoConsulta.Text = ("Consultado: {0}" -f $titulo)
     $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::ForestGreen
-    Show-PreviewFromUrl -Url $Url -Titulo $titulo
     Write-Host ("`t[OK] Video consultado: {0}" -f $titulo) -ForegroundColor Green
     # dentro de Invoke-ConsultaFromUI, después de obtener título OK...
-        $cmbVideoFmt.Items.Clear()
-        $cmbAudioFmt.Items.Clear()
+    $cmbVideoFmt.Items.Clear()
         $prevLabelText = $lblEstadoConsulta.Text
         $lblEstadoConsulta.Text = "Consultando formatos…"
         
@@ -671,6 +700,11 @@ function Invoke-ConsultaFromUI {
         finally {
             $lblEstadoConsulta.Text = $prevLabelText
 }
+    if ($script:lastThumbUrl) {
+        Show-PreviewImage -ImageUrl $script:lastThumbUrl -Titulo $titulo
+    } else {
+        Show-PreviewFromUrl -Url $Url -Titulo $titulo
+    }
     return $true
 }
 function Get-ToolVersion {
@@ -960,6 +994,7 @@ function Show-AppInfo {
 $script:videoConsultado   = $false
 $script:ultimaURL         = $null
 $script:ultimoTitulo      = $null
+$script:lastThumbUrl      = $null
 $script:formatsEnumerated = $false
 $script:ultimaRutaDescarga = [Environment]::GetFolderPath('Desktop')
 $lblVideoFmt = Create-Label -Text "Formato de VIDEO:" `
