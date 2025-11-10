@@ -1298,7 +1298,7 @@ $txtUrl.Add_LostFocus({
 })
 $txtUrl.Add_TextChanged({ Set-DownloadButtonVisual })
 $btnPickCookies = Create-IconButton -Text "🍪" `
-    -Location (New-Object System.Drawing.Point(334, 10)) `
+    -Location (New-Object System.Drawing.Point(324, 10)) `
     -ToolTipText "Seleccionar cookies.txt (opcional)"
 $btnInfo = Create-IconButton -Text "?" `
     -Location (New-Object System.Drawing.Point(354, 10)) `
