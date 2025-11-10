@@ -32,7 +32,7 @@ $global:defaultInstructions = @"
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 [System.Windows.Forms.Application]::EnableVisualStyles()
-                                                                                                $version = "beta 251110.1126"
+                                                                                                $version = "beta 251110.1200"
 $formPrincipal = New-Object System.Windows.Forms.Form
 $formPrincipal.Size = New-Object System.Drawing.Size(400, 800)
 $formPrincipal.StartPosition = "CenterScreen"
@@ -1186,161 +1186,126 @@ function Invoke-YtDlpConsoleProgress {
     param(
         [Parameter(Mandatory=$true)][string]$ExePath,
         [Parameter(Mandatory=$true)][string[]]$Args,
-        [switch]$UpdateUi  # <-- NUEVO: si va en true, pintamos el label
+        [switch]$UpdateUi
     )
     try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch {}
     $global:ProgressPreference = 'SilentlyContinue'
+
     $tmpDir  = [System.IO.Path]::GetTempPath()
     $errFile = Join-Path $tmpDir ("yt-dlp-stderr_{0}.log" -f ([guid]::NewGuid()))
     $outFile = Join-Path $tmpDir ("yt-dlp-stdout_{0}.log" -f ([guid]::NewGuid()))
+
     $argLine = ($Args | ForEach-Object { if ($_ -match '\s') { '"{0}"' -f $_ } else { $_ } }) -join ' '
+
     $proc = Start-Process -FilePath $ExePath `
         -ArgumentList $argLine `
         -NoNewWindow -PassThru `
-        -RedirectStandardError $errFile `
+        -RedirectStandardError  $errFile `
         -RedirectStandardOutput $outFile
+
     $fsErr = [System.IO.File]::Open($errFile,[System.IO.FileMode]::OpenOrCreate,[System.IO.FileAccess]::Read,[System.IO.FileShare]::ReadWrite)
     $srErr = New-Object System.IO.StreamReader($fsErr)
     $fsOut = [System.IO.File]::Open($outFile,[System.IO.FileMode]::OpenOrCreate,[System.IO.FileAccess]::Read,[System.IO.FileShare]::ReadWrite)
     $srOut = New-Object System.IO.StreamReader($fsOut)
-    $script:lastPct = -1
+
+    $script:lastPct        = -1
+    $script:lastLineSig    = $null
+    $script:hlsDurationSec = $null
     $phase = "Preparando…"
-    $script:hlsDurationSec = $null   # Duración total detectada (en segundos) de ffmpeg para HLS
-    $script:lastLineHash    = $null  # Para evitar repetir spam idéntico
+
     function Set-Ui([string]$txt) {
         if ($UpdateUi -and $lblEstadoConsulta) { $lblEstadoConsulta.Text = $txt }
     }
+
     function _PrintLine([string]$text) {
-    # --- Captura la duración global de ffmpeg para poder calcular % ---
+        if ([string]::IsNullOrWhiteSpace($text)) { return }
+
+        # Captura duración global de ffmpeg
         $mDur = [regex]::Match($text, 'Duration:\s*(?<h>\d{2}):(?<m>\d{2}):(?<s>\d{2}(?:\.\d+)?)')
         if ($mDur.Success) {
-            $h = [int]$mDur.Groups['h'].Value
-            $m = [int]$mDur.Groups['m'].Value
-            $s = [double]$mDur.Groups['s'].Value
+            $h=[int]$mDur.Groups['h'].Value; $m=[int]$mDur.Groups['m'].Value; $s=[double]$mDur.Groups['s'].Value
             $script:hlsDurationSec = ($h*3600 + $m*60 + $s)
-            # no imprimimos nada aquí
             return
         }
-        if ([string]::IsNullOrWhiteSpace($text)) { return }
-        # Oculta líneas: [hls @ ...] Opening '.../XYZ.ts' for reading
+
+        # Oculta ruido común
         if ($text -match "^\[(?:hls|https)\s@.*\]\s+Opening\s+'.+\.ts'") { return }
-        if ($text -match '^\s*Input\s+#0, hls,' -or $text -match '^\s*Output\s+#0' -or $text -match '^\s*Press \[q\] to stop') { return }
-        $mSleep = [regex]::Match($text, 'Sleeping\s+(?<sec>\d+(?:\.\d+)?)\s+seconds', 'IgnoreCase')
-        if ($mSleep.Success) {
-            $phase = "Esperando ${($mSleep.Groups['sec'].Value)}s…"
-            Set-Ui $phase
-            Write-Host ("`n{0}" -f $text)
-            return
-        }
-        if ($text -match '^\[download\]\s+Destination:\s+.+?\.f\d+\.(mp4|mkv|webm|m4a)$') {
-            if ($text -match '\.f\d+\.webm$|\.m4a$') { $phase = "Descargando audio…" } else { $phase = "Descargando video…" }
-            Set-Ui $phase
-            Write-Host ("`n{0}" -f $text)
-            return
-        }
+        if ($text -match '^\s*(Input\s+#0,|Output\s+#0|Press \[q\] to stop)') { return }
 
-        # Merging
-        if ($text -match '^\[Merger\]\s+Merging formats') {
-            $phase = "Fusionando (merging)…"
-            Set-Ui $phase
-            Write-Host ("`n{0}" -f $text)
-            return
-        }
+        # Estados útiles
+        if ($text -match 'Sleeping\s+(\d+(?:\.\d+)?)\s+seconds') { Set-Ui "Esperando $($Matches[1])s…"; Write-Host "`n$text"; return }
+        if ($text -match '^\[download\]\s+Destination:')         { $phase = "Descargando…"; Set-Ui $phase; Write-Host "`n$text"; return }
+        if ($text -match '^\[Merger\]\s+Merging formats')        { $phase = "Fusionando…"; Set-Ui $phase; Write-Host "`n$text"; return }
+        if ($text -match '^Deleting original file')              { $phase = "Borrando temporales…"; Set-Ui $phase; Write-Host "`n$text"; return }
+        if ($text -match '^\[(ExtractAudio|Fixup|EmbedSubtitle|ModifyChapters)\]') { $phase = "Post-procesando…"; Set-Ui $phase; Write-Host "`n$text"; return }
 
-        # Deleting original file
-        if ($text -match '^Deleting original file') {
-            $phase = "Borrando temporales…"
-            Set-Ui $phase
-            Write-Host ("`n{0}" -f $text)
-            return
-        }
-
-        # Otras post-procesos
-        if ($text -match '^\[(ExtractAudio|Fixup|EmbedSubtitle|ModifyChapters)\]') {
-            $phase = "Post-procesando…"
-            Set-Ui $phase
-            Write-Host ("`n{0}" -f $text)
-            return
-        }
-        # Porcentaje/ETA/velocidad (dos variantes + fallback)
+        # Progreso yt-dlp (porcentaje)
         $m = [regex]::Match($text, 'download:\s*(?<pct>\d+(?:\.\d+)?)%\s*(?:ETA:(?<eta>\S+))?\s*(?:SPEED:(?<spd>.+))?', 'IgnoreCase')
-        if (-not $m.Success) {
-            $m = [regex]::Match($text, '(?<pct>\d+(?:\.\d+)?)%\s+of.*?at\s+(?<spd>\S+)\s+ETA\s+(?<eta>\S+)', 'IgnoreCase')
-            if (-not $m.Success) {
-                $m = [regex]::Match($text, '(?<pct>\d+(?:\.\d+)?)%')
-            }
-        }
-            # --- Progreso de ffmpeg: frame= ... time=HH:MM:SS.xx ... speed= ---
-            # --- Progreso "crudo" de ffmpeg: usar la línea tal cual en el label ---
-            $mFfm = [regex]::Match($text, '^frame=\s*\d+.*time=\d{2}:\d{2}:\d{2}(?:\.\d+)?\s+.*speed=\S+')
-            if ($mFfm.Success) {
-                # Compactar espacios largos para que quepa mejor, pero respetar el contenido
-                $line = ($text -replace '\s+', ' ').Trim()
-                Set-Ui $line                       # <-- Mostrar la línea original en el label
-                Write-Host ("`r[PROGRESO] {0}" -f $line) -NoNewline  # y en la consola en la misma línea
-                return
-            }
-            if ($mFfm.Success) {
-                $t = $mFfm.Groups['t'].Value
-                $spd = $mFfm.Groups['spd'].Value
-            
-                # Parsear HH:MM:SS(.xx)
-                $mT = [regex]::Match($t, '(?<h>\d{2}):(?<m>\d{2}):(?<s>\d{2}(?:\.\d+)?)')
-                if ($mT.Success) {
-                    $h = [int]$mT.Groups['h'].Value
-                    $m = [int]$mT.Groups['m'].Value
-                    $s = [double]$mT.Groups['s'].Value
-                    $sec = ($h*3600 + $m*60 + $s)
-            
-                    $pctTxt = ""
-                    if ($script:hlsDurationSec -and $script:hlsDurationSec -gt 0) {
-                        $pct = [int][math]::Min(100, [math]::Round(($sec / $script:hlsDurationSec) * 100))
-                        if ($pct -ne $script:lastPct) {
-                            $script:lastPct = $pct
-                            $pctTxt = (" {0}%" -f $pct)
-                        }
-                    }
-            
-                    # Actualiza el label y la consola en la MISMA línea (sin inundar)
-                    $msg = ("Descargando (ffmpeg)…{0}  time {1}  speed {2}" -f $pctTxt, $t, $spd)
-                    Set-Ui $msg
-                    Write-Host ("`r[PROGRESO] {0}" -f $msg) -NoNewline
-                }
-                return
-            }
+        if (-not $m.Success) { $m = [regex]::Match($text, '(?<pct>\d+(?:\.\d+)?)%\s+of.*?at\s+(?<spd>\S+)\s+ETA\s+(?<eta>\S+)', 'IgnoreCase') }
+        if (-not $m.Success) { $m = [regex]::Match($text, '(?<pct>\d+(?:\.\d+)?)%') }
         if ($m.Success) {
-            $pct = [int][math]::Min(100, [math]::Round([double]$m.Groups['pct'].Value))
-            $eta = $m.Groups['eta'].Value
-            $spd = $m.Groups['spd'].Value
+            $pct = [int][math]::Min(100,[math]::Round([double]$m.Groups['pct'].Value))
+            $eta = $m.Groups['eta'].Value; $spd = $m.Groups['spd'].Value
             if ($pct -ne $script:lastPct) {
                 $script:lastPct = $pct
-                Set-Ui ("{0} {1}%  ETA {2}  {3}" -f ($phase -replace '\.\.\.$','…'), $pct, ($eta ? $eta : "--:--"), ($spd ? $spd : "")) 
+                Set-Ui ("{0} {1}%  ETA {2}  {3}" -f ($phase -replace '\.\.\.$','…'), $pct, ($eta ? $eta : "--:--"), ($spd ? $spd : ""))
                 Write-Host ("`r[PROGRESO] {0,3}%  ETA {1,-8}  {2,-16}" -f $pct, $eta, $spd) -NoNewline
             }
             return
         }
-        Write-Host ("`n{0}" -f $text)
+
+        # Progreso ffmpeg (stats con \r)
+        $mFfm = [regex]::Match($text, '^frame=\s*\d+.*time=\d{2}:\d{2}:\d{2}(?:\.\d+)?\s+.*speed=\S+')
+        if ($mFfm.Success) {
+            $line = ($text -replace '\s+',' ').Trim()
+            $sig  = [System.BitConverter]::ToString([System.Security.Cryptography.MD5]::Create().ComputeHash([Text.Encoding]::UTF8.GetBytes($line)))
+            if ($sig -ne $script:lastLineSig) {
+                $script:lastLineSig = $sig
+                Set-Ui $line
+                Write-Host ("`r[PROGRESO] {0}" -f $line) -NoNewline
+            }
+            return
+        }
+
+        # Cualquier otra línea útil
+        Write-Host "`n$text"
     }
 
     try {
         Set-Ui "Preparando descarga…"
-        while (-not $proc.HasExited -or -not ($srErr.EndOfStream -and $srOut.EndOfStream)) {
-            while (-not $srOut.EndOfStream) { _PrintLine ($srOut.ReadLine()) }
-            while (-not $srErr.EndOfStream) { _PrintLine ($srErr.ReadLine()) }
-            [System.Windows.Forms.Application]::DoEvents()  # <-- mantener UI fluida
-            Start-Sleep -Milliseconds 60
+        $bufErr = ""; $bufOut = ""
+
+        while (-not $proc.HasExited) {
+            # Leer “lo nuevo” (incluye líneas con solo \r)
+            $bufOut += $srOut.ReadToEnd()
+            $bufErr += $srErr.ReadToEnd()
+
+            foreach ($chunk in @($bufOut, $bufErr)) {
+                if ([string]::IsNullOrEmpty($chunk)) { continue }
+                $parts = [regex]::Split($chunk, "\r\n|\n|\r")
+                for ($i=0; $i -lt $parts.Length-1; $i++) { _PrintLine $parts[$i] }
+            }
+
+            # Conservar el último fragmento (puede ser línea parcial sin \n)
+            if ($bufOut) { $bufOut = ([regex]::Split($bufOut, "\r\n|\n|\r") | Select-Object -Last 1) } 
+            if ($bufErr) { $bufErr = ([regex]::Split($bufErr, "\r\n|\n|\r") | Select-Object -Last 1) }
+
+            [System.Windows.Forms.Application]::DoEvents()
+            Start-Sleep -Milliseconds 80
         }
-    } finally {
+
+        # Vaciar lo pendiente al terminar
+        $bufOut += $srOut.ReadToEnd()
+        $bufErr += $srErr.ReadToEnd()
+        foreach ($line in ([regex]::Split(($bufOut + "`n" + $bufErr), "\r\n|\n|\r"))) { _PrintLine $line }
+    }
+    finally {
         try { $srErr.Close(); $fsErr.Close() } catch {}
         try { $srOut.Close(); $fsOut.Close() } catch {}
         Write-Host ""
     }
-    return $proc.ExitCode
-    # --- Debounce: si la línea es idéntica a la anterior, no repetir ---
-$lineHash = [System.BitConverter]::ToString([System.Security.Cryptography.MD5]::Create().ComputeHash([Text.Encoding]::UTF8.GetBytes($text)))
-if ($script:lastLineHash -eq $lineHash) { return }
-$script:lastLineHash = $lineHash
 
+    return $proc.ExitCode
 }
 $btnConsultar.Add_Click({
     $btnConsultar.Enabled = $false
@@ -1548,31 +1513,14 @@ $btnDescargar.Add_Click({
         $idx++
     }
     Write-Host ("[OUTPUT] Archivo destino: {0}" -f $targetPath) -ForegroundColor Cyan
-
-    # --- Argumentos base (YouTube / Twitch / etc) ---
     $args = @(
         "--encoding","utf-8","--progress","--no-color","--newline",
         "-f", $fSelector,
         "--merge-output-format", $mergeExt,
-        "-P", $dest,
         "-o", $targetPath,
         "--progress-template", "download:%(progress._percent_str)s ETA:%(progress._eta_str)s SPEED:%(progress._speed_str)s",
         "--extractor-args", "youtube:player_client=default,-web_safari,-web_embedded,-tv"
     )
-    
-    # --- Opciones adicionales si ES Twitch ---
-    if (Is-TwitchUrl $script:ultimaURL) {
-    
-        # Fuerza uso de HLS directo y mejor estabilidad
-        $args += @(
-            "--hls-use-mpegts",        # Ensambla segmentos sin reindex
-            "--downloader", "ffmpeg",  # Evita fragmentos HTTP defectuosos
-            "--concurrent-fragments", "1",  # Descarga secuencial (más estable en Twitch)
-            "--retry-sleep", "2",      # Espera entre reintentos
-            "--retries", "8"           # Más reintentos para VOD pesados
-        )
-    
-        # Si Twitch usa token/segmentos, estos parámetros reducen fallos por CDN
         $args += @(
             "--no-part",               # Evita .part corruptos
             "--ignore-config"          # Ignora errores de configuración externa
