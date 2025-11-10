@@ -381,6 +381,26 @@ function Create-IconButton {
     if ($ToolTipText) { $toolTip.SetToolTip($btn, $ToolTipText) }
     return $btn
 }
+function New-LinkLabel {
+    param(
+        [string]$Text,
+        [string]$Url,
+        [System.Drawing.Point]$Location,
+        [System.Drawing.Size]$Size
+    )
+    $ll = New-Object System.Windows.Forms.LinkLabel
+    $ll.Text = $Text
+    $ll.AutoSize = $false
+    $ll.Location = $Location
+    $ll.Size = $Size
+    $ll.LinkBehavior = [System.Windows.Forms.LinkBehavior]::HoverUnderline
+    [void]$ll.Links.Add(0, $Text.Length, $Url)
+    $ll.add_LinkClicked({
+        param($s,$e)
+        try { Start-Process $e.Link.LinkData } catch {}
+    })
+    return $ll
+}
 function Refresh-DependencyLabel {
     param(
         [string]$CommandName,
@@ -832,6 +852,110 @@ function Initialize-AppHeadless {
 
     return $true
 }
+# --- Form de Información de la aplicación ---
+function Show-AppInfo {
+    $f = New-Object System.Windows.Forms.Form
+    $f.Text = "Información de la aplicación"
+    $f.Size = New-Object System.Drawing.Size(520, 560)
+    $f.StartPosition = "CenterParent"
+    $f.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::FixedDialog
+    $f.MaximizeBox = $false
+    $f.MinimizeBox = $false
+    $f.BackColor = [System.Drawing.Color]::White
+
+    $lblTitulo = New-Object System.Windows.Forms.Label
+    $lblTitulo.Text = "YTDLL — Información"
+    $lblTitulo.Font = New-Object System.Drawing.Font("Segoe UI", 12, [System.Drawing.FontStyle]::Bold)
+    $lblTitulo.Size = New-Object System.Drawing.Size(460, 28)
+    $lblTitulo.Location = New-Object System.Drawing.Point(20, 16)
+
+    $lblVer = New-Object System.Windows.Forms.Label
+    $lblVer.Text = ("Versión: {0}" -f $version)
+    $lblVer.Font = $defaultFont
+    $lblVer.Size = New-Object System.Drawing.Size(460, 22)
+    $lblVer.Location = New-Object System.Drawing.Point(20, 46)
+
+    $lblCamb = New-Object System.Windows.Forms.Label
+    $lblCamb.Text = "Cambios recientes:"
+    $lblCamb.Font = $boldFont
+    $lblCamb.Size = New-Object System.Drawing.Size(460, 20)
+    $lblCamb.Location = New-Object System.Drawing.Point(20, 76)
+
+    $txtCamb = New-Object System.Windows.Forms.TextBox
+    $txtCamb.Multiline = $true
+    $txtCamb.ScrollBars = "Vertical"
+    $txtCamb.ReadOnly = $true
+    $txtCamb.Font = $defaultFont
+    $txtCamb.BackColor = [System.Drawing.Color]::White
+    $txtCamb.Size = New-Object System.Drawing.Size(460, 150)
+    $txtCamb.Location = New-Object System.Drawing.Point(20, 98)
+    $txtCamb.Text = $global:defaultInstructions
+    $txtCamb.WordWrap = $true
+
+    $lblDeps = New-Object System.Windows.Forms.Label
+    $lblDeps.Text = "Dependencias detectadas:"
+    $lblDeps.Font = $boldFont
+    $lblDeps.Size = New-Object System.Drawing.Size(460, 22)
+    $lblDeps.Location = New-Object System.Drawing.Point(20, 258)
+
+    $txtDeps = New-Object System.Windows.Forms.TextBox
+    $txtDeps.Multiline = $true
+    $txtDeps.ReadOnly = $true
+    $txtDeps.BackColor = [System.Drawing.Color]::White
+    $txtDeps.Font = $defaultFont
+    $txtDeps.Size = New-Object System.Drawing.Size(460, 90)
+    $txtDeps.Location = New-Object System.Drawing.Point(20, 282)
+
+    $ytVer  = (Get-ToolVersion -Command "yt-dlp" -ArgsForVersion "--version" -Parse "FirstLine")
+    $ffVer  = (Get-ToolVersion -Command "ffmpeg" -ArgsForVersion "-version"  -Parse "FirstLine")
+    $ndVer  = if ($script:RequireNode) { (Get-ToolVersion -Command "node" -ArgsForVersion "--version" -Parse "FirstLine") } else { $null }
+
+    $txtDeps.Text = @(
+        ("yt-dlp: " + ($ytVer  ? $ytVer : "no instalado"))
+        ("ffmpeg: " + ($ffVer  ? $ffVer : "no instalado"))
+        ($script:RequireNode ? ("Node.js: " + ($ndVer ? $ndVer : "no instalado")) : $null)
+    ) | Where-Object { $_ } | Out-String
+
+    $lblLinks = New-Object System.Windows.Forms.Label
+    $lblLinks.Text = "Proyectos:"
+    $lblLinks.Font = $boldFont
+    $lblLinks.Size = New-Object System.Drawing.Size(460, 22)
+    $lblLinks.Location = New-Object System.Drawing.Point(20, 378)
+
+    $lnkApp = New-LinkLabel -Text "PWytdll (GitHub)" `
+              -Url "https://github.com/water0ff/PWytdll/tree/main" `
+              -Location (New-Object System.Drawing.Point(20, 404)) `
+              -Size (New-Object System.Drawing.Size(460, 20))
+
+    $lnkYt  = New-LinkLabel -Text "yt-dlp" `
+              -Url "https://github.com/yt-dlp/yt-dlp" `
+              -Location (New-Object System.Drawing.Point(20, 428)) `
+              -Size (New-Object System.Drawing.Size(460, 20))
+
+    $lnkFf  = New-LinkLabel -Text "FFmpeg" `
+              -Url "https://ffmpeg.org/" `
+              -Location (New-Object System.Drawing.Point(20, 452)) `
+              -Size (New-Object System.Drawing.Size(460, 20))
+
+    $lnkNd  = New-LinkLabel -Text "Node.js" `
+              -Url "https://nodejs.org/" `
+              -Location (New-Object System.Drawing.Point(20, 476)) `
+              -Size (New-Object System.Drawing.Size(460, 20))
+
+    $btnCerrar = New-Object System.Windows.Forms.Button
+    $btnCerrar.Text = "Cerrar"
+    $btnCerrar.Size = New-Object System.Drawing.Size(100, 30)
+    $btnCerrar.Location = New-Object System.Drawing.Point(380, 506)
+    $btnCerrar.Add_Click({ $f.Close() })
+
+    $f.Controls.AddRange(@(
+        $lblTitulo,$lblVer,$lblCamb,$txtCamb,
+        $lblDeps,$txtDeps,
+        $lblLinks,$lnkApp,$lnkYt,$lnkFf,$lnkNd,
+        $btnCerrar
+    ))
+    $f.ShowDialog() | Out-Null
+}
 $script:videoConsultado   = $false
 $script:ultimaURL         = $null
 $script:ultimoTitulo      = $null
@@ -856,6 +980,13 @@ $formPrincipal.Controls.Add($cmbAudioFmt)
 $lblUrl = Create-Label -Text "URL de YouTube:" -Location (New-Object System.Drawing.Point(20, 20)) -Size (New-Object System.Drawing.Size(360, 22)) -Font $boldFont
 $txtUrl = Create-TextBox -Location (New-Object System.Drawing.Point(20, 45)) -Size (New-Object System.Drawing.Size(360, 26))
 $txtUrl.Add_TextChanged({ Set-DownloadButtonVisual })
+$btnInfo = Create-IconButton -Text "?" `
+    -Location (New-Object System.Drawing.Point(354, 10)) `
+    -ToolTipText "Información de la aplicación"
+$btnInfo.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Right
+$btnInfo.Size = New-Object System.Drawing.Size(26, 24)
+$btnInfo.Add_Click({ Show-AppInfo })
+$formPrincipal.Controls.Add($btnInfo)
 $lblEstadoConsulta = Create-Label `
     -Text "Estado: sin consultar" `
     -Location (New-Object System.Drawing.Point(20, 75)) `
@@ -924,14 +1055,6 @@ $formPrincipal.Controls.Add($txtUrl)
 $formPrincipal.Controls.Add($lblEstadoConsulta)
 $formPrincipal.Controls.Add($btnConsultar)
 $formPrincipal.Controls.Add($btnDescargar)
-$txtCambios = Create-TextBox `
-    -Location (New-Object System.Drawing.Point(20, 520)) -Size (New-Object System.Drawing.Size(360, 50)) `
-    -BackColor ([System.Drawing.Color]::White) -ForeColor ([System.Drawing.Color]::Black) `
-    -Font $defaultFont -Text $global:defaultInstructions `
-    -Multiline $true -ScrollBars ([System.Windows.Forms.ScrollBars]::Vertical) `
-    -ReadOnly $true
-$txtCambios.WordWrap = $true
-$formPrincipal.Controls.Add($txtCambios)
 $lblTituloDeps = Create-Label -Text "Dependencias:" -Location (New-Object System.Drawing.Point(20, 590)) -Size (New-Object System.Drawing.Size(360, 24)) -Font $boldFont
 $lblYtDlp      = Create-Label -Text "yt-dlp: verificando..." -Location (New-Object System.Drawing.Point(80, 620)) -Size (New-Object System.Drawing.Size(300, 24)) -Font $defaultFont -BorderStyle ([System.Windows.Forms.BorderStyle]::FixedSingle)
 $lblFfmpeg     = Create-Label -Text "ffmpeg: verificando..." -Location (New-Object System.Drawing.Point(80, 650)) -Size (New-Object System.Drawing.Size(300, 24)) -Font $defaultFont -BorderStyle ([System.Windows.Forms.BorderStyle]::FixedSingle)
