@@ -1426,29 +1426,48 @@ $btnDescargar.Add_Click({
             return
         }
     }
-    $videoSel = Get-SelectedFormatId -Combo $cmbVideoFmt
-    $audioSel = Get-SelectedFormatId -Combo $cmbAudioFmt
-    $fSelector = $null
-    $mergeExt  = "mp4"
-    if ($videoSel) {
-        if ($videoSel -eq "best") {
-            $fSelector = "best"
-        } elseif ($videoSel -eq "bestvideo") {
-            $fSelector = "bestvideo+" + ($(if ($audioSel) { $audioSel } else { "bestaudio" }))
-        } else {
-            $klass = $script:formatsIndex[$videoSel]
-            if ($klass -and $klass.Progressive) {
-                $fSelector = "bestvideo+" + ($(if ($audioSel) { $audioSel } else { "bestaudio" }))
-                $mergeExt  = "mp4"
-            } elseif ($klass -and $klass.VideoOnly) {
-                $fSelector = $videoSel + "+" + ($(if ($audioSel) { $audioSel } else { "bestaudio" }))
+        function Is-TwitchUrl([string]$u) {
+            return $u -match '(^https?://)?(www\.)?twitch\.tv/' 
+        }
+        $videoSel = Get-SelectedFormatId -Combo $cmbVideoFmt
+        $audioSel = Get-SelectedFormatId -Combo $cmbAudioFmt
+        $fSelector = $null
+        $mergeExt  = "mp4"
+        if (Is-TwitchUrl $script:ultimaURL) {
+            if ($videoSel -and $videoSel -ne "bestvideo" -and $videoSel -ne "best") {
+                # Asumimos que es un ID progresivo tipo 1080p60/720p60/480p/etc.
+                $fSelector = $videoSel
+            } elseif ($videoSel -eq "bestvideo") {
+                # En Twitch no hay 'bestvideo' separado del audio; mejor 'best'
+                $fSelector = "best"
             } else {
-                $fSelector = $videoSel + "+" + ($(if ($audioSel) { $audioSel } else { "bestaudio" }))
+                $fSelector = "best"
+            }
+        } else {
+            if ($videoSel) {
+                if ($videoSel -eq "best") {
+                    $fSelector = "best"
+                } elseif ($videoSel -eq "bestvideo") {
+                    $fSelector = "bestvideo+" + ($(if ($audioSel) { $audioSel } else { "bestaudio" }))
+                } else {
+                    $klass = $script:formatsIndex[$videoSel]
+                    if ($klass -and $klass.Progressive) {
+                        # Progresivo: ya trae audio+video juntos => usa el ID directo
+                        $fSelector = $videoSel
+                        # salida final seguirá siendo mp4 (mergeExt ya es "mp4"), pero no habrá merge
+                    } elseif ($klass -and $klass.VideoOnly) {
+                        # Pistas separadas: combina con audio
+                        $fSelector = $videoSel + "+" + ($(if ($audioSel) { $audioSel } else { "bestaudio" }))
+                    } else {
+                        # Cualquier otro caso: intenta combinación segura
+                        $fSelector = $videoSel + "+" + ($(if ($audioSel) { $audioSel } else { "bestaudio" }))
+                    }
+                }
+            } else {
+                # Sin selección: intenta 'best' (progresivo si existe; si no, adaptativo)
+                $fSelector = "best"
             }
         }
-    } else {
-        $fSelector = "bestvideo+bestaudio"
-    }
     $prevLbl = $lblEstadoConsulta.Text
     $prevPickDest  = $btnPickDestino.Enabled
     $prevCmbVid    = $cmbVideoFmt.Enabled
@@ -1471,15 +1490,41 @@ $btnDescargar.Add_Click({
         $idx++
     }
     Write-Host ("[OUTPUT] Archivo destino: {0}" -f $targetPath) -ForegroundColor Cyan
+
+    # --- Argumentos base (YouTube / Twitch / etc) ---
     $args = @(
-      "--encoding","utf-8","--progress","--no-color","--newline",
-      "-f",$fSelector,"--merge-output-format",$mergeExt,
-      "-P",$dest,
-      "-o",$targetPath,  # <--- NUEVO: salida con nombre único
-      "--progress-template","download:%(progress._percent_str)s ETA:%(progress._eta_str)s SPEED:%(progress._speed_str)s",
-      "--extractor-args","youtube:player_client=default,-web_safari,-web_embedded,-tv",
-      $script:ultimaURL
+        "--encoding","utf-8","--progress","--no-color","--newline",
+        "-f", $fSelector,
+        "--merge-output-format", $mergeExt,
+        "-P", $dest,
+        "-o", $targetPath,
+        "--progress-template", "download:%(progress._percent_str)s ETA:%(progress._eta_str)s SPEED:%(progress._speed_str)s",
+        "--extractor-args", "youtube:player_client=default,-web_safari,-web_embedded,-tv"
     )
+    
+    # --- Opciones adicionales si ES Twitch ---
+    if (Is-TwitchUrl $script:ultimaURL) {
+    
+        # Fuerza uso de HLS directo y mejor estabilidad
+        $args += @(
+            "--hls-use-mpegts",        # Ensambla segmentos sin reindex
+            "--downloader", "ffmpeg",  # Evita fragmentos HTTP defectuosos
+            "--concurrent-fragments", "1",  # Descarga secuencial (más estable en Twitch)
+            "--retry-sleep", "2",      # Espera entre reintentos
+            "--retries", "8"           # Más reintentos para VOD pesados
+        )
+    
+        # Si Twitch usa token/segmentos, estos parámetros reducen fallos por CDN
+        $args += @(
+            "--no-part",               # Evita .part corruptos
+            "--ignore-config"          # Ignora errores de configuración externa
+        )
+    }
+    
+    # --- Finalmente, agregamos la URL al final ---
+    $args += $script:ultimaURL
+
+    
     $oldCursor = [System.Windows.Forms.Cursor]::Current
     [System.Windows.Forms.Cursor]::Current = [System.Windows.Forms.Cursors]::WaitCursor
     try {
