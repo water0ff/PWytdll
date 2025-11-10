@@ -71,7 +71,7 @@ $global:defaultInstructions = @"
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 [System.Windows.Forms.Application]::EnableVisualStyles()
-                                                                                                $version = "beta 251110.1441"
+                                                                                                $version = "beta 251110.1500"
 $formPrincipal = New-Object System.Windows.Forms.Form
 $formPrincipal.Size = New-Object System.Drawing.Size(400, 800)
 $formPrincipal.StartPosition = "CenterScreen"
@@ -1225,7 +1225,7 @@ $ctxUrlHistory = New-Object System.Windows.Forms.ContextMenuStrip
 function Show-UrlHistoryMenu {
     $ctxUrlHistory.Items.Clear()
 
-    $items = Get-HistoryUrls
+    $items = @(Get-HistoryUrls)
     if (-not $items -or $items.Count -eq 0) {
         $miEmpty = New-Object System.Windows.Forms.ToolStripMenuItem
         $miEmpty.Text = "(Sin historial)"
@@ -1273,13 +1273,6 @@ function Show-UrlHistoryMenu {
     $pt = New-Object System.Drawing.Point(0, $txtUrl.Height)
     $ctxUrlHistory.Show($txtUrl, $pt)
 }
-$btnHistory = Create-IconButton -Text "▼" `
-    -Location (New-Object System.Drawing.Point(354, 45)) `
-    -ToolTipText "Historial de URLs"
-$formPrincipal.Controls.Add($btnHistory)
-$btnHistory.Add_Click({ Show-UrlHistoryMenu })
-
-# Mostrar al enfocar o al hacer clic derecho
 $txtUrl.Add_GotFocus({
     if ($this.Text -eq $global:UrlPlaceholder) {
         $this.Text = ""
