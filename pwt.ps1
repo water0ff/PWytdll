@@ -33,6 +33,7 @@ if ($response.Character -ne 'Y') {
 Clear-Host
 $global:defaultInstructions = @"
 ----- CAMBIOS -----
+- Ahora ya solo existe 1 botón para consultar y descargar.
 - Ahora se debe tener una carpeta preconfigurada de destino, por omisión se usa el Escritorio.
 - Ahora permite que selecciones los formatos para video y audio.
 - Se agrega la opción para actualizar y desinstalar dependencias.
@@ -54,7 +55,7 @@ $formPrincipal.MaximizeBox = $false
 $formPrincipal.MinimizeBox = $false
 $defaultFont = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Regular)
 $boldFont    = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
-                                                                                                        $version = "Alfa 251110.0900"
+                                                                                                        $version = "Alfa 251110.0947"
 $formPrincipal.Text = ("YTDLL v{0}" -f $version)
 Write-Host "`n=============================================" -ForegroundColor DarkCyan
 Write-Host "                   YTDLL                       " -ForegroundColor Green
@@ -159,6 +160,7 @@ function Set-DownloadButtonVisual {
     $haveFfm  = Test-CommandExists -Name "ffmpeg"
     $haveNode = if ($script:RequireNode) { Test-CommandExists -Name "node" } else { $true }
     $depsOk = $haveYt -and $haveFfm -and $haveNode
+
     if (-not $depsOk) {
         $btnDescargar.Enabled   = $false
         $btnDescargar.BackColor = [System.Drawing.Color]::Black
@@ -168,22 +170,39 @@ function Set-DownloadButtonVisual {
         $btnDescargar.Tag = $btnDescargar.BackColor
         return
     }
-    $currentUrl = ($txtUrl.Text).Trim()
-    $isReady = $script:videoConsultado -and
-               -not [string]::IsNullOrWhiteSpace($script:ultimaURL) -and
-               ($script:ultimaURL -eq $currentUrl)
 
+    $currentUrl = ($txtUrl.Text).Trim()
+    $isConsulted = $script:videoConsultado -and
+                   -not [string]::IsNullOrWhiteSpace($script:ultimaURL) -and
+                   ($script:ultimaURL -eq $currentUrl)
+
+    # Estado por defecto (no consultado)
     $btnDescargar.Enabled = $true
-    $btnDescargar.Text    = "Descargar"  # siempre texto fijo
-    if ($isReady) {
-        $btnDescargar.BackColor = [System.Drawing.Color]::ForestGreen
-        $btnDescargar.ForeColor = [System.Drawing.Color]::White
-        $toolTip.SetToolTip($btnDescargar, "Consulta válida: listo para descargar")
-    } else {
+    $btnDescargar.Text    = "Descargar"
+
+    if (-not $isConsulted) {
         $btnDescargar.BackColor = [System.Drawing.Color]::DodgerBlue
         $btnDescargar.ForeColor = [System.Drawing.Color]::White
         $toolTip.SetToolTip($btnDescargar, "Aún no consultado: al hacer clic validará la URL (no descargará)")
     }
+    elseif (-not $script:formatsEnumerated) {
+        # <<--- NUEVO: caso de falla de formatos => NO verde
+        $btnDescargar.Enabled   = $false
+        $btnDescargar.BackColor = [System.Drawing.Color]::DarkOrange
+        $btnDescargar.ForeColor = [System.Drawing.Color]::White
+        $toolTip.SetToolTip($btnDescargar, "No fue posible extraer los formatos. Presiona 'Consultar' para reintentar.")
+        if ($lblEstadoConsulta) {
+            $lblEstadoConsulta.Text = "No fue posible extraer formatos. Vuelve a consultar."
+            $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::DarkOrange
+        }
+    }
+    else {
+        # OK para descargar
+        $btnDescargar.BackColor = [System.Drawing.Color]::ForestGreen
+        $btnDescargar.ForeColor = [System.Drawing.Color]::White
+        $toolTip.SetToolTip($btnDescargar, "Consulta válida: listo para descargar")
+    }
+
     $btnDescargar.Tag = $btnDescargar.BackColor
 }
 $script:RequireNode = $true
@@ -269,15 +288,19 @@ function Fetch-Formats {
     $script:formatsIndex.Clear()
     $script:formatsVideo = @()
     $script:formatsAudio = @()
+    $script:formatsEnumerated = $false   # <-- reset
+
     try { $yt = Get-Command yt-dlp -ErrorAction Stop } catch {
         Write-Host "[ERROR] yt-dlp no disponible para listar formatos." -ForegroundColor Red
         return $false
     }
+
     $prevLabel = $null
     if ($lblEstadoConsulta) {
         $prevLabel = $lblEstadoConsulta.Text
         $lblEstadoConsulta.Text = "Consultando formatos…"
     }
+
     try {
         $obj = Invoke-CaptureResponsive -ExePath $yt.Source -Args @("-J","--no-playlist",$Url) -WorkingText "Consultando formatos…"
         if ($obj.ExitCode -ne 0 -or [string]::IsNullOrWhiteSpace($obj.StdOut)) {
@@ -285,54 +308,58 @@ function Fetch-Formats {
             Write-Host $obj.StdErr
             return $false
         }
-        try {
-            $json = $obj.StdOut | ConvertFrom-Json
-        } catch {
+
+        try { $json = $obj.StdOut | ConvertFrom-Json } catch {
             Write-Host "[ERROR] JSON inválido al listar formatos." -ForegroundColor Red
             return $false
         }
-        if (-not $json.formats) {
+
+        if (-not $json.formats -or $json.formats.Count -eq 0) {
             Write-Host "[WARN] El extractor no devolvió lista de formatos." -ForegroundColor Yellow
             return $false
         }
+
         Print-FormatsTable -formats $json.formats
         foreach ($f in $json.formats) {
             $klass = Classify-Format $f
             $script:formatsIndex[$klass.Id] = $klass
             if ($klass.Progressive -and $script:ExcludedFormatIds -contains $klass.Id) { continue }
+
             $res = if ($klass.VRes) { "{0}p" -f $klass.VRes } else { "" }
             $sz  = Human-Size $klass.Filesize
             $tbr = if ($klass.Tbr) { "{0}k" -f [math]::Round($klass.Tbr) } else { "" }
-            if ($klass.Progressive) {
-                $label = "{0} {1} {2}/{3} (progresivo) {4} {5}" -f $klass.Ext,$res,$klass.VCodec,$klass.ACodec,$sz,$tbr
-                $script:formatsVideo += (New-FormatDisplay -Id $klass.Id -Label $label)
-            } elseif ($klass.VideoOnly) {
-                $label = "{0} {1} {2} (v-only) {3} {4}" -f $klass.Ext,$res,$klass.VCodec,$sz,$tbr
-                $script:formatsVideo += (New-FormatDisplay -Id $klass.Id -Label $label)
-            } elseif ($klass.AudioOnly) {
-                $label = "{0} ~{1} {2} (a-only) {3}" -f $klass.Ext, $klass.ABr, $klass.ACodec, $sz
-                $script:formatsAudio += (New-FormatDisplay -Id $klass.Id -Label $label)
-            }
+
+            if     ($klass.Progressive) { $script:formatsVideo += (New-FormatDisplay -Id $klass.Id -Label ("{0} {1} {2}/{3} (progresivo) {4} {5}" -f $klass.Ext,$res,$klass.VCodec,$klass.ACodec,$sz,$tbr)) }
+            elseif ($klass.VideoOnly)   { $script:formatsVideo += (New-FormatDisplay -Id $klass.Id -Label ("{0} {1} {2} (v-only) {3} {4}" -f $klass.Ext,$res,$klass.VCodec,$sz,$tbr)) }
+            elseif ($klass.AudioOnly)   { $script:formatsAudio += (New-FormatDisplay -Id $klass.Id -Label ("{0} ~{1} {2} (a-only) {3}" -f $klass.Ext,$klass.ABr,$klass.ACodec,$sz)) }
         }
+
+        # Headers “best*”
         $script:formatsVideo = @(
-            "best — mejor calidad (progresivo si existe; si no, será adaptativo)",
+            "best — mejor calidad (progresivo si existe; si no, adaptativo)",
             "bestvideo — mejor video (sin audio; usar con audio)"
         ) + $script:formatsVideo
+
         $script:formatsAudio = @(
             "bestaudio — mejor audio disponible"
         ) + $script:formatsAudio
-        return $true
-    } finally {
-        if ($lblEstadoConsulta -and $prevLabel) {
-            $lblEstadoConsulta.Text = $prevLabel
-        }
+
+        $script:formatsEnumerated = ($script:formatsVideo.Count -gt 0 -or $script:formatsAudio.Count -gt 0)
+        return $script:formatsEnumerated
+    }
+    finally {
+        if ($lblEstadoConsulta -and $prevLabel) { $lblEstadoConsulta.Text = $prevLabel }
     }
 }
 function Get-SelectedFormatId {
     param([System.Windows.Forms.ComboBox]$Combo)
-    $t = ($Combo.SelectedItem | ForEach-Object { $_.ToString() })
+    if (-not $Combo) { return $null }
+    if (-not $Combo.SelectedItem) { return $null }
+
+    $t = [string]$Combo.SelectedItem
     if ([string]::IsNullOrWhiteSpace($t)) { return $null }
-    if ($t -like "best*") { return ($t -split '\s')[0] } # "best" / "bestvideo" / "bestaudio"
+
+    if ($t -like "best*") { return ($t -split '\s')[0] } # best / bestvideo / bestaudio
     return ($t -split '\s')[0]
 }
 function Create-IconButton {
@@ -583,35 +610,48 @@ function Invoke-ConsultaFromUI {
     $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::ForestGreen
     Show-PreviewFromUrl -Url $Url -Titulo $titulo
     Write-Host ("[OK] Video consultado: {0}" -f $titulo) -ForegroundColor Green
-    $cmbVideoFmt.Items.Clear()
-    $cmbAudioFmt.Items.Clear()
-    $prevLabelText = $lblEstadoConsulta.Text
-    $lblEstadoConsulta.Text = "Consultando formatos…"
-    try {
-        if (Fetch-Formats -Url $Url) {
-            foreach ($i in $script:formatsVideo) { [void]$cmbVideoFmt.Items.Add($i) }
-            foreach ($i in $script:formatsAudio) { [void]$cmbAudioFmt.Items.Add($i) }
-            if ($cmbVideoFmt.Items.Count -gt 0) {
-                $idx = 0
-                for ($n=0; $n -lt $cmbVideoFmt.Items.Count; $n++) {
-                    if ($cmbVideoFmt.Items[$n].ToString().StartsWith("bestvideo")) { $idx = $n; break }
-                    if ($cmbVideoFmt.Items[$n].ToString().StartsWith("best")) { $idx = $n }
+    # dentro de Invoke-ConsultaFromUI, después de obtener título OK...
+        $cmbVideoFmt.Items.Clear()
+        $cmbAudioFmt.Items.Clear()
+        $prevLabelText = $lblEstadoConsulta.Text
+        $lblEstadoConsulta.Text = "Consultando formatos…"
+        
+        try {
+            if (Fetch-Formats -Url $Url) {
+                foreach ($i in $script:formatsVideo) { [void]$cmbVideoFmt.Items.Add($i) }
+                foreach ($i in $script:formatsAudio) { [void]$cmbAudioFmt.Items.Add($i) }
+        
+                if ($cmbVideoFmt.Items.Count -gt 0) {
+                    $idx = 0
+                    for ($n=0; $n -lt $cmbVideoFmt.Items.Count; $n++) {
+                        if ($cmbVideoFmt.Items[$n].ToString().StartsWith("bestvideo")) { $idx = $n; break }
+                        if ($cmbVideoFmt.Items[$n].ToString().StartsWith("best"))     { $idx = $n }
+                    }
+                    $cmbVideoFmt.SelectedIndex = $idx
                 }
-                $cmbVideoFmt.SelectedIndex = $idx
-            }
-            if ($cmbAudioFmt.Items.Count -gt 0) {
-                $idx = 0
-                for ($n=0; $n -lt $cmbAudioFmt.Items.Count; $n++) {
-                    if ($cmbAudioFmt.Items[$n].ToString().StartsWith("bestaudio")) { $idx = $n; break }
+                if ($cmbAudioFmt.Items.Count -gt 0) {
+                    $idx = 0
+                    for ($n=0; $n -lt $cmbAudioFmt.Items.Count; $n++) {
+                        if ($cmbAudioFmt.Items[$n].ToString().StartsWith("bestaudio")) { $idx = $n; break }
+                    }
+                    $cmbAudioFmt.SelectedIndex = $idx
                 }
-                $cmbAudioFmt.SelectedIndex = $idx
             }
-        } else {
-            Write-Host "[WARN] No se pudieron enumerar formatos. Se usará bestvideo+bestaudio." -ForegroundColor Yellow
+            else {
+                # <<--- NUEVO: sin formatos => bloquear descarga y pedir reintento
+                $script:formatsEnumerated = $false
+                $cmbVideoFmt.Items.Clear()
+                $cmbAudioFmt.Items.Clear()
+                Write-Host "[WARN] No se pudieron enumerar formatos. Pide volver a consultar." -ForegroundColor Yellow
+                $lblEstadoConsulta.Text = "No fue posible extraer formatos. Vuelve a consultar."
+                $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::DarkOrange
+                Set-DownloadButtonVisual
+                return $false
+            }
         }
-    } finally {
-        $lblEstadoConsulta.Text = $prevLabelText
-    }
+        finally {
+            $lblEstadoConsulta.Text = $prevLabelText
+}
     return $true
 }
 function Get-ToolVersion {
@@ -719,6 +759,7 @@ function Ensure-Tool {
 $script:videoConsultado   = $false
 $script:ultimaURL         = $null
 $script:ultimoTitulo      = $null
+$script:formatsEnumerated = $false
 $script:ultimaRutaDescarga = [Environment]::GetFolderPath('Desktop')
 $lblVideoFmt = Create-Label -Text "Formato de VIDEO:" `
     -Location (New-Object System.Drawing.Point(20, 215)) `
@@ -1123,9 +1164,17 @@ $btnConsultar.Add_Click({
                     }
                     $cmbAudioFmt.SelectedIndex = $idx
                 }
-            } else {
-                Write-Host "[WARN] No se pudieron enumerar formatos. Se usará bestvideo+bestaudio." -ForegroundColor Yellow
-            }
+                } else {
+                    # <<--- SIN FORMATOS: bloquear descarga y pedir reintento
+                    $script:formatsEnumerated = $false
+                    $cmbVideoFmt.Items.Clear()
+                    $cmbAudioFmt.Items.Clear()
+                    Write-Host "[WARN] No fue posible extraer formatos. Vuelve a consultar." -ForegroundColor Yellow
+                    $lblEstadoConsulta.Text = "No fue posible extraer formatos. Vuelve a consultar."
+                    $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::DarkOrange
+                    Set-DownloadButtonVisual
+                    return
+                }
         } finally {
             $lblEstadoConsulta.Text = $prevLabelText
         }
@@ -1134,6 +1183,16 @@ $btnConsultar.Add_Click({
     }
 })
 $btnDescargar.Add_Click({
+    if ($script:videoConsultado -and -not $script:formatsEnumerated) {
+        [System.Windows.Forms.MessageBox]::Show(
+            "No fue posible extraer los formatos. Presiona 'Consultar' para reintentar.",
+            "Falta de formatos",
+            [System.Windows.Forms.MessageBoxButtons]::OK,
+            [System.Windows.Forms.MessageBoxIcon]::Warning
+        ) | Out-Null
+        Set-DownloadButtonVisual
+        return
+    }
     Refresh-GateByDeps
     $currentUrl = ($txtUrl.Text).Trim()
     $ready = $script:videoConsultado -and
