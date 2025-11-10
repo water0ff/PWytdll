@@ -601,14 +601,20 @@ function Show-PreviewImage {
         [string]$Titulo = $null
     )
     try {
+        # Si es webp, probablemente no lo soporte GDI+ => falla rápido
+        if ($ImageUrl -match '\.webp($|\?)') { return $false }
+
         $img = Get-ImageFromUrl -Url $ImageUrl
         if ($img) {
             $picPreview.Image = $img
             if ($Titulo) { $toolTip.SetToolTip($picPreview, $Titulo) }
+            return $true
         }
-    } catch {}
+        return $false
+    } catch {
+        return $false
+    }
 }
-
 function Get-BestThumbnailUrl {
     param([Parameter(Mandatory=$true)]$Json)
     # 1) Campo 'thumbnail' directo
@@ -617,10 +623,14 @@ function Get-BestThumbnailUrl {
     }
     # 2) Lista 'thumbnails' => elegimos la de mayor ancho o mayor 'preference'
     if ($Json.thumbnails -and $Json.thumbnails.Count -gt 0) {
-        $thumb = $Json.thumbnails |
-            Sort-Object @{Expression='preference';Descending=$true},
-                        @{Expression='width';Descending=$true} |
-            Select-Object -First 1
+        # 2a) Intenta elegir NO-webp si existe
+        $ordered = $Json.thumbnails | Sort-Object @{Expression='preference';Descending=$true},
+                                                  @{Expression='width';Descending=$true}
+        $thumbNonWebp = $ordered | Where-Object { $_.url -and ($_.url -notmatch '\.webp($|\?)') } | Select-Object -First 1
+        if ($thumbNonWebp -and $thumbNonWebp.url) { return [string]$thumbNonWebp.url }
+        
+        # 2b) Si no hay, toma la mejor aunque sea webp
+        $thumb = $ordered | Select-Object -First 1
         if ($thumb -and $thumb.url) { return [string]$thumb.url }
     }
     return $null
@@ -700,9 +710,12 @@ function Invoke-ConsultaFromUI {
         finally {
             $lblEstadoConsulta.Text = $prevLabelText
 }
+    $shown = $false
     if ($script:lastThumbUrl) {
-        Show-PreviewImage -ImageUrl $script:lastThumbUrl -Titulo $titulo
-    } else {
+        $shown = Show-PreviewImage -ImageUrl $script:lastThumbUrl -Titulo $titulo
+    }
+    if (-not $shown) {
+        # Fallback robusto para YouTube (img.youtube.com)
         Show-PreviewFromUrl -Url $Url -Titulo $titulo
     }
     return $true
