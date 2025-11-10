@@ -266,6 +266,60 @@ function Get-SafeFileName {
     if ([string]::IsNullOrWhiteSpace($n)) { $n = "video" }
     return $n
 }
+function Format-ExtractorsInline {
+    param(
+        [Parameter(Mandatory=$true)][string]$RawText,
+        [int]$WrapAt = 120   # cambia si quieres líneas más cortas/largas
+    )
+    # 1) Parte líneas, remueve warnings y notas en paréntesis
+    $lines = $RawText -split "`r?`n" |
+        ForEach-Object { $_.Trim() } |
+        Where-Object {
+            $_ -and
+            ($_ -notmatch '^\s*WARNING') -and
+            ($_ -notmatch '^\s*ERROR')   -and
+            ($_ -notmatch '^\s*Deprecation')
+        }
+
+    # 2) En cada línea, elimina " (…)" y separa en tokens por espacios o comas
+    $tokens = foreach ($ln in $lines) {
+        $clean = $ln -replace '\s+\(.*?\)\s*$', ''      # quita cola entre paréntesis
+        $parts = $clean -split '[\s,]+' | Where-Object { $_ }
+        foreach ($p in $parts) {
+            # Acepta nombres estilo 10play, 10play:season, 17live:vod, etc.
+            if ($p -match '^[A-Za-z0-9][\w:-]+$') { $p }
+        }
+    }
+
+    # 3) Unicos, orden estable
+    $uniq = [System.Collections.Generic.List[string]]::new()
+    $seen = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    foreach ($t in $tokens) { if ($seen.Add($t)) { $null = $uniq.Add($t) } }
+
+    # 4) Une con " | " e inserta saltos de línea alrededor de WrapAt
+    $sb = [System.Text.StringBuilder]::new()
+    $lineLen = 0
+    for ($i=0; $i -lt $uniq.Count; $i++) {
+        $tok = $uniq[$i]
+        $sep = if ($i -eq 0 -or $lineLen -eq 0) { '' } else { ' | ' }
+        $addLen = $sep.Length + $tok.Length
+        if ($WrapAt -gt 0 -and ($lineLen + $addLen) -gt $WrapAt) {
+            [void]$sb.AppendLine()
+            $lineLen = 0
+            $sep = ''
+            $addLen = $tok.Length
+        }
+        [void]$sb.Append($sep)
+        [void]$sb.Append($tok)
+        $lineLen += $addLen
+    }
+
+    # Devuelve texto y conteo
+    [pscustomobject]@{
+        Text  = $sb.ToString()
+        Count = $uniq.Count
+    }
+}
 function Print-FormatsTable {
     param([array]$formats)  # array del JSON .formats
     Write-Host "`n[FORMATOS] Disponibles (similar a yt-dlp -F):" -ForegroundColor Cyan
@@ -1194,18 +1248,41 @@ $btnSites.Add_Click({
         [System.Windows.Forms.MessageBox]::Show("yt-dlp no está disponible.","Error") | Out-Null
         return
     }
+
     $res = Invoke-CaptureResponsive -ExePath $yt.Source -Args @("--list-extractors") -WorkingText "Obteniendo sitios…"
-    $dlg = Create-Form -Title "Sitios compatibles (extractores)" -Size (New-Object System.Drawing.Size(700, 500))
+    $raw = ($res.StdOut + "`r`n" + $res.StdErr)
+
+    # Formatear "en línea" con tuberías
+    $fmt = Format-ExtractorsInline -RawText $raw -WrapAt 120
+
+    # Diálogo
+    $dlg = Create-Form -Title ("Sitios compatibles (extractores) — {0} encontrados" -f $fmt.Count) `
+                       -Size (New-Object System.Drawing.Size(900, 560))
+
     $txt = New-Object System.Windows.Forms.TextBox
-    $txt.Multiline = $true; $txt.ReadOnly = $true
-    $txt.ScrollBars = "Both"; $txt.WordWrap = $false
+    $txt.Multiline = $true
+    $txt.ReadOnly  = $true
+    $txt.ScrollBars = "Both"
+    $txt.WordWrap   = $false         # mantenlo en falso; ya insertamos saltos por nosotros
     $txt.Font = New-Object System.Drawing.Font("Consolas", 9)
     $txt.Location = New-Object System.Drawing.Point(10,10)
-    $txt.Size = New-Object System.Drawing.Size(664, 410)
-    $txt.Text = ($res.StdOut + "`r`n" + $res.StdErr)
-    $btnClose = Create-Button -Text "Cerrar" -Location (New-Object System.Drawing.Point(574, 430)) -Size (New-Object System.Drawing.Size(100, 30))
+    $txt.Size     = New-Object System.Drawing.Size(864, 470)
+    $txt.Text     = $fmt.Text
+
+    $btnCopy = Create-Button -Text "Copiar" -Location (New-Object System.Drawing.Point(664, 490)) -Size (New-Object System.Drawing.Size(100, 30))
+    $btnCopy.Add_Click({
+        try {
+            [System.Windows.Forms.Clipboard]::SetText($txt.Text)
+            [System.Windows.Forms.MessageBox]::Show("Copiado al portapapeles.","OK") | Out-Null
+        } catch {}
+    })
+
+    $btnClose = Create-Button -Text "Cerrar" -Location (New-Object System.Drawing.Point(774, 490)) -Size (New-Object System.Drawing.Size(100, 30))
     $btnClose.Add_Click({ $dlg.Close() })
-    $dlg.Controls.Add($txt); $dlg.Controls.Add($btnClose)
+
+    $dlg.Controls.Add($txt)
+    $dlg.Controls.Add($btnCopy)
+    $dlg.Controls.Add($btnClose)
     $dlg.ShowDialog() | Out-Null
 })
 
