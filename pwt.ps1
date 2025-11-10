@@ -1527,19 +1527,15 @@ $btnDescargar.Add_Click({
         )
     $args += $script:ultimaURL
     if (Is-TwitchUrl $script:ultimaURL) {
-        # Preferir ffmpeg para HLS en Twitch pero con menos ruido y stats periódicos
+        # Usar downloader nativo de yt-dlp (muestra progreso correctamente)
+        # HLS con múltiples fragmentos concurrentes para acelerar y mantener progreso
         $args += @(
-            "--downloader","ffmpeg",
             "--hls-use-mpegts",
             "--retries","10","--retry-sleep","1",
-            # Silenciar 'Opening ...ts' y banners, mostrar stats cada 1s
-            "--downloader-args","ffmpeg:-hide_banner -loglevel warning -stats_period 1"
-            # TIP opcional: si tu conexión lo soporta, puedes probar paralelismo nativo (no aplica a ffmpeg):
-            # "-N","4"
+            "-N","4"                         # o ajusta 2-8 según tu red
         )
+        # IMPORTANTE: No forzar --downloader ffmpeg aquí, para que yt-dlp pinte el progreso.
     }
-
-    
     $oldCursor = [System.Windows.Forms.Cursor]::Current
     [System.Windows.Forms.Cursor]::Current = [System.Windows.Forms.Cursors]::WaitCursor
     try {
