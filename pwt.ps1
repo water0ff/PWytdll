@@ -1011,23 +1011,23 @@ $script:lastThumbUrl      = $null
 $script:formatsEnumerated = $false
 $script:ultimaRutaDescarga = [Environment]::GetFolderPath('Desktop')
 $lblVideoFmt = Create-Label -Text "Formato de VIDEO:" `
-    -Location (New-Object System.Drawing.Point(20, 215)) `
+    -Location (New-Object System.Drawing.Point(20, 235)) `
     -Size (New-Object System.Drawing.Size(360, 20)) -Font $boldFont
 $cmbVideoFmt = Create-ComboBox `
-    -Location (New-Object System.Drawing.Point(20, 238)) `
+    -Location (New-Object System.Drawing.Point(20, 258)) `
     -Size (New-Object System.Drawing.Size(360, 28))
 $lblAudioFmt = Create-Label -Text "Formato de AUDIO:" `
-    -Location (New-Object System.Drawing.Point(20, 270)) `
+    -Location (New-Object System.Drawing.Point(20, 290)) `
     -Size (New-Object System.Drawing.Size(360, 20)) -Font $boldFont
 $cmbAudioFmt = Create-ComboBox `
-    -Location (New-Object System.Drawing.Point(20, 293)) `
+    -Location (New-Object System.Drawing.Point(20, 313)) `
     -Size (New-Object System.Drawing.Size(360, 28))
 $formPrincipal.Controls.Add($lblVideoFmt)
 $formPrincipal.Controls.Add($cmbVideoFmt)
 $formPrincipal.Controls.Add($lblAudioFmt)
 $formPrincipal.Controls.Add($cmbAudioFmt)
 $lblUrl = Create-Label -Text "URL de YouTube:" -Location (New-Object System.Drawing.Point(20, 20)) -Size (New-Object System.Drawing.Size(360, 22)) -Font $boldFont
-$txtUrl = Create-TextBox -Location (New-Object System.Drawing.Point(20, 45)) -Size (New-Object System.Drawing.Size(360, 26))
+$txtUrl = Create-TextBox -Location (New-Object System.Drawing.Point(20, 45)) -Size (New-Object System.Drawing.Size(360, 46))
 $txtUrl.Add_TextChanged({ Set-DownloadButtonVisual })
 $btnInfo = Create-IconButton -Text "?" `
     -Location (New-Object System.Drawing.Point(354, 10)) `
@@ -1038,7 +1038,7 @@ $btnInfo.Add_Click({ Show-AppInfo })
 $formPrincipal.Controls.Add($btnInfo)
 $lblEstadoConsulta = Create-Label `
     -Text "Estado: sin consultar" `
-    -Location (New-Object System.Drawing.Point(20, 75)) `
+    -Location (New-Object System.Drawing.Point(20, 95)) `
     -Size (New-Object System.Drawing.Size(360, 44)) `
     -Font $defaultFont `
     -BorderStyle ([System.Windows.Forms.BorderStyle]::FixedSingle) `
@@ -1055,22 +1055,22 @@ $btnConsultar = Create-Button -Text "Consultar" `
     $btnConsultar.Visible = $false
     $btnConsultar.Enabled = $false
 $btnDescargar = Create-Button -Text "Descargar" `
-    -Location (New-Object System.Drawing.Point(210, 125)) `
-    -Size (New-Object System.Drawing.Size(170, 35)) `
+    -Location (New-Object System.Drawing.Point(20, 125)) `
+    -Size (New-Object System.Drawing.Size(360, 35)) `
     -BackColor ([System.Drawing.Color]::Black) `
     -ForeColor ([System.Drawing.Color]::White) `
     -ToolTipText "Descargar usando bestvideo+bestaudio -> mp4"
     Set-DownloadButtonVisual
 $lblDestino = Create-Label -Text "Carpeta de destino:" `
-    -Location (New-Object System.Drawing.Point(20, 160)) `
+    -Location (New-Object System.Drawing.Point(20, 180)) `
     -Size (New-Object System.Drawing.Size(360, 20)) -Font $boldFont
 $txtDestino = Create-TextBox `
-    -Location (New-Object System.Drawing.Point(20, 183)) `
+    -Location (New-Object System.Drawing.Point(20, 203)) `
     -Size (New-Object System.Drawing.Size(320, 26)) `
     -ReadOnly $true `
     -Text $script:ultimaRutaDescarga
 $btnPickDestino = Create-IconButton -Text "📁" `
-    -Location (New-Object System.Drawing.Point(346, 183)) `
+    -Location (New-Object System.Drawing.Point(346, 203)) `
     -ToolTipText "Cambiar carpeta de destino"
 $formPrincipal.Controls.Add($lblDestino)
 $formPrincipal.Controls.Add($txtDestino)
@@ -1090,11 +1090,11 @@ $btnPickDestino.Add_Click({
     }
 })
 $lblPreview = Create-Label -Text "Vista previa:" `
-    -Location (New-Object System.Drawing.Point(20, 330)) `
+    -Location (New-Object System.Drawing.Point(20, 350)) `
     -Size (New-Object System.Drawing.Size(360, 22)) `
     -Font $boldFont
 $picPreview = New-Object System.Windows.Forms.PictureBox
-$picPreview.Location   = New-Object System.Drawing.Point(20, 355)
+$picPreview.Location   = New-Object System.Drawing.Point(20, 375)
 $picPreview.Size       = New-Object System.Drawing.Size(360, 203)
 $picPreview.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
 $picPreview.SizeMode   = [System.Windows.Forms.PictureBoxSizeMode]::Zoom
