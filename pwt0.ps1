@@ -279,6 +279,8 @@ function Print-FormatsTable {
         Write-Host ("{0,-9} {1,-5} {2,-10} {3,-7} {4,-9} {5}" -f $f.format_id, $f.ext, $res, $f.vcodec, $f.acodec, $extra)
     }
 }
+$script:bestProgId   = $null
+$script:bestProgRank = -1
 function Fetch-Formats {
     param([Parameter(Mandatory=$true)][string]$Url)
     $script:formatsIndex.Clear()
@@ -320,8 +322,25 @@ function Fetch-Formats {
         }
 
         Print-FormatsTable -formats $json.formats
+        # reset para cada consulta
+        $script:bestProgId   = $null
+        $script:bestProgRank = -1
+
         foreach ($f in $json.formats) {
             $klass = Classify-Format $f
+            # Evitar el pseudo-formato "download" (marcado como watermarked)
+            if ($klass.Progressive -and $klass.Id -ne 'download') {
+                # ranking sencillo: mayor altura + mayor tbr
+                $height = [int]($klass.VRes ? $klass.VRes : 0)
+                $tbr    = [int]($klass.Tbr  ? $klass.Tbr  : 0)
+                $rank   = ($height * 100000) + $tbr  # peso alto a la resolución
+            
+                if ($rank -gt $script:bestProgRank) {
+                    $script:bestProgRank = $rank
+                    $script:bestProgId   = $klass.Id
+                }
+            }
+
             $script:formatsIndex[$klass.Id] = $klass
             if ($klass.Progressive -and $script:ExcludedFormatIds -contains $klass.Id) { continue }
 
@@ -1220,7 +1239,7 @@ $lblTituloDeps = Create-Label -Text "Dependencias:" -Location (New-Object System
 $lblYtDlp      = Create-Label -Text "yt-dlp: verificando..." -Location (New-Object System.Drawing.Point(80, 620)) -Size (New-Object System.Drawing.Size(300, 24)) -Font $defaultFont -BorderStyle ([System.Windows.Forms.BorderStyle]::FixedSingle)
 $lblFfmpeg     = Create-Label -Text "ffmpeg: verificando..." -Location (New-Object System.Drawing.Point(80, 650)) -Size (New-Object System.Drawing.Size(300, 24)) -Font $defaultFont -BorderStyle ([System.Windows.Forms.BorderStyle]::FixedSingle)
 $lblNode       = Create-Label -Text "Node.js: verificando..." -Location (New-Object System.Drawing.Point(80, 680)) -Size (New-Object System.Drawing.Size(300, 24)) -Font $defaultFont -BorderStyle ([System.Windows.Forms.BorderStyle]::FixedSingle)
-$btnExit    = Create-Button -Text "Salir"    -Location (New-Object System.Drawing.Point(20, 720)) -BackColor ([System.Drawing.Color]::Black) -ForeColor ([System.Drawing.Color]::White) -ToolTipText "Cerrar la aplicación" -Size (New-Object System.Drawing.Size(360, 35))
+$btnExit    = Create-Button -Text "Salir"    -Location (New-Object System.Drawing.Point(20, 720)) -BackColor ([System.Drawing.Color]::Black) -ForeColor ([System.Drawing.Color]::White) -ToolTipText "Cerrar la aplicación" -Size (New-Object System.Drawing.Size(180, 35))
 $btnYtRefresh   = Create-IconButton -Text "↻" -Location (New-Object System.Drawing.Point(20, 620)) -ToolTipText "Buscar/actualizar yt-dlp"
 $btnYtUninstall = Create-IconButton -Text "✖" -Location (New-Object System.Drawing.Point(48, 620)) -ToolTipText "Desinstalar yt-dlp"
 $btnYtRefresh.Add_Click({
@@ -1630,14 +1649,19 @@ $btnDescargar.Add_Click({
             }
         }
         elseif (Is-ProgressiveOnlySite $script:lastExtractor) {
-            # TikTok/Douyin/Instagram/Twitter son típicamente progresivos
-            if ($videoSel -and $videoSel -notmatch '^best(video)?$') {
-                # Si el usuario eligió una id concreta (p.ej. "download" en TikTok), respétala
-                $fSelector = $videoSel
+            # TikTok/Douyin/Instagram/Twitter usan formatos progresivos (A+V juntos)
+            # Si el usuario dejó best/bestvideo, usa el mejor ID concreto detectado
+            if ($videoSel -match '^best(video)?$') {
+                $fSelector = ($script:bestProgId ? $script:bestProgId : "best")
             } else {
-                $fSelector = "best"
+                # Si eligió una id concreta (p.ej. "download" o "h264_..."), respétala
+                $fSelector = $videoSel
             }
-            # Opcional: desactiva el combo de audio para evitar confusiones
+        
+            # En progresivos no hace falta forzar merge:
+            $mergeExt = $null
+        
+            # Desactiva audio para evitar confusión visual (ya lo haces)
             try { $cmbAudioFmt.Enabled = $false } catch {}
         }
         else {
@@ -1684,14 +1708,20 @@ $btnDescargar.Add_Click({
         $idx++
     }
     Write-Host ("[OUTPUT] Archivo destino: {0}" -f $targetPath) -ForegroundColor Cyan
-    $args = @(
-        "--encoding","utf-8","--progress","--no-color","--newline",
-        "-f", $fSelector,
-        "--merge-output-format", $mergeExt,
-        "-o", $targetPath,
-        "--progress-template", "download:%(progress._percent_str)s ETA:%(progress._eta_str)s SPEED:%(progress._speed_str)s",
-        "--extractor-args", "youtube:player_client=default,-web_safari,-web_embedded,-tv"
-    )
+        $args = @("--encoding","utf-8","--progress","--no-color","--newline",
+                  "-f", $fSelector,
+                  "-o", $targetPath,
+                  "--progress-template","download:%(progress._percent_str)s ETA:%(progress._eta_str)s SPEED:%(progress._speed_str)s",
+                  "--extractor-args","youtube:player_client=default,-web_safari,-web_embedded,-tv")
+        
+        if ($mergeExt) {
+            $args = @("--encoding","utf-8","--progress","--no-color","--newline",
+                      "-f", $fSelector,
+                      "--merge-output-format", $mergeExt,
+                      "-o", $targetPath,
+                      "--progress-template","download:%(progress._percent_str)s ETA:%(progress._eta_str)s SPEED:%(progress._speed_str)s",
+                      "--extractor-args","youtube:player_client=default,-web_safari,-web_embedded,-tv")
+        }
         $args += @(
             "--no-part",               # Evita .part corruptos
             "--ignore-config"          # Ignora errores de configuración externa
@@ -1712,6 +1742,20 @@ $btnDescargar.Add_Click({
     [System.Windows.Forms.Cursor]::Current = [System.Windows.Forms.Cursors]::WaitCursor
     try {
         $exit = Invoke-YtDlpConsoleProgress -ExePath $yt.Source -Args $args -UpdateUi
+        if ($exit -ne 0) {
+            $lastErr = $lblEstadoConsulta.Text + " "  # opcional, no siempre contiene stderr
+            # Si era sitio progresivo y el usuario dejó best/bestvideo, reintentar con ID concreto
+            if (Is-ProgressiveOnlySite $script:lastExtractor -and $videoSel -match '^best(video)?$' -and $script:bestProgId) {
+                Write-Host "[RETRY] Alias falló; reintento con ID concreto: $($script:bestProgId)" -ForegroundColor Yellow
+                # Reconstituye args con el ID concreto
+                $args = @("--encoding","utf-8","--progress","--no-color","--newline",
+                          "-f", $script:bestProgId,
+                          "-o", $targetPath,
+                          "--progress-template","download:%(progress._percent_str)s ETA:%(progress._eta_str)s SPEED:%(progress._speed_str)s",
+                          "--extractor-args","youtube:player_client=default,-web_safari,-web_embedded,-tv")
+                $exit = Invoke-YtDlpConsoleProgress -ExePath $yt.Source -Args $args -UpdateUi
+            }
+        }
         if ($exit -eq 0) {
             $lblEstadoConsulta.Text = ("Completado: {0}" -f $script:ultimoTitulo)
             [System.Windows.Forms.MessageBox]::Show(("Descarga finalizada:`n{0}" -f $script:ultimoTitulo),
