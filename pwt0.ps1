@@ -503,7 +503,7 @@ function Check-Chocolatey {
             Set-ExecutionPolicy Bypass -Scope Process -Force
             [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
             iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
-            Write-Host "[OK] Chocolatey instalado. Configurando cache..." -ForegroundColor Green
+            Write-Host "`t[OK] Chocolatey instalado. Configurando cache..." -ForegroundColor Green
             choco config set cacheLocation C:\Choco\cache | Out-Null
             [System.Windows.Forms.MessageBox]::Show(
                 "Chocolatey se instaló correctamente y ha sido configurado. Por favor, reinicie PowerShell antes de continuar.",
@@ -522,7 +522,7 @@ function Check-Chocolatey {
             return $false
         }
     } else {
-        Write-Host "[OK] Chocolatey ya está instalado." -ForegroundColor Green
+        Write-Host "`t[OK] Chocolatey ya está instalado." -ForegroundColor Green
         return $true
     }
 }
@@ -609,7 +609,7 @@ function Invoke-ConsultaFromUI {
     $lblEstadoConsulta.Text = ("Consultado: {0}" -f $titulo)
     $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::ForestGreen
     Show-PreviewFromUrl -Url $Url -Titulo $titulo
-    Write-Host ("[OK] Video consultado: {0}" -f $titulo) -ForegroundColor Green
+    Write-Host ("`t[OK] Video consultado: {0}" -f $titulo) -ForegroundColor Green
     # dentro de Invoke-ConsultaFromUI, después de obtener título OK...
         $cmbVideoFmt.Items.Clear()
         $cmbAudioFmt.Items.Clear()
@@ -715,7 +715,7 @@ function Ensure-Tool {
             if ($version) {
                 $LabelRef.Value.Text = ("{0}: {1}" -f $FriendlyName,$version)
                 $LabelRef.Value.ForeColor = [System.Drawing.Color]::ForestGreen
-                Write-Host ("[OK] {0} instalado: {1}" -f $FriendlyName,$version) -ForegroundColor Green
+                Write-Host ("`t[OK] {0} instalado: {1}" -f $FriendlyName,$version) -ForegroundColor Green
                 [System.Windows.Forms.MessageBox]::Show(
                     ("{0} se instaló correctamente.`n`nPara que el PATH y las variables se apliquen, cierre y vuelva a abrir PowerShell.`nLa aplicación se cerrará ahora." -f $FriendlyName),
                     "Reinicio de PowerShell requerido",
@@ -753,7 +753,7 @@ function Ensure-Tool {
     else {
         $LabelRef.Value.Text = ("{0}: {1}" -f $FriendlyName,$version)
         $LabelRef.Value.ForeColor = [System.Drawing.Color]::ForestGreen
-        Write-Host ("[OK] {0} detectado: {1}" -f $FriendlyName,$version) -ForegroundColor Green
+        Write-Host ("`t[OK] {0} detectado: {1}" -f $FriendlyName,$version) -ForegroundColor Green
     }
 }
 function Ensure-ToolHeadless {
@@ -812,7 +812,7 @@ function Ensure-ToolHeadless {
             return $false
         }
     }
-    Write-Host ("[OK] {0} detectado." -f $FriendlyName) -ForegroundColor Green
+    Write-Host ("`t[OK] {0} detectado." -f $FriendlyName) -ForegroundColor Green
     return $true
 }
 function Initialize-AppHeadless {
@@ -1216,7 +1216,7 @@ $btnConsultar.Add_Click({
         $lblEstadoConsulta.Text = ("Consultado: {0}" -f $titulo); $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::ForestGreen
         Set-DownloadButtonVisual
         Show-PreviewFromUrl -Url $url -Titulo $titulo
-        Write-Host ("[OK] Video consultado: {0}" -f $titulo) -ForegroundColor Green
+        Write-Host ("`t[OK] Video consultado: {0}" -f $titulo) -ForegroundColor Green
         $cmbVideoFmt.Items.Clear()
         $cmbAudioFmt.Items.Clear()
         $prevLabelText = $lblEstadoConsulta.Text
