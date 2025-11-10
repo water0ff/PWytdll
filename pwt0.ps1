@@ -1525,9 +1525,6 @@ $btnDescargar.Add_Click({
             "--no-part",               # Evita .part corruptos
             "--ignore-config"          # Ignora errores de configuración externa
         )
-    }
-    
-    # --- Finalmente, agregamos la URL al final ---
     $args += $script:ultimaURL
     if (Is-TwitchUrl $script:ultimaURL) {
         # Preferir ffmpeg para HLS en Twitch pero con menos ruido y stats periódicos
