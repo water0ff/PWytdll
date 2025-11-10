@@ -33,7 +33,7 @@ $global:defaultInstructions = @"
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 [System.Windows.Forms.Application]::EnableVisualStyles()
-                                                                                                $version = "beta 251110.1328"
+                                                                                                $version = "beta 251110.1354"
 $formPrincipal = New-Object System.Windows.Forms.Form
 $formPrincipal.Size = New-Object System.Drawing.Size(400, 800)
 $formPrincipal.StartPosition = "CenterScreen"
@@ -281,6 +281,10 @@ function Print-FormatsTable {
 }
 $script:bestProgId   = $null
 $script:bestProgRank = -1
+
+
+
+
 function Fetch-Formats {
     param([Parameter(Mandatory=$true)][string]$Url)
     $script:formatsIndex.Clear()
@@ -352,24 +356,24 @@ function Fetch-Formats {
             elseif ($klass.VideoOnly)   { $script:formatsVideo += (New-FormatDisplay -Id $klass.Id -Label ("{0} {1} {2} (v-only) {3} {4}" -f $klass.Ext,$res,$klass.VCodec,$sz,$tbr)) }
             elseif ($klass.AudioOnly)   { $script:formatsAudio += (New-FormatDisplay -Id $klass.Id -Label ("{0} ~{1} {2} (a-only) {3}" -f $klass.Ext,$klass.ABr,$klass.ACodec,$sz)) }
         }
-
-        # Headers “best*”
-        $script:formatsVideo = @(
-            "best — mejor calidad (progresivo si existe; si no, adaptativo)",
-            "bestvideo — mejor video (sin audio; usar con audio)"
-        ) + $script:formatsVideo
-
-        $script:formatsAudio = @(
-            "bestaudio — mejor audio disponible"
-        ) + $script:formatsAudio
-
-        $script:formatsEnumerated = ($script:formatsVideo.Count -gt 0 -or $script:formatsAudio.Count -gt 0)
-        return $script:formatsEnumerated
+            # Headers “best*” (único lugar donde se agregan)
+            $progOnly = Is-ProgressiveOnlySite $script:lastExtractor
+            
+            $headersVideo = @("best — mejor calidad (progresivo si existe; si no, adaptativo)")
+            if (-not $progOnly) {
+                $headersVideo += "bestvideo — mejor video (sin audio; usar con audio)"
+            }
+            $script:formatsVideo = ( $headersVideo + $script:formatsVideo ) | Select-Object -Unique
+            $script:formatsAudio = ( @("bestaudio — mejor audio disponible") + $script:formatsAudio ) | Select-Object -Unique
+            $script:formatsEnumerated = ($script:formatsVideo.Count -gt 0 -or $script:formatsAudio.Count -gt 0)
+            if ($json.extractor) { $script:lastExtractor = $json.extractor }
+            return $script:formatsEnumerated
     }
     finally {
         if ($lblEstadoConsulta -and $prevLabel) { $lblEstadoConsulta.Text = $prevLabel }
     }
 }
+
 function Get-Metadata {
     param([Parameter(Mandatory=$true)][string]$Url)
 
@@ -744,15 +748,30 @@ function Invoke-ConsultaFromUI {
             if (Fetch-Formats -Url $Url) {
                 foreach ($i in $script:formatsVideo) { [void]$cmbVideoFmt.Items.Add($i) }
                 foreach ($i in $script:formatsAudio) { [void]$cmbAudioFmt.Items.Add($i) }
-        
                 if ($cmbVideoFmt.Items.Count -gt 0) {
-                    $idx = 0
-                    for ($n=0; $n -lt $cmbVideoFmt.Items.Count; $n++) {
-                        if ($cmbVideoFmt.Items[$n].ToString().StartsWith("bestvideo")) { $idx = $n; break }
-                        if ($cmbVideoFmt.Items[$n].ToString().StartsWith("best"))     { $idx = $n }
+                    $progOnly = Is-ProgressiveOnlySite $script:lastExtractor
+                
+                    if ($progOnly -and $script:bestProgId) {
+                        # Selecciona el mejor ID progresivo real (no alias)
+                        $idx = 0
+                        for ($n=0; $n -lt $cmbVideoFmt.Items.Count; $n++) {
+                            if ($cmbVideoFmt.Items[$n].ToString().StartsWith($script:bestProgId)) { $idx = $n; break }
+                        }
+                        $cmbVideoFmt.SelectedIndex = $idx
+                        try { $cmbAudioFmt.Enabled = $false } catch {}
+                    } else {
+                        # Sitios adaptativos (YTB/Vimeo…): prioriza bestvideo, luego best
+                        $idx = 0
+                        for ($n=0; $n -lt $cmbVideoFmt.Items.Count; $n++) {
+                            $s = $cmbVideoFmt.Items[$n].ToString()
+                            if ($s.StartsWith("bestvideo")) { $idx = $n; break }
+                            if ($s.StartsWith("best"))      { $idx = $n }
+                        }
+                        $cmbVideoFmt.SelectedIndex = $idx
+                        try { $cmbAudioFmt.Enabled = $true } catch {}
                     }
-                    $cmbVideoFmt.SelectedIndex = $idx
                 }
+
                 if ($cmbAudioFmt.Items.Count -gt 0) {
                     $idx = 0
                     for ($n=0; $n -lt $cmbAudioFmt.Items.Count; $n++) {
@@ -1163,8 +1182,8 @@ if ($script:cookiesPath) {
     $args += @("--cookies", $script:cookiesPath)
 }
 $btnSites = Create-Button -Text "Sitios compatibles" `
-    -Location (New-Object System.Drawing.Point(140, 720)) `
-    -Size (New-Object System.Drawing.Size(240, 35)) `
+    -Location (New-Object System.Drawing.Point(200, 720)) `
+    -Size (New-Object System.Drawing.Size(180, 35)) `
     -BackColor ([System.Drawing.Color]::White) `
     -ForeColor ([System.Drawing.Color]::Black) `
     -ToolTipText "Mostrar extractores de yt-dlp"
@@ -1568,6 +1587,9 @@ $btnConsultar.Add_Click({
         $btnConsultar.Enabled = $true
     }
 })
+        function Is-ProgressiveOnlySite([string]$extractor) {
+            return ($extractor -match '(tiktok|douyin|instagram|twitter|x)')
+        }
 $btnDescargar.Add_Click({
         if ($script:videoConsultado -and -not $script:formatsEnumerated) {
         $ok = Invoke-ConsultaFromUI -Url (Get-CurrentUrl)
@@ -1631,9 +1653,6 @@ $btnDescargar.Add_Click({
     }
         function Is-TwitchUrl([string]$u) {
             return $u -match '(^https?://)?(www\.)?twitch\.tv/' 
-        }
-        function Is-ProgressiveOnlySite([string]$extractor) {
-            return ($extractor -match '(tiktok|douyin|instagram|twitter|x)')
         }
         $videoSel = Get-SelectedFormatId -Combo $cmbVideoFmt
         $audioSel = Get-SelectedFormatId -Combo $cmbAudioFmt
