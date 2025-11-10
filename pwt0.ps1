@@ -995,6 +995,8 @@ $lblEstadoConsulta = Create-Label `
     -Font $defaultFont `
     -BorderStyle ([System.Windows.Forms.BorderStyle]::FixedSingle) `
     -TextAlign ([System.Drawing.ContentAlignment]::TopLeft)
+$lblEstadoConsulta.Font = New-Object System.Drawing.Font("Consolas", 9)
+$lblEstadoConsulta.AutoEllipsis = $true
 $lblEstadoConsulta.UseCompatibleTextRendering = $true
 $btnConsultar = Create-Button -Text "Consultar" `
     -Location (New-Object System.Drawing.Point(20, 125)) `
@@ -1269,7 +1271,15 @@ function Invoke-YtDlpConsoleProgress {
             }
         }
             # --- Progreso de ffmpeg: frame= ... time=HH:MM:SS.xx ... speed= ---
-            $mFfm = [regex]::Match($text, 'frame=\s*\d+.*?time=(?<t>\d{2}:\d{2}:\d{2}(?:\.\d+)?)\s+.*?speed=(?<spd>\S+)')
+            # --- Progreso "crudo" de ffmpeg: usar la línea tal cual en el label ---
+            $mFfm = [regex]::Match($text, '^frame=\s*\d+.*time=\d{2}:\d{2}:\d{2}(?:\.\d+)?\s+.*speed=\S+')
+            if ($mFfm.Success) {
+                # Compactar espacios largos para que quepa mejor, pero respetar el contenido
+                $line = ($text -replace '\s+', ' ').Trim()
+                Set-Ui $line                       # <-- Mostrar la línea original en el label
+                Write-Host ("`r[PROGRESO] {0}" -f $line) -NoNewline  # y en la consola en la misma línea
+                return
+            }
             if ($mFfm.Success) {
                 $t = $mFfm.Groups['t'].Value
                 $spd = $mFfm.Groups['spd'].Value
