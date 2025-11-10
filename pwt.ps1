@@ -18,6 +18,7 @@ $env:PYTHONUTF8 = '1'               # Python/yt-dlp en modo UTF-8
 $PSStyle.OutputRendering = 'Ansi'   # Evita rarezas con ANSI/UTF-8 en PS 7+
 $global:defaultInstructions = @"
 ----- CAMBIOS -----
+- Soporte para VODS de twitch
 - Se agregó botón ? para información de sistema.
 - Ahora ya solo existe 1 botón para consultar y descargar.
 - Ahora se debe tener una carpeta preconfigurada de destino, por omisión se usa el Escritorio.
@@ -31,7 +32,7 @@ $global:defaultInstructions = @"
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 [System.Windows.Forms.Application]::EnableVisualStyles()
-                                                                                                $version = "beta 251110.1101"
+                                                                                                $version = "beta 251110.1126"
 $formPrincipal = New-Object System.Windows.Forms.Form
 $formPrincipal.Size = New-Object System.Drawing.Size(400, 800)
 $formPrincipal.StartPosition = "CenterScreen"
@@ -1202,11 +1203,26 @@ function Invoke-YtDlpConsoleProgress {
     $srOut = New-Object System.IO.StreamReader($fsOut)
     $script:lastPct = -1
     $phase = "Preparando…"
+    $script:hlsDurationSec = $null   # Duración total detectada (en segundos) de ffmpeg para HLS
+    $script:lastLineHash    = $null  # Para evitar repetir spam idéntico
     function Set-Ui([string]$txt) {
         if ($UpdateUi -and $lblEstadoConsulta) { $lblEstadoConsulta.Text = $txt }
     }
     function _PrintLine([string]$text) {
+    # --- Captura la duración global de ffmpeg para poder calcular % ---
+        $mDur = [regex]::Match($text, 'Duration:\s*(?<h>\d{2}):(?<m>\d{2}):(?<s>\d{2}(?:\.\d+)?)')
+        if ($mDur.Success) {
+            $h = [int]$mDur.Groups['h'].Value
+            $m = [int]$mDur.Groups['m'].Value
+            $s = [double]$mDur.Groups['s'].Value
+            $script:hlsDurationSec = ($h*3600 + $m*60 + $s)
+            # no imprimimos nada aquí
+            return
+        }
         if ([string]::IsNullOrWhiteSpace($text)) { return }
+        # Oculta líneas: [hls @ ...] Opening '.../XYZ.ts' for reading
+        if ($text -match "^\[(?:hls|https)\s@.*\]\s+Opening\s+'.+\.ts'") { return }
+        if ($text -match '^\s*Input\s+#0, hls,' -or $text -match '^\s*Output\s+#0' -or $text -match '^\s*Press \[q\] to stop') { return }
         $mSleep = [regex]::Match($text, 'Sleeping\s+(?<sec>\d+(?:\.\d+)?)\s+seconds', 'IgnoreCase')
         if ($mSleep.Success) {
             $phase = "Esperando ${($mSleep.Groups['sec'].Value)}s…"
@@ -1244,7 +1260,6 @@ function Invoke-YtDlpConsoleProgress {
             Write-Host ("`n{0}" -f $text)
             return
         }
-
         # Porcentaje/ETA/velocidad (dos variantes + fallback)
         $m = [regex]::Match($text, 'download:\s*(?<pct>\d+(?:\.\d+)?)%\s*(?:ETA:(?<eta>\S+))?\s*(?:SPEED:(?<spd>.+))?', 'IgnoreCase')
         if (-not $m.Success) {
@@ -1253,7 +1268,36 @@ function Invoke-YtDlpConsoleProgress {
                 $m = [regex]::Match($text, '(?<pct>\d+(?:\.\d+)?)%')
             }
         }
-
+            # --- Progreso de ffmpeg: frame= ... time=HH:MM:SS.xx ... speed= ---
+            $mFfm = [regex]::Match($text, 'frame=\s*\d+.*?time=(?<t>\d{2}:\d{2}:\d{2}(?:\.\d+)?)\s+.*?speed=(?<spd>\S+)')
+            if ($mFfm.Success) {
+                $t = $mFfm.Groups['t'].Value
+                $spd = $mFfm.Groups['spd'].Value
+            
+                # Parsear HH:MM:SS(.xx)
+                $mT = [regex]::Match($t, '(?<h>\d{2}):(?<m>\d{2}):(?<s>\d{2}(?:\.\d+)?)')
+                if ($mT.Success) {
+                    $h = [int]$mT.Groups['h'].Value
+                    $m = [int]$mT.Groups['m'].Value
+                    $s = [double]$mT.Groups['s'].Value
+                    $sec = ($h*3600 + $m*60 + $s)
+            
+                    $pctTxt = ""
+                    if ($script:hlsDurationSec -and $script:hlsDurationSec -gt 0) {
+                        $pct = [int][math]::Min(100, [math]::Round(($sec / $script:hlsDurationSec) * 100))
+                        if ($pct -ne $script:lastPct) {
+                            $script:lastPct = $pct
+                            $pctTxt = (" {0}%" -f $pct)
+                        }
+                    }
+            
+                    # Actualiza el label y la consola en la MISMA línea (sin inundar)
+                    $msg = ("Descargando (ffmpeg)…{0}  time {1}  speed {2}" -f $pctTxt, $t, $spd)
+                    Set-Ui $msg
+                    Write-Host ("`r[PROGRESO] {0}" -f $msg) -NoNewline
+                }
+                return
+            }
         if ($m.Success) {
             $pct = [int][math]::Min(100, [math]::Round([double]$m.Groups['pct'].Value))
             $eta = $m.Groups['eta'].Value
@@ -1281,8 +1325,12 @@ function Invoke-YtDlpConsoleProgress {
         try { $srOut.Close(); $fsOut.Close() } catch {}
         Write-Host ""
     }
-
     return $proc.ExitCode
+    # --- Debounce: si la línea es idéntica a la anterior, no repetir ---
+$lineHash = [System.BitConverter]::ToString([System.Security.Cryptography.MD5]::Create().ComputeHash([Text.Encoding]::UTF8.GetBytes($text)))
+if ($script:lastLineHash -eq $lineHash) { return }
+$script:lastLineHash = $lineHash
+
 }
 $btnConsultar.Add_Click({
     $btnConsultar.Enabled = $false
@@ -1523,6 +1571,18 @@ $btnDescargar.Add_Click({
     
     # --- Finalmente, agregamos la URL al final ---
     $args += $script:ultimaURL
+    if (Is-TwitchUrl $script:ultimaURL) {
+        # Preferir ffmpeg para HLS en Twitch pero con menos ruido y stats periódicos
+        $args += @(
+            "--downloader","ffmpeg",
+            "--hls-use-mpegts",
+            "--retries","10","--retry-sleep","1",
+            # Silenciar 'Opening ...ts' y banners, mostrar stats cada 1s
+            "--downloader-args","ffmpeg:-hide_banner -loglevel warning -stats_period 1"
+            # TIP opcional: si tu conexión lo soporta, puedes probar paralelismo nativo (no aplica a ffmpeg):
+            # "-N","4"
+        )
+    }
 
     
     $oldCursor = [System.Windows.Forms.Cursor]::Current
