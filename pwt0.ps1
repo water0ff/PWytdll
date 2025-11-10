@@ -18,6 +18,7 @@ $env:PYTHONUTF8 = '1'               # Python/yt-dlp en modo UTF-8
 $PSStyle.OutputRendering = 'Ansi'   # Evita rarezas con ANSI/UTF-8 en PS 7+
 $global:defaultInstructions = @"
 ----- CAMBIOS -----
+- Se agregó botón ? para información de sistema.
 - Ahora ya solo existe 1 botón para consultar y descargar.
 - Ahora se debe tener una carpeta preconfigurada de destino, por omisión se usa el Escritorio.
 - Ahora permite que selecciones los formatos para video y audio.
@@ -30,7 +31,7 @@ $global:defaultInstructions = @"
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 [System.Windows.Forms.Application]::EnableVisualStyles()
-                                                                                                $version = "beta 251110.1046"
+                                                                                                $version = "beta 251110.1101"
 $formPrincipal = New-Object System.Windows.Forms.Form
 $formPrincipal.Size = New-Object System.Drawing.Size(400, 800)
 $formPrincipal.StartPosition = "CenterScreen"
@@ -873,17 +874,26 @@ function Show-AppInfo {
         -Location (New-Object System.Drawing.Point(20,76)) `
         -Size (New-Object System.Drawing.Size(460,20)) `
         -Font $boldFont
-    $txtCamb = Create-TextBox `
-        -Location (New-Object System.Drawing.Point(20,98)) `
-        -Size (New-Object System.Drawing.Size(460,150)) `
-        -BackColor ([System.Drawing.Color]::White) `
-        -ForeColor ([System.Drawing.Color]::Black) `
-        -Font $defaultFont `
-        -Text $global:defaultInstructions `
-        -Multiline $true `
-        -ScrollBars ([System.Windows.Forms.ScrollBars]::Vertical) `
-        -ReadOnly $true
-    $txtCamb.WordWrap = $true
+    $psBlue = [System.Drawing.Color]::FromArgb(1,36,86)      # Azul PS clásico
+    $psText = [System.Drawing.Color]::Gainsboro              # Texto claro
+    $fontCambios = New-Object System.Drawing.Font("Consolas", 10)
+    if ($fontCambios.Name -ne "Consolas") {
+        $fontCambios = New-Object System.Drawing.Font("Lucida Console", 10)
+    }
+    $logCambios = $global:defaultInstructions -replace "`r?`n","`r`n"
+    $txtCamb = New-Object System.Windows.Forms.RichTextBox
+    $txtCamb.Location   = New-Object System.Drawing.Point(20, 98)
+    $txtCamb.Size       = New-Object System.Drawing.Size(460, 150)
+    $txtCamb.ReadOnly   = $true
+    $txtCamb.BorderStyle= [System.Windows.Forms.BorderStyle]::None
+    $txtCamb.BackColor  = $psBlue
+    $txtCamb.ForeColor  = $psText
+    $txtCamb.Font       = $fontCambios
+    $txtCamb.Multiline  = $true
+    $txtCamb.WordWrap   = $false                              # NO envolver; respeta renglones
+    $txtCamb.ScrollBars = [System.Windows.Forms.RichTextBoxScrollBars]::Both
+    $txtCamb.DetectUrls = $false
+    $txtCamb.Text       = $logCambios
     $lblDeps = Create-Label -Text "Dependencias detectadas:" `
         -Location (New-Object System.Drawing.Point(20,258)) `
         -Size (New-Object System.Drawing.Size(460,22)) `
@@ -1034,7 +1044,7 @@ $lblPreview = Create-Label -Text "Vista previa:" `
     -Font $boldFont
 $picPreview = New-Object System.Windows.Forms.PictureBox
 $picPreview.Location   = New-Object System.Drawing.Point(20, 355)
-$picPreview.Size       = New-Object System.Drawing.Size(360, 146)
+$picPreview.Size       = New-Object System.Drawing.Size(360, 203)
 $picPreview.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
 $picPreview.SizeMode   = [System.Windows.Forms.PictureBoxSizeMode]::Zoom
 $picPreview.BackColor  = [System.Drawing.Color]::White
@@ -1197,18 +1207,6 @@ function Invoke-YtDlpConsoleProgress {
     }
     function _PrintLine([string]$text) {
         if ([string]::IsNullOrWhiteSpace($text)) { return }
-
-
-
-
-
-
-
-
-
-
-        # ---- Detecciones de fase/estado ----
-        # Sleeping N seconds...
         $mSleep = [regex]::Match($text, 'Sleeping\s+(?<sec>\d+(?:\.\d+)?)\s+seconds', 'IgnoreCase')
         if ($mSleep.Success) {
             $phase = "Esperando ${($mSleep.Groups['sec'].Value)}s…"
@@ -1216,8 +1214,6 @@ function Invoke-YtDlpConsoleProgress {
             Write-Host ("`n{0}" -f $text)
             return
         }
-
-        # Comienzo de descarga de archivo (Destination:) -> puede ser video o audio
         if ($text -match '^\[download\]\s+Destination:\s+.+?\.f\d+\.(mp4|mkv|webm|m4a)$') {
             if ($text -match '\.f\d+\.webm$|\.m4a$') { $phase = "Descargando audio…" } else { $phase = "Descargando video…" }
             Set-Ui $phase
@@ -1269,8 +1265,6 @@ function Invoke-YtDlpConsoleProgress {
             }
             return
         }
-
-        # Default: solo escribir
         Write-Host ("`n{0}" -f $text)
     }
 
