@@ -33,7 +33,7 @@ Add-Type -AssemblyName System.Drawing
 if (-not (Initialize-AppHeadless)) {
     return
 }
-$version = "beta 251110.1027"
+$version = "beta 251110.1042"
 $formPrincipal = New-Object System.Windows.Forms.Form
 $formPrincipal.Size = New-Object System.Drawing.Size(400, 800)
 $formPrincipal.StartPosition = "CenterScreen"
