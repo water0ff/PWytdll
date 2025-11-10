@@ -270,6 +270,15 @@ function Human-Size {
     while ($n -ge 1024 -and $p -lt $units.Count-1) { $n/=1024; $p++ }
     return ("{0:N1}{1}" -f $n, $units[$p])
 }
+function Get-SafeFileName {
+    param([Parameter(Mandatory=$true)][string]$Name)
+    $invalid = ([IO.Path]::GetInvalidFileNameChars() -join '')
+    $regex   = "[{0}]" -f [regex]::Escape($invalid)
+    $n = [regex]::Replace($Name, $regex, " ")
+    $n = ($n -replace '\s+', ' ').Trim()
+    if ([string]::IsNullOrWhiteSpace($n)) { $n = "video" }
+    return $n
+}
 function Print-FormatsTable {
     param([array]$formats)  # array del JSON .formats
     Write-Host "`n[FORMATOS] Disponibles (similar a yt-dlp -F):" -ForegroundColor Cyan
@@ -1278,10 +1287,25 @@ $btnDescargar.Add_Click({
     $cmbVideoFmt.Enabled = $false
     $cmbAudioFmt.Enabled = $false
     $lblEstadoConsulta.Text = "Preparando descarga…"
+    $baseTitle = if ($script:ultimoTitulo) { $script:ultimoTitulo } else {
+        $vid = Get-YouTubeVideoId -Url $script:ultimaURL
+        if ($vid) { "video_$vid" } else { "video" }
+    }
+    $baseTitle = Get-SafeFileName -Name $baseTitle
+    $finalExt = $mergeExt
+    if ([string]::IsNullOrWhiteSpace($finalExt)) { $finalExt = "mp4" }
+    $targetPath = Join-Path $dest ("{0}.{1}" -f $baseTitle, $finalExt)
+    $idx = 2
+    while (Test-Path -LiteralPath $targetPath) {
+        $targetPath = Join-Path $dest ("{0}_{1}.{2}" -f $baseTitle, $idx, $finalExt)
+        $idx++
+    }
+    Write-Host ("[OUTPUT] Archivo destino: {0}" -f $targetPath) -ForegroundColor Cyan
     $args = @(
       "--encoding","utf-8","--progress","--no-color","--newline",
       "-f",$fSelector,"--merge-output-format",$mergeExt,
       "-P",$dest,
+      "-o",$targetPath,  # <--- NUEVO: salida con nombre único
       "--progress-template","download:%(progress._percent_str)s ETA:%(progress._eta_str)s SPEED:%(progress._speed_str)s",
       "--extractor-args","youtube:player_client=default,-web_safari,-web_embedded,-tv",
       $script:ultimaURL
