@@ -1229,9 +1229,12 @@ function Show-UrlHistoryMenu {
             $urlItem.Text = $items[$i]
             $urlItem.ToolTipText = $items[$i]
             $urlItem.add_Click({
-                $txtUrl.Text = $this.Text
+                param($sender, $e)
+                $url = [string]($sender -as [System.Windows.Forms.ToolStripMenuItem]).Text
+                $txtUrl.Text = $url
                 $txtUrl.ForeColor = [System.Drawing.Color]::Black
-                $txtUrl.Select($txtUrl.Text.Length, 0)
+                $txtUrl.SelectionStart = $txtUrl.Text.Length
+                $txtUrl.SelectionLength = 0
             })
             [void]$ctxUrlHistory.Items.Add($urlItem)
         }
@@ -1263,8 +1266,10 @@ function Show-UrlHistoryMenu {
 
 # Mostrar al enfocar o al hacer clic derecho
 $txtUrl.Add_GotFocus({
-    if ($this.Text -ne $global:UrlPlaceholder) {
-        Show-UrlHistoryMenu
+    if ($this.Text -eq $global:UrlPlaceholder) {
+        $this.Text = ""
+        $this.ForeColor = [System.Drawing.Color]::Black
+        Show-UrlHistoryMenu   # ← aparece en el primer foco también
     }
 })
 $txtUrl.Add_MouseUp({
