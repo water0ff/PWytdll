@@ -30,10 +30,7 @@ $global:defaultInstructions = @"
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 [System.Windows.Forms.Application]::EnableVisualStyles()
-if (-not (Initialize-AppHeadless)) {
-    return
-}
-$version = "beta 251110.1042"
+                                                                                                $version = "beta 251110.1046"
 $formPrincipal = New-Object System.Windows.Forms.Form
 $formPrincipal.Size = New-Object System.Drawing.Size(400, 800)
 $formPrincipal.StartPosition = "CenterScreen"
@@ -852,75 +849,66 @@ function Initialize-AppHeadless {
 
     return $true
 }
-# --- Form de Información de la aplicación ---
+if (-not (Initialize-AppHeadless)) {
+    return
+}
 function Show-AppInfo {
     $f = New-Object System.Windows.Forms.Form
     $f.Text = "Información de la aplicación"
-    $f.Size = New-Object System.Drawing.Size(520, 560)
+    $f.Size = New-Object System.Drawing.Size(520, 600)
     $f.StartPosition = "CenterParent"
     $f.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::FixedDialog
     $f.MaximizeBox = $false
     $f.MinimizeBox = $false
     $f.BackColor = [System.Drawing.Color]::White
-
-    $lblTitulo = New-Object System.Windows.Forms.Label
-    $lblTitulo.Text = "YTDLL — Información"
-    $lblTitulo.Font = New-Object System.Drawing.Font("Segoe UI", 12, [System.Drawing.FontStyle]::Bold)
-    $lblTitulo.Size = New-Object System.Drawing.Size(460, 28)
-    $lblTitulo.Location = New-Object System.Drawing.Point(20, 16)
-
-    $lblVer = New-Object System.Windows.Forms.Label
-    $lblVer.Text = ("Versión: {0}" -f $version)
-    $lblVer.Font = $defaultFont
-    $lblVer.Size = New-Object System.Drawing.Size(460, 22)
-    $lblVer.Location = New-Object System.Drawing.Point(20, 46)
-
-    $lblCamb = New-Object System.Windows.Forms.Label
-    $lblCamb.Text = "Cambios recientes:"
-    $lblCamb.Font = $boldFont
-    $lblCamb.Size = New-Object System.Drawing.Size(460, 20)
-    $lblCamb.Location = New-Object System.Drawing.Point(20, 76)
-
-    $txtCamb = New-Object System.Windows.Forms.TextBox
-    $txtCamb.Multiline = $true
-    $txtCamb.ScrollBars = "Vertical"
-    $txtCamb.ReadOnly = $true
-    $txtCamb.Font = $defaultFont
-    $txtCamb.BackColor = [System.Drawing.Color]::White
-    $txtCamb.Size = New-Object System.Drawing.Size(460, 150)
-    $txtCamb.Location = New-Object System.Drawing.Point(20, 98)
-    $txtCamb.Text = $global:defaultInstructions
+    $lblTitulo = Create-Label -Text "YTDLL — Información" `
+        -Location (New-Object System.Drawing.Point(20,16)) `
+        -Size (New-Object System.Drawing.Size(460,28)) `
+        -Font (New-Object System.Drawing.Font("Segoe UI",12,[System.Drawing.FontStyle]::Bold))
+    $lblVer = Create-Label -Text ("Versión: {0}" -f $version) `
+        -Location (New-Object System.Drawing.Point(20,46)) `
+        -Size (New-Object System.Drawing.Size(460,22)) `
+        -Font $defaultFont
+    $lblCamb = Create-Label -Text "Cambios recientes:" `
+        -Location (New-Object System.Drawing.Point(20,76)) `
+        -Size (New-Object System.Drawing.Size(460,20)) `
+        -Font $boldFont
+    $txtCamb = Create-TextBox `
+        -Location (New-Object System.Drawing.Point(20,98)) `
+        -Size (New-Object System.Drawing.Size(460,150)) `
+        -BackColor ([System.Drawing.Color]::White) `
+        -ForeColor ([System.Drawing.Color]::Black) `
+        -Font $defaultFont `
+        -Text $global:defaultInstructions `
+        -Multiline $true `
+        -ScrollBars ([System.Windows.Forms.ScrollBars]::Vertical) `
+        -ReadOnly $true
     $txtCamb.WordWrap = $true
-
-    $lblDeps = New-Object System.Windows.Forms.Label
-    $lblDeps.Text = "Dependencias detectadas:"
-    $lblDeps.Font = $boldFont
-    $lblDeps.Size = New-Object System.Drawing.Size(460, 22)
-    $lblDeps.Location = New-Object System.Drawing.Point(20, 258)
-
-    $txtDeps = New-Object System.Windows.Forms.TextBox
-    $txtDeps.Multiline = $true
-    $txtDeps.ReadOnly = $true
-    $txtDeps.BackColor = [System.Drawing.Color]::White
-    $txtDeps.Font = $defaultFont
-    $txtDeps.Size = New-Object System.Drawing.Size(460, 90)
-    $txtDeps.Location = New-Object System.Drawing.Point(20, 282)
-
+    $lblDeps = Create-Label -Text "Dependencias detectadas:" `
+        -Location (New-Object System.Drawing.Point(20,258)) `
+        -Size (New-Object System.Drawing.Size(460,22)) `
+        -Font $boldFont
+    $txtDeps = Create-TextBox `
+        -Location (New-Object System.Drawing.Point(20,282)) `
+        -Size (New-Object System.Drawing.Size(460,90)) `
+        -BackColor ([System.Drawing.Color]::White) `
+        -ForeColor ([System.Drawing.Color]::Black) `
+        -Font $defaultFont `
+        -Multiline $true `
+        -ReadOnly $true
     $ytVer  = (Get-ToolVersion -Command "yt-dlp" -ArgsForVersion "--version" -Parse "FirstLine")
     $ffVer  = (Get-ToolVersion -Command "ffmpeg" -ArgsForVersion "-version"  -Parse "FirstLine")
     $ndVer  = if ($script:RequireNode) { (Get-ToolVersion -Command "node" -ArgsForVersion "--version" -Parse "FirstLine") } else { $null }
-
     $txtDeps.Text = @(
         ("yt-dlp: " + ($ytVer  ? $ytVer : "no instalado"))
         ("ffmpeg: " + ($ffVer  ? $ffVer : "no instalado"))
         ($script:RequireNode ? ("Node.js: " + ($ndVer ? $ndVer : "no instalado")) : $null)
     ) | Where-Object { $_ } | Out-String
 
-    $lblLinks = New-Object System.Windows.Forms.Label
-    $lblLinks.Text = "Proyectos:"
-    $lblLinks.Font = $boldFont
-    $lblLinks.Size = New-Object System.Drawing.Size(460, 22)
-    $lblLinks.Location = New-Object System.Drawing.Point(20, 378)
+    $lblLinks = Create-Label -Text "Proyectos:" `
+        -Location (New-Object System.Drawing.Point(20, 378)) `
+        -Size (New-Object System.Drawing.Size(460, 22)) `
+        -Font $boldFont
 
     $lnkApp = New-LinkLabel -Text "PWytdll (GitHub)" `
               -Url "https://github.com/water0ff/PWytdll/tree/main" `
@@ -942,10 +930,12 @@ function Show-AppInfo {
               -Location (New-Object System.Drawing.Point(20, 476)) `
               -Size (New-Object System.Drawing.Size(460, 20))
 
-    $btnCerrar = New-Object System.Windows.Forms.Button
-    $btnCerrar.Text = "Cerrar"
-    $btnCerrar.Size = New-Object System.Drawing.Size(100, 30)
-    $btnCerrar.Location = New-Object System.Drawing.Point(380, 506)
+    $btnCerrar = Create-Button -Text "Cerrar" `
+        -Location (New-Object System.Drawing.Point(380, 506)) `
+        -Size (New-Object System.Drawing.Size(100, 30)) `
+        -BackColor ([System.Drawing.Color]::Black) `
+        -ForeColor ([System.Drawing.Color]::White) `
+        -ToolTipText "Cerrar esta ventana"
     $btnCerrar.Add_Click({ $f.Close() })
 
     $f.Controls.AddRange(@(
