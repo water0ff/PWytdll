@@ -18,8 +18,8 @@ $env:PYTHONUTF8 = '1'               # Python/yt-dlp en modo UTF-8
 $PSStyle.OutputRendering = 'Ansi'   # Evita rarezas con ANSI/UTF-8 en PS 7+
 $global:defaultInstructions = @"
 ----- CAMBIOS -----
-- Se agrega twitch vista previa.
-- Soporte para VODS de twitch
+- Se agrea funcionalidad para todos los sitios.
+- Soporte para VODS de twitch / vista previa.
 - Se agregó botón ? para información de sistema.
 - Ahora ya solo existe 1 botón para consultar y descargar.
 - Ahora se debe tener una carpeta preconfigurada de destino, por omisión se usa el Escritorio.
@@ -351,6 +351,31 @@ function Fetch-Formats {
         if ($lblEstadoConsulta -and $prevLabel) { $lblEstadoConsulta.Text = $prevLabel }
     }
 }
+function Get-Metadata {
+    param([Parameter(Mandatory=$true)][string]$Url)
+
+    try { $yt = Get-Command yt-dlp -ErrorAction Stop } catch { return $null }
+
+    $obj = Invoke-CaptureResponsive -ExePath $yt.Source -Args @(
+        "-J", "--no-playlist",
+        $Url
+    ) -WorkingText "Leyendo metadatos…"
+
+    if ($obj.ExitCode -ne 0 -or [string]::IsNullOrWhiteSpace($obj.StdOut)) { return $null }
+
+    try { $json = $obj.StdOut | ConvertFrom-Json } catch { return $null }
+
+    $thumb = Get-BestThumbnailUrl -Json $json
+    [pscustomobject]@{
+        Title      = $json.title
+        Extractor  = $json.extractor         # p.ej. 'twitch', 'youtube', 'twitter', etc.
+        Domain     = $json.webpage_url_domain
+        Thumbnail  = $thumb
+        Duration   = $json.duration
+        Uploader   = $json.uploader
+        Json       = $json                   # por si lo quieres reutilizar
+    }
+}
 function Get-SelectedFormatId {
     param([System.Windows.Forms.ComboBox]$Combo)
     if (-not $Combo) { return $null }
@@ -418,6 +443,18 @@ function Refresh-DependencyLabel {
         $LabelRef.Value.ForeColor = [System.Drawing.Color]::Red
     }
     Refresh-GateByDeps   # <-- NUEVO
+}
+function Get-DownloadExtras {
+    param([string]$Extractor, [string]$Domain)
+
+    switch -Regex ($Extractor) {
+        'twitch' {
+            return @("--hls-use-mpegts", "--retries","10", "--retry-sleep","1", "-N","4")
+        }
+        'vimeo'  { return @("-N","4") }
+        'douyin|tiktok' { return @("-N","4") } # hls segmentado suele ir mejor con paralelo
+        default { return @() }
+    }
 }
 function Update-Dependency {
     param(
@@ -679,7 +716,11 @@ function Invoke-ConsultaFromUI {
     $cmbVideoFmt.Items.Clear()
         $prevLabelText = $lblEstadoConsulta.Text
         $lblEstadoConsulta.Text = "Consultando formatos…"
-        
+        $meta = Get-Metadata -Url $Url
+        $script:lastExtractor = $meta?.Extractor
+        $script:lastDomain    = $meta?.Domain
+        if ($meta -and $meta.Thumbnail) { $script:lastThumbUrl = $meta.Thumbnail }
+
         try {
             if (Fetch-Formats -Url $Url) {
                 foreach ($i in $script:formatsVideo) { [void]$cmbVideoFmt.Items.Add($i) }
@@ -717,13 +758,11 @@ function Invoke-ConsultaFromUI {
             $lblEstadoConsulta.Text = $prevLabelText
 }
     $shown = $false
-    if ($script:lastThumbUrl) {
-        $shown = Show-PreviewImage -ImageUrl $script:lastThumbUrl -Titulo $titulo
-    }
-    if (-not $shown) {
-        # Fallback robusto para YouTube (img.youtube.com)
-        Show-PreviewFromUrl -Url $Url -Titulo $titulo
-    }
+        if ($script:lastThumbUrl) {
+            Show-PreviewImage -ImageUrl $script:lastThumbUrl -Titulo $titulo
+        } else {
+            $picPreview.Image = $null  # sin fallback YouTube (multi-sitio real)
+        }
     return $true
 }
 function Get-ToolVersion {
@@ -1015,6 +1054,7 @@ $script:ultimaURL         = $null
 $script:ultimoTitulo      = $null
 $script:lastThumbUrl      = $null
 $script:formatsEnumerated = $false
+$script:cookiesPath = $null
 $script:ultimaRutaDescarga = [Environment]::GetFolderPath('Desktop')
 $global:UrlPlaceholder = "Escribe la URL del video"
 $lblVideoFmt = Create-Label -Text "Formato de VIDEO:" `
@@ -1033,7 +1073,7 @@ $formPrincipal.Controls.Add($lblVideoFmt)
 $formPrincipal.Controls.Add($cmbVideoFmt)
 $formPrincipal.Controls.Add($lblAudioFmt)
 $formPrincipal.Controls.Add($cmbAudioFmt)
-$lblUrl = Create-Label -Text "URL YouTube/Twitch:" -Location (New-Object System.Drawing.Point(20, 20)) -Size (New-Object System.Drawing.Size(360, 22)) -Font $boldFont
+$lblUrl = Create-Label -Text "URL YouTube/Twitch/otros:" -Location (New-Object System.Drawing.Point(20, 20)) -Size (New-Object System.Drawing.Size(360, 22)) -Font $boldFont
 $txtUrl = Create-TextBox `
     -Location (New-Object System.Drawing.Point(20, 45)) `
     -Size (New-Object System.Drawing.Size(360, 46)) `
@@ -1086,6 +1126,51 @@ $btnDescargar = Create-Button -Text "Descargar" `
     -ForeColor ([System.Drawing.Color]::White) `
     -ToolTipText "Descargar usando bestvideo+bestaudio -> mp4"
     Set-DownloadButtonVisual
+$btnPickCookies = Create-IconButton -Text "🍪" `
+    -Location (New-Object System.Drawing.Point(314, 183)) `
+    -ToolTipText "Seleccionar cookies.txt (opcional)"
+
+$formPrincipal.Controls.Add($btnPickCookies)
+$btnPickCookies.Add_Click({
+    $ofd = New-Object System.Windows.Forms.OpenFileDialog
+    $ofd.Title = "Selecciona cookies.txt"
+    $ofd.Filter = "Cookies (*.txt)|*.txt|Todos (*.*)|*.*"
+    if ($ofd.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+        $script:cookiesPath = $ofd.FileName
+        [System.Windows.Forms.MessageBox]::Show("Cookies configuradas: $($script:cookiesPath)","OK") | Out-Null
+    }
+})
+if ($script:cookiesPath) {
+    $args += @("--cookies", $script:cookiesPath)
+}
+$btnSites = Create-Button -Text "Sitios compatibles" `
+    -Location (New-Object System.Drawing.Point(140, 720)) `
+    -Size (New-Object System.Drawing.Size(240, 35)) `
+    -BackColor ([System.Drawing.Color]::White) `
+    -ForeColor ([System.Drawing.Color]::Black) `
+    -ToolTipText "Mostrar extractores de yt-dlp"
+
+$formPrincipal.Controls.Add($btnSites)
+$btnSites.Add_Click({
+    try { $yt = Get-Command yt-dlp -ErrorAction Stop } catch {
+        [System.Windows.Forms.MessageBox]::Show("yt-dlp no está disponible.","Error") | Out-Null
+        return
+    }
+    $res = Invoke-CaptureResponsive -ExePath $yt.Source -Args @("--list-extractors") -WorkingText "Obteniendo sitios…"
+    $dlg = Create-Form -Title "Sitios compatibles (extractores)" -Size (New-Object System.Drawing.Size(700, 500))
+    $txt = New-Object System.Windows.Forms.TextBox
+    $txt.Multiline = $true; $txt.ReadOnly = $true
+    $txt.ScrollBars = "Both"; $txt.WordWrap = $false
+    $txt.Font = New-Object System.Drawing.Font("Consolas", 9)
+    $txt.Location = New-Object System.Drawing.Point(10,10)
+    $txt.Size = New-Object System.Drawing.Size(664, 410)
+    $txt.Text = ($res.StdOut + "`r`n" + $res.StdErr)
+    $btnClose = Create-Button -Text "Cerrar" -Location (New-Object System.Drawing.Point(574, 430)) -Size (New-Object System.Drawing.Size(100, 30))
+    $btnClose.Add_Click({ $dlg.Close() })
+    $dlg.Controls.Add($txt); $dlg.Controls.Add($btnClose)
+    $dlg.ShowDialog() | Out-Null
+})
+
 $lblDestino = Create-Label -Text "Carpeta de destino:" `
     -Location (New-Object System.Drawing.Point(20, 180)) `
     -Size (New-Object System.Drawing.Size(360, 20)) -Font $boldFont
@@ -1418,11 +1503,14 @@ $btnConsultar.Add_Click({
         $script:videoConsultado = $true; $script:ultimaURL = $url; $script:ultimoTitulo = $titulo
         $lblEstadoConsulta.Text = ("Consultado: {0}" -f $titulo); $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::ForestGreen
         Set-DownloadButtonVisual
-        Show-PreviewFromUrl -Url $url -Titulo $titulo
         Write-Host ("`t[OK] Video consultado: {0}" -f $titulo) -ForegroundColor Green
         $cmbVideoFmt.Items.Clear()
         $cmbAudioFmt.Items.Clear()
         $prevLabelText = $lblEstadoConsulta.Text
+        $meta = Get-Metadata -Url $url
+        $script:lastExtractor = $meta?.Extractor
+        $script:lastDomain    = $meta?.Domain
+        if ($meta -and $meta.Thumbnail) { $script:lastThumbUrl = $meta.Thumbnail }
         $lblEstadoConsulta.Text = "Consultando formatos…"
         try {
             if (Fetch-Formats -Url $url) {
@@ -1606,6 +1694,7 @@ $btnDescargar.Add_Click({
             "--hls-use-mpegts",
             "--retries","10","--retry-sleep","1",
             "-N","4"                         # o ajusta 2-8 según tu red
+            $args += (Get-DownloadExtras -Extractor $script:lastExtractor -Domain $script:lastDomain)
         )
         # IMPORTANTE: No forzar --downloader ffmpeg aquí, para que yt-dlp pinte el progreso.
     }
