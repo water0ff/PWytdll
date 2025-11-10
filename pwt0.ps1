@@ -17,20 +17,6 @@ $env:PYTHONIOENCODING = 'utf-8'
 chcp 65001 | Out-Null               # Forzar code page de consola a UTF-8
 $env:PYTHONUTF8 = '1'               # Python/yt-dlp en modo UTF-8
 $PSStyle.OutputRendering = 'Ansi'   # Evita rarezas con ANSI/UTF-8 en PS 7+
-Write-Host "`n==============================================" -ForegroundColor Red
-Write-Host "           ADVERTENCIA DE VERSIÓN ALFA          " -ForegroundColor Red
-Write-Host "==============================================" -ForegroundColor Red
-Write-Host "Esta aplicación se encuentra en fase de desarrollo ALFA.`n" -ForegroundColor Yellow
-Write-Host "¿Acepta ejecutar esta aplicación bajo su propia responsabilidad? (Y/N)" -ForegroundColor Yellow
-$response = $Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown')
-while ($response.Character -notin 'Y','N') {
-    $response = $Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown')
-}
-if ($response.Character -ne 'Y') {
-    Write-Host "`nEjecución cancelada por el usuario.`n" -ForegroundColor Red
-    exit
-}
-Clear-Host
 $global:defaultInstructions = @"
 ----- CAMBIOS -----
 - Ahora ya solo existe 1 botón para consultar y descargar.
@@ -42,10 +28,14 @@ $global:defaultInstructions = @"
 - Se agregó dependencia Node.
 - Se agregó validar consulta de video para descargar.
 "@
-Write-Host "El usuario aceptó los riesgos. Corriendo programa..." -ForegroundColor Green
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 [System.Windows.Forms.Application]::EnableVisualStyles()
+if (-not (Initialize-AppHeadless)) {
+    # Si aquí retorna false, ya mostró los mensajes necesarios.
+    # Cortamos ejecución para no mostrar la UI.
+    return
+}
 $formPrincipal = New-Object System.Windows.Forms.Form
 $formPrincipal.Size = New-Object System.Drawing.Size(400, 800)
 $formPrincipal.StartPosition = "CenterScreen"
@@ -769,6 +759,82 @@ function Ensure-Tool {
         Write-Host ("[OK] {0} detectado: {1}" -f $FriendlyName,$version) -ForegroundColor Green
     }
 }
+function Ensure-ToolHeadless {
+    param(
+        [Parameter(Mandatory=$true)][string]$CommandName,
+        [Parameter(Mandatory=$true)][string]$FriendlyName,
+        [Parameter(Mandatory=$true)][string]$ChocoPkg,
+        [string]$VersionArgs="--version",
+        [ValidateSet("FirstLine","Raw")][string]$Parse="FirstLine"
+    )
+    Write-Host ("[CHECK] (headless) Verificando {0}..." -f $FriendlyName) -ForegroundColor Cyan
+    $version = Get-ToolVersion -Command $CommandName -ArgsForVersion $VersionArgs -Parse $Parse
+    if (-not $version) {
+        Write-Host ("[WARN] {0} no encontrado." -f $FriendlyName) -ForegroundColor Yellow
+        $resp = [System.Windows.Forms.MessageBox]::Show(
+            ("{0} no está instalado. ¿Desea instalarlo ahora con Chocolatey?" -f $FriendlyName),
+            ("{0} no encontrado" -f $FriendlyName),
+            [System.Windows.Forms.MessageBoxButtons]::YesNo,
+            [System.Windows.Forms.MessageBoxIcon]::Question
+        )
+        if ($resp -ne [System.Windows.Forms.DialogResult]::Yes) {
+            Write-Host ("[CANCEL] Usuario omitió instalación de {0}." -f $FriendlyName) -ForegroundColor Yellow
+            return $false
+        }
+        if (-not (Get-Command choco -ErrorAction SilentlyContinue)) {
+            [System.Windows.Forms.MessageBox]::Show(
+                "Chocolatey no está disponible. Instálalo para continuar.",
+                "Chocolatey requerido",
+                [System.Windows.Forms.MessageBoxButtons]::OK,
+                [System.Windows.Forms.MessageBoxIcon]::Warning
+            ) | Out-Null
+            return $false
+        }
+        Write-Host ("[INSTALL] (headless) choco install {0} -y" -f $ChocoPkg) -ForegroundColor Cyan
+        try {
+            Start-Process -FilePath "choco" -ArgumentList @("install",$ChocoPkg,"-y") -NoNewWindow -Wait
+        } catch {
+            Write-Host ("[ERROR] Falló instalación de {0}: {1}" -f $FriendlyName,$_ ) -ForegroundColor Red
+            [System.Windows.Forms.MessageBox]::Show(
+                ("No se pudo instalar {0} automáticamente." -f $FriendlyName),
+                "Error",
+                [System.Windows.Forms.MessageBoxButtons]::OK,
+                [System.Windows.Forms.MessageBoxIcon]::Error
+            ) | Out-Null
+            return $false
+        }
+        $version = Get-ToolVersion -Command $CommandName -ArgsForVersion $VersionArgs -Parse $Parse
+        if (-not $version) {
+            [System.Windows.Forms.MessageBox]::Show(
+                ("{0} fue instalado. Cierre y vuelva a abrir PowerShell para refrescar el PATH. La aplicación se cerrará." -f $FriendlyName),
+                "Reinicio de PowerShell requerido",
+                [System.Windows.Forms.MessageBoxButtons]::OK,
+                [System.Windows.Forms.MessageBoxIcon]::Information
+            ) | Out-Null
+            Stop-Process -Id $PID -Force
+            return $false
+        }
+    }
+    Write-Host ("[OK] {0} detectado." -f $FriendlyName) -ForegroundColor Green
+    return $true
+}
+function Initialize-AppHeadless {
+    Add-Type -AssemblyName System.Windows.Forms
+    Add-Type -AssemblyName System.Drawing
+    [System.Windows.Forms.Application]::EnableVisualStyles()
+
+    if (-not (Check-Chocolatey)) {
+        Write-Host "[EXIT] Falta Chocolatey o se requiere reinicio." -ForegroundColor Yellow
+        return $false
+    }
+    if (-not (Ensure-ToolHeadless -CommandName "yt-dlp" -FriendlyName "yt-dlp" -ChocoPkg "yt-dlp" -VersionArgs "--version")) { return $false }
+    if (-not (Ensure-ToolHeadless -CommandName "ffmpeg" -FriendlyName "ffmpeg" -ChocoPkg "ffmpeg" -VersionArgs "-version")) { return $false }
+    if ($script:RequireNode) {
+        if (-not (Ensure-ToolHeadless -CommandName "node" -FriendlyName "Node.js" -ChocoPkg "nodejs-lts" -VersionArgs "--version")) { return $false }
+    }
+
+    return $true
+}
 $script:videoConsultado   = $false
 $script:ultimaURL         = $null
 $script:ultimoTitulo      = $null
@@ -1331,32 +1397,15 @@ $btnDescargar.Add_Click({
         Set-DownloadButtonVisual
     }
 })
-$formPrincipal.Add_Shown({
-    try {
-        if (-not (Check-Chocolatey)) {
-            Write-Host "[EXIT] Cerrando por falta de Chocolatey / reinicio requerido." -ForegroundColor Yellow
-            $formPrincipal.Close()
-            return
-        }
-        Write-Host "[CHECK] Validando dependencias yt-dlp y ffmpeg..." -ForegroundColor Cyan
-        Ensure-Tool -CommandName "yt-dlp" -FriendlyName "yt-dlp" -ChocoPkg "yt-dlp" -LabelRef ([ref]$lblYtDlp) -VersionArgs "--version"
-        $lblFfmpeg.Text = "ffmpeg: verificando..."
-        Ensure-Tool -CommandName "ffmpeg" -FriendlyName "ffmpeg" -ChocoPkg "ffmpeg" -LabelRef ([ref]$lblFfmpeg) -VersionArgs "-version"
-        Ensure-Tool -CommandName "node"   -FriendlyName "Node.js" -ChocoPkg "nodejs-lts" -LabelRef ([ref]$lblNode) -VersionArgs "--version"
-        Write-Host "[READY] Dependencias verificadas." -ForegroundColor Green
-        Refresh-GateByDeps   # <--- NUEVO: bloquea/desbloquea botones según deps
-        Set-DownloadButtonVisual
-        try { $txtDestino.Text = $script:ultimaRutaDescarga } catch {}
-
-    } catch {
-        Write-Host ("[ERROR] Error al validar dependencias: {0}" -f $_) -ForegroundColor Red
-        [System.Windows.Forms.MessageBox]::Show(
-            ("Error al validar dependencias:`n{0}" -f $_),"Error",
-            [System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Error
-        ) | Out-Null
-        $formPrincipal.Close()
-    }
-})
+# Sin mostrar la UI aún, rellenamos etiquetas con las versiones reales
+Refresh-DependencyLabel -CommandName "yt-dlp" -FriendlyName "yt-dlp" -LabelRef ([ref]$lblYtDlp) -VersionArgs "--version" -Parse "FirstLine"
+Refresh-DependencyLabel -CommandName "ffmpeg" -FriendlyName "ffmpeg" -LabelRef ([ref]$lblFfmpeg) -VersionArgs "-version" -Parse "FirstLine"
+if ($script:RequireNode) {
+    Refresh-DependencyLabel -CommandName "node" -FriendlyName "Node.js" -LabelRef ([ref]$lblNode) -VersionArgs "--version" -Parse "FirstLine"
+}
+Refresh-GateByDeps
+Set-DownloadButtonVisual
+try { $txtDestino.Text = $script:ultimaRutaDescarga } catch {}
 $btnExit.Add_Click({
     Write-Host "[EXIT] Cerrando aplicación por solicitud del usuario." -ForegroundColor Yellow
     $formPrincipal.Dispose()
