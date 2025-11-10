@@ -158,7 +158,7 @@ function Set-DownloadButtonVisual {
         return
     }
 
-    $currentUrl = ($txtUrl.Text).Trim()
+    $currentUrl = Get-CurrentUrl
     $isConsulted = $script:videoConsultado -and
                    -not [string]::IsNullOrWhiteSpace($script:ultimaURL) -and
                    ($script:ultimaURL -eq $currentUrl)
@@ -557,6 +557,12 @@ function Get-YouTubeVideoId {
     $m = [regex]::Match($Url, '/embed/([A-Za-z0-9_-]{11})', 'IgnoreCase')
     if ($m.Success) { return $m.Groups[1].Value }
     return $null
+}
+function Get-CurrentUrl {
+    if (-not $txtUrl) { return "" }
+    $t = ($txtUrl.Text).Trim()
+    if ($t -eq $global:UrlPlaceholder) { return "" }
+    return $t
 }
 function Get-ImageFromUrl {
     param([Parameter(Mandatory=$true)][string]$Url)
@@ -1010,6 +1016,7 @@ $script:ultimoTitulo      = $null
 $script:lastThumbUrl      = $null
 $script:formatsEnumerated = $false
 $script:ultimaRutaDescarga = [Environment]::GetFolderPath('Desktop')
+$global:UrlPlaceholder = "Escribe la URL del video"
 $lblVideoFmt = Create-Label -Text "Formato de VIDEO:" `
     -Location (New-Object System.Drawing.Point(20, 235)) `
     -Size (New-Object System.Drawing.Size(360, 20)) -Font $boldFont
@@ -1026,8 +1033,26 @@ $formPrincipal.Controls.Add($lblVideoFmt)
 $formPrincipal.Controls.Add($cmbVideoFmt)
 $formPrincipal.Controls.Add($lblAudioFmt)
 $formPrincipal.Controls.Add($cmbAudioFmt)
-$lblUrl = Create-Label -Text "URL de YouTube:" -Location (New-Object System.Drawing.Point(20, 20)) -Size (New-Object System.Drawing.Size(360, 22)) -Font $boldFont
-$txtUrl = Create-TextBox -Location (New-Object System.Drawing.Point(20, 45)) -Size (New-Object System.Drawing.Size(360, 46))
+$lblUrl = Create-Label -Text "URL YouTube/Twitch:" -Location (New-Object System.Drawing.Point(20, 20)) -Size (New-Object System.Drawing.Size(360, 22)) -Font $boldFont
+$txtUrl = Create-TextBox `
+    -Location (New-Object System.Drawing.Point(20, 45)) `
+    -Size (New-Object System.Drawing.Size(360, 46)) `
+    -Font (New-Object System.Drawing.Font("Segoe UI", 20, [System.Drawing.FontStyle]::Regular)) `
+    -Text $global:UrlPlaceholder `
+    -BackColor ([System.Drawing.Color]::White) `
+    -ForeColor ([System.Drawing.Color]::Gray)
+$txtUrl.Add_GotFocus({
+    if ($this.Text -eq $global:UrlPlaceholder) {
+        $this.Text = ""
+        $this.ForeColor = [System.Drawing.Color]::Black
+    }
+})
+$txtUrl.Add_LostFocus({
+    if ([string]::IsNullOrWhiteSpace($this.Text)) {
+        $this.Text = $global:UrlPlaceholder
+        $this.ForeColor = [System.Drawing.Color]::Gray
+    }
+})
 $txtUrl.Add_TextChanged({ Set-DownloadButtonVisual })
 $btnInfo = Create-IconButton -Text "?" `
     -Location (New-Object System.Drawing.Point(354, 10)) `
@@ -1055,7 +1080,7 @@ $btnConsultar = Create-Button -Text "Consultar" `
     $btnConsultar.Visible = $false
     $btnConsultar.Enabled = $false
 $btnDescargar = Create-Button -Text "Descargar" `
-    -Location (New-Object System.Drawing.Point(20, 125)) `
+    -Location (New-Object System.Drawing.Point(20, 145)) `
     -Size (New-Object System.Drawing.Size(360, 35)) `
     -BackColor ([System.Drawing.Color]::Black) `
     -ForeColor ([System.Drawing.Color]::White) `
@@ -1360,7 +1385,7 @@ $btnConsultar.Add_Click({
     try {
         Refresh-GateByDeps
         if (-not $btnConsultar.Enabled) { return }
-        $url = $txtUrl.Text.Trim()
+        $url = Get-CurrentUrl
         if ([string]::IsNullOrWhiteSpace($url)) {
             [System.Windows.Forms.MessageBox]::Show("Escribe una URL de YouTube.","Falta URL",
                 [System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Warning) | Out-Null
@@ -1438,7 +1463,7 @@ $btnConsultar.Add_Click({
 })
 $btnDescargar.Add_Click({
         if ($script:videoConsultado -and -not $script:formatsEnumerated) {
-        $ok = Invoke-ConsultaFromUI -Url ($txtUrl.Text.Trim())
+        $ok = Invoke-ConsultaFromUI -Url (Get-CurrentUrl)
         Set-DownloadButtonVisual
         if ($ok -and $script:formatsEnumerated) {
             [System.Windows.Forms.MessageBox]::Show(
@@ -1458,7 +1483,7 @@ $btnDescargar.Add_Click({
         return
     }
     Refresh-GateByDeps
-    $currentUrl = ($txtUrl.Text).Trim()
+    $currentUrl = Get-CurrentUrl
     $ready = $script:videoConsultado -and
              -not [string]::IsNullOrWhiteSpace($script:ultimaURL) -and
              ($script:ultimaURL -eq $currentUrl)
