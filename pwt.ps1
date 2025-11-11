@@ -1464,7 +1464,7 @@ $btnConsultar = Create-Button -Text "Consultar" `
     $btnConsultar.Visible = $false
     $btnConsultar.Enabled = $false
 $btnDescargar = Create-Button -Text "Descargar" `
-    -Location (New-Object System.Drawing.Point(20, 250)) `
+    -Location (New-Object System.Drawing.Point(20, 240)) `
     -Size (New-Object System.Drawing.Size(360, 65)) `
     -BackColor ([System.Drawing.Color]::Black) `
     -ForeColor ([System.Drawing.Color]::White) `
@@ -1702,6 +1702,8 @@ $btnNodeUninstall.Add_Click({
     $formPrincipal.Controls.Add($btnYtRefresh)
     $formPrincipal.Controls.Add($btnYtUninstall)
     $formPrincipal.Controls.Add($lblVideoFmt)
+    $formPrincipal.Controls.Add($btnPickCookies)
+    $formPrincipal.Controls.Add($btnInfo)
     $formPrincipal.Controls.Add($cmbVideoFmt)
     $formPrincipal.Controls.Add($lblAudioFmt)
     $formPrincipal.Controls.Add($cmbAudioFmt)
@@ -1709,14 +1711,12 @@ $btnNodeUninstall.Add_Click({
     $formPrincipal.Controls.Add($txtDestino)
     $formPrincipal.Controls.Add($btnPickDestino)
     $formPrincipal.Controls.Add($btnSites)
-    $formPrincipal.Controls.Add($btnPickCookies)
     $formPrincipal.Controls.Add($lblPreview)
     $formPrincipal.Controls.Add($picPreview)
     $formPrincipal.Controls.Add($txtUrl)
     $formPrincipal.Controls.Add($lblEstadoConsulta)
     $formPrincipal.Controls.Add($btnConsultar)
     $formPrincipal.Controls.Add($btnDescargar)
-    $formPrincipal.Controls.Add($btnInfo)
 function New-WorkingBox {
     param([string]$Text)
     $f = New-Object System.Windows.Forms.Form
