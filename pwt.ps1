@@ -69,7 +69,7 @@ $global:defaultInstructions = @"
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 [System.Windows.Forms.Application]::EnableVisualStyles()
-                                                                                                $version = "beta 251111.0931"
+                                                                                                $version = "beta 251111.1021"
 $formPrincipal = New-Object System.Windows.Forms.Form
 $formPrincipal.Size = New-Object System.Drawing.Size(400, 800)
 $formPrincipal.StartPosition = "CenterScreen"
