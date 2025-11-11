@@ -183,7 +183,6 @@ function Set-DownloadButtonVisual {
     $haveFfm  = Test-CommandExists -Name "ffmpeg"
     $haveNode = if ($script:RequireNode) { Test-CommandExists -Name "node" } else { $true }
     $depsOk = $haveYt -and $haveFfm -and $haveNode
-
     if (-not $depsOk) {
         $btnDescargar.Enabled   = $false
         $btnDescargar.BackColor = [System.Drawing.Color]::Black
@@ -193,23 +192,18 @@ function Set-DownloadButtonVisual {
         $btnDescargar.Tag = $btnDescargar.BackColor
         return
     }
-
     $currentUrl = Get-CurrentUrl
     $isConsulted = $script:videoConsultado -and
                    -not [string]::IsNullOrWhiteSpace($script:ultimaURL) -and
                    ($script:ultimaURL -eq $currentUrl)
-
-    # Estado por defecto (no consultado)
     $btnDescargar.Enabled = $true
     $btnDescargar.Text    = "Descargar"
-
     if (-not $isConsulted) {
         $btnDescargar.BackColor = [System.Drawing.Color]::DodgerBlue
         $btnDescargar.ForeColor = [System.Drawing.Color]::White
         $toolTip.SetToolTip($btnDescargar, "Aún no consultado: al hacer clic validará la URL (no descargará)")
     }
         elseif (-not $script:formatsEnumerated) {
-            # Estado "naranja", pero DEJAR HABILITADO para reintentar consulta con el mismo botón
             $btnDescargar.Enabled   = $true
             $btnDescargar.BackColor = [System.Drawing.Color]::DarkOrange
             $btnDescargar.ForeColor = [System.Drawing.Color]::White
@@ -220,12 +214,10 @@ function Set-DownloadButtonVisual {
             }
         }
     else {
-        # OK para descargar
         $btnDescargar.BackColor = [System.Drawing.Color]::ForestGreen
         $btnDescargar.ForeColor = [System.Drawing.Color]::White
         $toolTip.SetToolTip($btnDescargar, "Consulta válida: listo para descargar")
     }
-
     $btnDescargar.Tag = $btnDescargar.BackColor
 }
 $script:RequireNode = $true
@@ -233,7 +225,21 @@ function Test-CommandExists {
     param([Parameter(Mandatory=$true)][string]$Name)
     try { Get-Command $Name -ErrorAction Stop | Out-Null; return $true } catch { return $false }
 }
-
+function Normalize-ThumbUrl {
+    param(
+        [Parameter(Mandatory=$true)][string]$Url,
+        [string]$Extractor = $null
+    )
+    $u = $Url
+    if ($Extractor -match '^twitch' -or $u -match 'twitch\.tv|static-cdn\.jtvnw\.net') {
+        $u = $u -replace '%\{?\s*width\s*\}?\s*x\s*%\{?\s*height\s*\}?', '1280x720'
+        $u = $u -replace '\{\s*width\s*\}\s*x\s*\{\s*height\s*\}', '1280x720'
+    }
+    if ($u -match '\.webp($|\?)') {
+        $u = $u -replace '\.webp', '.jpg'
+    }
+    return $u
+}
 function Refresh-GateByDeps {
     $haveYt   = Test-CommandExists -Name "yt-dlp"
     $haveFfm  = Test-CommandExists -Name "ffmpeg"
@@ -782,6 +788,17 @@ function Show-PreviewUniversal {
             if ($Titulo) { $toolTip.SetToolTip($picPreview, $Titulo) }
             return $true
         }
+        if ($Url -match 'twitch\.tv' -and $DirectThumbUrl -notmatch '1280x720') {
+            $try2 = ($DirectThumbUrl -replace '%\{?\s*width\s*\}?\s*x\s*%\{?\s*height\s*\}?', '1280x720' `
+                                          -replace '\{\s*width\s*\}\s*x\s*\{\s*height\s*\}', '1280x720' `
+                                          -replace '\.webp', '.jpg')
+            $img2 = Get-ImageFromUrl -Url $try2
+            if ($img2) {
+                $picPreview.Image = $img2
+                if ($Titulo) { $toolTip.SetToolTip($picPreview, $Titulo) }
+                return $true
+            }
+        }
     }
     $file = Fetch-ThumbnailFile -Url $Url
     if ($file -and (Test-Path -LiteralPath $file)) {
@@ -815,23 +832,24 @@ function Show-PreviewImage {
 }
 function Get-BestThumbnailUrl {
     param([Parameter(Mandatory=$true)]$Json)
-    # 1) Campo 'thumbnail' directo
+    $candidate = $null
     if ($Json.thumbnail -and [string]::IsNullOrWhiteSpace($Json.thumbnail) -eq $false) {
-        return [string]$Json.thumbnail
+        $candidate = [string]$Json.thumbnail
     }
-    # 2) Lista 'thumbnails' => elegimos la de mayor ancho o mayor 'preference'
-    if ($Json.thumbnails -and $Json.thumbnails.Count -gt 0) {
-        # 2a) Intenta elegir NO-webp si existe
+    if (-not $candidate -and $Json.thumbnails -and $Json.thumbnails.Count -gt 0) {
         $ordered = $Json.thumbnails | Sort-Object @{Expression='preference';Descending=$true},
-                                                  @{Expression='width';Descending=$true}
+                                                @{Expression='width';Descending=$true}
         $thumbNonWebp = $ordered | Where-Object { $_.url -and ($_.url -notmatch '\.webp($|\?)') } | Select-Object -First 1
-        if ($thumbNonWebp -and $thumbNonWebp.url) { return [string]$thumbNonWebp.url }
-        
-        # 2b) Si no hay, toma la mejor aunque sea webp
-        $thumb = $ordered | Select-Object -First 1
-        if ($thumb -and $thumb.url) { return [string]$thumb.url }
+        if ($thumbNonWebp -and $thumbNonWebp.url) { $candidate = [string]$thumbNonWebp.url }
+        if (-not $candidate) {
+            $thumb = $ordered | Select-Object -First 1
+            if ($thumb -and $thumb.url) { $candidate = [string]$thumb.url }
+        }
     }
-    return $null
+    if ($candidate) {
+        $candidate = Normalize-ThumbUrl -Url $candidate -Extractor $Json.extractor
+    }
+    return $candidate
 }
 function Invoke-ConsultaFromUI {
     param(
@@ -928,7 +946,12 @@ function Invoke-ConsultaFromUI {
             $lblEstadoConsulta.Text = $prevLabelText
 }
     $shown = $false
-    $null = Show-PreviewUniversal -Url $Url -Titulo $titulo -DirectThumbUrl $script:lastThumbUrl
+        # Normaliza antes de intentar cargar la imagen directa
+        $thumbDirect = $script:lastThumbUrl
+        if ($thumbDirect) {
+            $thumbDirect = Normalize-ThumbUrl -Url $thumbDirect -Extractor $script:lastExtractor
+        }
+        $null = Show-PreviewUniversal -Url $Url -Titulo $titulo -DirectThumbUrl $thumbDirect
             if ($script:formatsEnumerated) {
         Add-HistoryUrl -Url $Url
     }
