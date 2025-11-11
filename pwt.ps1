@@ -69,7 +69,7 @@ $global:defaultInstructions = @"
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 [System.Windows.Forms.Application]::EnableVisualStyles()
-                                                                                                $version = "beta 251111.1111"
+                                                                                                $version = "beta 251111.1118"
 $formPrincipal = New-Object System.Windows.Forms.Form
 $formPrincipal.Size = New-Object System.Drawing.Size(400, 800)
 $formPrincipal.StartPosition = "CenterScreen"
@@ -1416,12 +1416,11 @@ $btnInfo.Add_Click({ Show-AppInfo })
 
 $lblDestino = Create-Label -Text "Carpeta de destino:" `
     -Location (New-Object System.Drawing.Point(20, 15)) `
-    -Size (New-Object System.Drawing.Size(360, 20)) -Font $boldFont
+    -Size (New-Object System.Drawing.Size(260, 20)) -Font $boldFont
 $txtDestino = Create-TextBox `
     -Location (New-Object System.Drawing.Point(20, 38)) `
     -Size (New-Object System.Drawing.Size(330, 26)) `
-    -ReadOnly $true `
-    -Text $script:ultimaRutaDescarga
+    -ReadOnly $true -Text $script:ultimaRutaDescarga
 $btnPickDestino = Create-IconButton -Text "📁" `
     -Location (New-Object System.Drawing.Point(356, 38)) `
     -ToolTipText "Cambiar carpeta de destino"
@@ -1449,8 +1448,7 @@ $lblEstadoConsulta = Create-Label `
     -Text "Estado: sin consultar" `
     -Location (New-Object System.Drawing.Point(20, 530)) `
     -Size (New-Object System.Drawing.Size(360, 44)) `
-    -Font $defaultFont `
-    -BorderStyle ([System.Windows.Forms.BorderStyle]::FixedSingle) `
+    -Font $defaultFont -BorderStyle ([System.Windows.Forms.BorderStyle]::FixedSingle) `
     -TextAlign ([System.Drawing.ContentAlignment]::TopLeft)
 $lblEstadoConsulta.Font = New-Object System.Drawing.Font("Consolas", 9)
     $lblEstadoConsulta.AutoEllipsis = $true
@@ -1458,16 +1456,14 @@ $lblEstadoConsulta.Font = New-Object System.Drawing.Font("Consolas", 9)
 $btnConsultar = Create-Button -Text "Consultar" `
     -Location (New-Object System.Drawing.Point(100, 100)) `
     -Size (New-Object System.Drawing.Size(100, 100)) `
-    -BackColor ([System.Drawing.Color]::White) `
-    -ForeColor ([System.Drawing.Color]::Black) `
+    -BackColor ([System.Drawing.Color]::White) -ForeColor ([System.Drawing.Color]::Black) `
     -ToolTipText "Obtener información del video"
     $btnConsultar.Visible = $false
     $btnConsultar.Enabled = $false
 $btnDescargar = Create-Button -Text "Descargar" `
-    -Location (New-Object System.Drawing.Point(20, 240)) `
+    -Location (New-Object System.Drawing.Point(20, 200)) `
     -Size (New-Object System.Drawing.Size(360, 65)) `
-    -BackColor ([System.Drawing.Color]::Black) `
-    -ForeColor ([System.Drawing.Color]::White) `
+    -BackColor ([System.Drawing.Color]::Black) -ForeColor ([System.Drawing.Color]::White) `
     -ToolTipText "Descargar usando bestvideo+bestaudio -> mp4"
     Set-DownloadButtonVisual
 $lblPreview = Create-Label -Text "Vista previa:" `
