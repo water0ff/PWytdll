@@ -1404,6 +1404,17 @@ $script:formatsEnumerated = $false
 $script:cookiesPath = $null
 $script:ultimaRutaDescarga = [Environment]::GetFolderPath('Desktop')
 $global:UrlPlaceholder = "Escribe la URL del video"
+$lblDestino = Create-Label -Text "Carpeta de destino:" `
+    -Location (New-Object System.Drawing.Point(20, 10)) `
+    -Size (New-Object System.Drawing.Size(360, 20)) -Font $boldFont
+$txtDestino = Create-TextBox `
+    -Location (New-Object System.Drawing.Point(20, 33)) `
+    -Size (New-Object System.Drawing.Size(320, 26)) `
+    -ReadOnly $true `
+    -Text $script:ultimaRutaDescarga
+$btnPickDestino = Create-IconButton -Text "📁" `
+    -Location (New-Object System.Drawing.Point(346, 33)) `
+    -ToolTipText "Cambiar carpeta de destino"
 $lblVideoFmt = Create-Label -Text "Formato de VIDEO:" `
     -Location (New-Object System.Drawing.Point(20, 235)) `
     -Size (New-Object System.Drawing.Size(360, 20)) -Font $boldFont
@@ -1416,11 +1427,6 @@ $lblAudioFmt = Create-Label -Text "Formato de AUDIO:" `
 $cmbAudioFmt = Create-ComboBox `
     -Location (New-Object System.Drawing.Point(20, 313)) `
     -Size (New-Object System.Drawing.Size(360, 28))
-$formPrincipal.Controls.Add($lblVideoFmt)
-$formPrincipal.Controls.Add($cmbVideoFmt)
-$formPrincipal.Controls.Add($lblAudioFmt)
-$formPrincipal.Controls.Add($cmbAudioFmt)
-$lblUrl = Create-Label -Text "URL YouTube/Twitch/otros:" -Location (New-Object System.Drawing.Point(20, 20)) -Size (New-Object System.Drawing.Size(360, 22)) -Font $boldFont
 $txtUrl = Create-TextBox `
     -Location (New-Object System.Drawing.Point(20, 45)) `
     -Size (New-Object System.Drawing.Size(360, 46)) `
@@ -1429,6 +1435,41 @@ $txtUrl = Create-TextBox `
     -BackColor ([System.Drawing.Color]::White) `
     -ForeColor ([System.Drawing.Color]::Gray)
 $ctxUrlHistory = New-Object System.Windows.Forms.ContextMenuStrip
+$btnPickCookies = Create-IconButton -Text "🍪" `
+    -Location (New-Object System.Drawing.Point(324, 10)) `
+    -ToolTipText "Seleccionar cookies.txt (opcional)"
+$btnInfo = Create-IconButton -Text "?" `
+    -Location (New-Object System.Drawing.Point(354, 10)) `
+    -ToolTipText "Información de la aplicación"
+$btnInfo.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Right
+$btnInfo.Size = New-Object System.Drawing.Size(26, 24)
+$btnInfo.Add_Click({ Show-AppInfo })
+$formPrincipal.Controls.Add($btnInfo)
+$lblEstadoConsulta = Create-Label `
+    -Text "Estado: sin consultar" `
+    -Location (New-Object System.Drawing.Point(20, 95)) `
+    -Size (New-Object System.Drawing.Size(360, 44)) `
+    -Font $defaultFont `
+    -BorderStyle ([System.Windows.Forms.BorderStyle]::FixedSingle) `
+    -TextAlign ([System.Drawing.ContentAlignment]::TopLeft)
+$lblEstadoConsulta.Font = New-Object System.Drawing.Font("Consolas", 9)
+$lblEstadoConsulta.AutoEllipsis = $true
+$lblEstadoConsulta.UseCompatibleTextRendering = $true
+$btnConsultar = Create-Button -Text "Consultar" `
+    -Location (New-Object System.Drawing.Point(20, 125)) `
+    -Size (New-Object System.Drawing.Size(170, 35)) `
+    -BackColor ([System.Drawing.Color]::White) `
+    -ForeColor ([System.Drawing.Color]::Black) `
+    -ToolTipText "Obtener información del video"
+    $btnConsultar.Visible = $false
+    $btnConsultar.Enabled = $false
+$btnDescargar = Create-Button -Text "Descargar" `
+    -Location (New-Object System.Drawing.Point(20, 145)) `
+    -Size (New-Object System.Drawing.Size(360, 35)) `
+    -BackColor ([System.Drawing.Color]::Black) `
+    -ForeColor ([System.Drawing.Color]::White) `
+    -ToolTipText "Descargar usando bestvideo+bestaudio -> mp4"
+    Set-DownloadButtonVisual
 function Show-UrlHistoryMenu {
     $ctxUrlHistory.Items.Clear()
     $items = @(Get-HistoryUrls)
@@ -1496,41 +1537,6 @@ $txtUrl.Add_LostFocus({
     }
 })
 $txtUrl.Add_TextChanged({ Set-DownloadButtonVisual })
-$btnPickCookies = Create-IconButton -Text "🍪" `
-    -Location (New-Object System.Drawing.Point(324, 10)) `
-    -ToolTipText "Seleccionar cookies.txt (opcional)"
-$btnInfo = Create-IconButton -Text "?" `
-    -Location (New-Object System.Drawing.Point(354, 10)) `
-    -ToolTipText "Información de la aplicación"
-$btnInfo.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Right
-$btnInfo.Size = New-Object System.Drawing.Size(26, 24)
-$btnInfo.Add_Click({ Show-AppInfo })
-$formPrincipal.Controls.Add($btnInfo)
-$lblEstadoConsulta = Create-Label `
-    -Text "Estado: sin consultar" `
-    -Location (New-Object System.Drawing.Point(20, 95)) `
-    -Size (New-Object System.Drawing.Size(360, 44)) `
-    -Font $defaultFont `
-    -BorderStyle ([System.Windows.Forms.BorderStyle]::FixedSingle) `
-    -TextAlign ([System.Drawing.ContentAlignment]::TopLeft)
-$lblEstadoConsulta.Font = New-Object System.Drawing.Font("Consolas", 9)
-$lblEstadoConsulta.AutoEllipsis = $true
-$lblEstadoConsulta.UseCompatibleTextRendering = $true
-$btnConsultar = Create-Button -Text "Consultar" `
-    -Location (New-Object System.Drawing.Point(20, 125)) `
-    -Size (New-Object System.Drawing.Size(170, 35)) `
-    -BackColor ([System.Drawing.Color]::White) `
-    -ForeColor ([System.Drawing.Color]::Black) `
-    -ToolTipText "Obtener información del video"
-    $btnConsultar.Visible = $false
-    $btnConsultar.Enabled = $false
-$btnDescargar = Create-Button -Text "Descargar" `
-    -Location (New-Object System.Drawing.Point(20, 145)) `
-    -Size (New-Object System.Drawing.Size(360, 35)) `
-    -BackColor ([System.Drawing.Color]::Black) `
-    -ForeColor ([System.Drawing.Color]::White) `
-    -ToolTipText "Descargar usando bestvideo+bestaudio -> mp4"
-    Set-DownloadButtonVisual
 $formPrincipal.Controls.Add($btnPickCookies)
 $btnPickCookies.Add_Click({
     $ofd = New-Object System.Windows.Forms.OpenFileDialog
@@ -1630,18 +1636,10 @@ $btnSites.Add_Click({
         $dlg.Controls.Add($btnClose)
         $dlg.ShowDialog() | Out-Null
 })
-
-$lblDestino = Create-Label -Text "Carpeta de destino:" `
-    -Location (New-Object System.Drawing.Point(20, 180)) `
-    -Size (New-Object System.Drawing.Size(360, 20)) -Font $boldFont
-$txtDestino = Create-TextBox `
-    -Location (New-Object System.Drawing.Point(20, 203)) `
-    -Size (New-Object System.Drawing.Size(320, 26)) `
-    -ReadOnly $true `
-    -Text $script:ultimaRutaDescarga
-$btnPickDestino = Create-IconButton -Text "📁" `
-    -Location (New-Object System.Drawing.Point(346, 203)) `
-    -ToolTipText "Cambiar carpeta de destino"
+$formPrincipal.Controls.Add($lblVideoFmt)
+$formPrincipal.Controls.Add($cmbVideoFmt)
+$formPrincipal.Controls.Add($lblAudioFmt)
+$formPrincipal.Controls.Add($cmbAudioFmt)
 $formPrincipal.Controls.Add($lblDestino)
 $formPrincipal.Controls.Add($txtDestino)
 $formPrincipal.Controls.Add($btnPickDestino)
@@ -1671,7 +1669,6 @@ $picPreview = New-Object System.Windows.Forms.PictureBox
     $picPreview.BackColor  = [System.Drawing.Color]::White
     $formPrincipal.Controls.Add($lblPreview)
     $formPrincipal.Controls.Add($picPreview)
-    $formPrincipal.Controls.Add($lblUrl)
     $formPrincipal.Controls.Add($txtUrl)
     $formPrincipal.Controls.Add($lblEstadoConsulta)
     $formPrincipal.Controls.Add($btnConsultar)
