@@ -231,14 +231,11 @@ function Normalize-ThumbUrl {
         [string]$Extractor = $null
     )
     $u = $Url
-    if ($Extractor -match '^twitch' -or $u -match 'twitch\.tv|static-cdn\.jtvnw\.net') {
-        $u = $u -replace '%\{?\s*width\s*\}?\s*x\s*%\{?\s*height\s*\}?', '1280x720'
-        $u = $u -replace '\{\s*width\s*\}\s*x\s*\{\s*height\s*\}', '1280x720'
-    }
-    if ($u -match '\.webp($|\?)') {
-        $u = $u -replace '\.webp', '.jpg'
-    }
-    return $u
+        if ($Extractor -match '^twitch' -or $u -match 'twitch\.tv|static-cdn\.jtvnw\.net') {
+            $u = $u -replace '%\{?\s*width\s*\}?\s*x\s*%\{?\s*height\s*\}?', '1280x720'
+            $u = $u -replace '\{\s*width\s*\}\s*x\s*\{\s*height\s*\}', '1280x720'
+        }
+        return $u
 }
 function Refresh-GateByDeps {
     $haveYt   = Test-CommandExists -Name "yt-dlp"
@@ -769,11 +766,25 @@ function Fetch-ThumbnailFile {
     $args += $Url
     $res = Invoke-Capture -ExePath $yt.Source -Args $args
     $thumb = Get-ChildItem -Path (Get-TempThumbPattern) -ErrorAction SilentlyContinue |
-             Where-Object { $_.Extension -match '^\.(jpg|jpeg|png)$' } |
-             Sort-Object LastWriteTime -Descending |
-             Select-Object -First 1
-    if ($thumb) { return $thumb.FullName }
-    return $null
+         Sort-Object LastWriteTime -Descending |
+         Select-Object -First 1
+        if ($thumb) {
+            if ($thumb.Extension -match '^\.(jpg|jpeg|png)$') {
+                return $thumb.FullName
+            }
+            if ($thumb.Extension -eq '.webp') {
+                # convierte a PNG con ffmpeg y devuelve el nuevo archivo
+                $png = [IO.Path]::ChangeExtension($thumb.FullName, ".png")
+                try {
+                    $ff = Get-Command ffmpeg -ErrorAction Stop | Select-Object -ExpandProperty Source
+                    $proc = Start-Process -FilePath $ff -ArgumentList @("-y","-hide_banner","-loglevel","error","-i", $thumb.FullName, $png) `
+                                          -NoNewWindow -PassThru
+                    $proc.WaitForExit()
+                    if ($proc.ExitCode -eq 0 -and (Test-Path $png)) { return $png }
+                } catch {}
+            }
+        }
+        return $null
 }
 function Show-PreviewUniversal {
     param(
@@ -781,34 +792,59 @@ function Show-PreviewUniversal {
         [string]$Titulo = $null,
         [string]$DirectThumbUrl = $null
     )
+
     if ($DirectThumbUrl) {
+        # 1) Si la miniatura directa es WEBP, intenta convertirla a PNG con ffmpeg
+        if ($DirectThumbUrl -match '\.webp($|\?)') {
+            $png = Convert-WebpUrlToPng -Url $DirectThumbUrl
+            if ($png -and (Test-Path $png)) {
+                try { if ($picPreview.Image) { $picPreview.Image.Dispose() } } catch {}
+                $imgW = [System.Drawing.Image]::FromFile($png)
+                $picPreview.Image = $imgW
+                if ($Titulo) { $toolTip.SetToolTip($picPreview, $Titulo) }
+                return $true
+            }
+            # si no se pudo convertir, seguimos con flujo normal
+        }
+
+        # 2) Intento directo
         $img1 = Get-ImageFromUrl -Url $DirectThumbUrl
         if ($img1) {
+            try { if ($picPreview.Image) { $picPreview.Image.Dispose() } } catch {}
             $picPreview.Image = $img1
             if ($Titulo) { $toolTip.SetToolTip($picPreview, $Titulo) }
             return $true
         }
+
+        # 3) Twitch: mismo URL pero con tamaño 1280x720 (sin cambiar extensión)
         if ($Url -match 'twitch\.tv' -and $DirectThumbUrl -notmatch '1280x720') {
-            $try2 = ($DirectThumbUrl -replace '%\{?\s*width\s*\}?\s*x\s*%\{?\s*height\s*\}?', '1280x720' `
-                                          -replace '\{\s*width\s*\}\s*x\s*\{\s*height\s*\}', '1280x720' `
-                                          -replace '\.webp', '.jpg')
+            $try2 = ($DirectThumbUrl `
+                -replace '%\{?\s*width\s*\}?\s*x\s*%\{?\s*height\s*\}?', '1280x720' `
+                -replace '\{\s*width\s*\}\s*x\s*\{\s*height\s*\}', '1280x720')
             $img2 = Get-ImageFromUrl -Url $try2
             if ($img2) {
+                try { if ($picPreview.Image) { $picPreview.Image.Dispose() } } catch {}
                 $picPreview.Image = $img2
                 if ($Titulo) { $toolTip.SetToolTip($picPreview, $Titulo) }
                 return $true
             }
         }
     }
+
+    # 4) Fallback usando yt-dlp --write-thumbnail (y convierte webp si hace falta dentro de Fetch-ThumbnailFile)
     $file = Fetch-ThumbnailFile -Url $Url
     if ($file -and (Test-Path -LiteralPath $file)) {
         try {
             $img2 = [System.Drawing.Image]::FromFile($file)
+            try { if ($picPreview.Image) { $picPreview.Image.Dispose() } } catch {}
             $picPreview.Image = $img2
             if ($Titulo) { $toolTip.SetToolTip($picPreview, $Titulo) }
             return $true
-        } catch { return $false }
+        } catch {
+            return $false
+        }
     }
+
     return $false
 }
 function Show-PreviewImage {
@@ -817,10 +853,22 @@ function Show-PreviewImage {
         [string]$Titulo = $null
     )
     try {
-        if ($ImageUrl -match '\.webp($|\?)') { return $false }
+        # Si es WEBP, intenta conversión con ffmpeg
+        if ($ImageUrl -match '\.webp($|\?)') {
+            $png = Convert-WebpUrlToPng -Url $ImageUrl
+            if ($png -and (Test-Path $png)) {
+                try { if ($picPreview.Image) { $picPreview.Image.Dispose() } } catch {}
+                $imgW = [System.Drawing.Image]::FromFile($png)
+                $picPreview.Image = $imgW
+                if ($Titulo) { $toolTip.SetToolTip($picPreview, $Titulo) }
+                return $true
+            }
+            return $false
+        }
 
         $img = Get-ImageFromUrl -Url $ImageUrl
         if ($img) {
+            try { if ($picPreview.Image) { $picPreview.Image.Dispose() } } catch {}
             $picPreview.Image = $img
             if ($Titulo) { $toolTip.SetToolTip($picPreview, $Titulo) }
             return $true
@@ -1676,6 +1724,34 @@ function Invoke-Capture {
     $p.WaitForExit()
     return [pscustomobject]@{ ExitCode = $p.ExitCode; StdOut = $stdout; StdErr = $stderr }
 }
+function Save-Bytes {
+    param([byte[]]$Bytes,[string]$Path)
+    [System.IO.File]::WriteAllBytes($Path, $Bytes)
+    return $Path
+}
+
+function Convert-WebpUrlToPng {
+    param([Parameter(Mandatory=$true)][string]$Url)
+    try {
+        $ff = Get-Command ffmpeg -ErrorAction Stop | Select-Object -ExpandProperty Source
+    } catch { return $null }  # sin ffmpeg no podemos convertir
+
+    $hc = $null
+    try {
+        $hc = New-HttpClient
+        $bytes = $hc.GetByteArrayAsync($Url).Result
+        $tmpIn  = Join-Path ([IO.Path]::GetTempPath()) ("ytdll_webp_{0}.webp" -f ([guid]::NewGuid()))
+        $tmpOut = [IO.Path]::ChangeExtension($tmpIn, ".png")
+        Save-Bytes -Bytes $bytes -Path $tmpIn | Out-Null
+
+        $p = Start-Process -FilePath $ff -ArgumentList @("-y","-hide_banner","-loglevel","error","-i", $tmpIn, $tmpOut) `
+                           -NoNewWindow -PassThru
+        $p.WaitForExit()
+        if ($p.ExitCode -eq 0 -and (Test-Path $tmpOut)) { return $tmpOut }
+        return $null
+    } catch { return $null }
+    finally { if ($hc) { $hc.Dispose() } }
+}
 function Invoke-YtDlpConsoleProgress {
     param(
         [Parameter(Mandatory=$true)][string]$ExePath,
@@ -1951,7 +2027,7 @@ $btnDescargar.Add_Click({
         }
     }
         function Is-TwitchUrl([string]$u) {
-            return $u -match '(^https?://)?(www\.)?twitch\.tv/' 
+            return $u -match '(^https?://)?([a-z]+\.)?twitch\.tv/'
         }
         $videoSel = Get-SelectedFormatId -Combo $cmbVideoFmt
         $audioSel = Get-SelectedFormatId -Combo $cmbAudioFmt
