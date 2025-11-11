@@ -69,7 +69,7 @@ $global:defaultInstructions = @"
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 [System.Windows.Forms.Application]::EnableVisualStyles()
-                                                                                                $version = "beta 251111.1021"
+                                                                                                $version = "beta 251111.1111"
 $formPrincipal = New-Object System.Windows.Forms.Form
 $formPrincipal.Size = New-Object System.Drawing.Size(400, 800)
 $formPrincipal.StartPosition = "CenterScreen"
@@ -1439,7 +1439,7 @@ $cmbAudioFmt = Create-ComboBox `
     -Size (New-Object System.Drawing.Size(360, 28))
 $txtUrl = Create-TextBox `
     -Location (New-Object System.Drawing.Point(20, 180)) `
-    -Size (New-Object System.Drawing.Size(360, 80)) `
+    -Size (New-Object System.Drawing.Size(360, 100)) `
     -Font (New-Object System.Drawing.Font("Segoe UI", 20, [System.Drawing.FontStyle]::Regular)) `
     -Text $global:UrlPlaceholder `
     -BackColor ([System.Drawing.Color]::White) `
@@ -1464,7 +1464,7 @@ $btnConsultar = Create-Button -Text "Consultar" `
     $btnConsultar.Visible = $false
     $btnConsultar.Enabled = $false
 $btnDescargar = Create-Button -Text "Descargar" `
-    -Location (New-Object System.Drawing.Point(20, 250)) `
+    -Location (New-Object System.Drawing.Point(20, 280)) `
     -Size (New-Object System.Drawing.Size(360, 45)) `
     -BackColor ([System.Drawing.Color]::Black) `
     -ForeColor ([System.Drawing.Color]::White) `
