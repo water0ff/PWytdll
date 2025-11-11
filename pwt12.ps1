@@ -1404,6 +1404,16 @@ $script:formatsEnumerated = $false
 $script:cookiesPath = $null
 $script:ultimaRutaDescarga = [Environment]::GetFolderPath('Desktop')
 $global:UrlPlaceholder = "Escribe la URL del video"
+$btnPickCookies = Create-IconButton -Text "🍪" `
+    -Location (New-Object System.Drawing.Point(324, 10)) `
+    -ToolTipText "Seleccionar cookies.txt (opcional)"
+$btnInfo = Create-IconButton -Text "?" `
+    -Location (New-Object System.Drawing.Point(354, 10)) `
+    -ToolTipText "Información de la aplicación"
+$btnInfo.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Right
+$btnInfo.Size = New-Object System.Drawing.Size(26, 24)
+$btnInfo.Add_Click({ Show-AppInfo })
+$formPrincipal.Controls.Add($btnInfo)
 $lblDestino = Create-Label -Text "Carpeta de destino:" `
     -Location (New-Object System.Drawing.Point(20, 15)) `
     -Size (New-Object System.Drawing.Size(360, 20)) -Font $boldFont
@@ -1416,27 +1426,17 @@ $btnPickDestino = Create-IconButton -Text "📁" `
     -Location (New-Object System.Drawing.Point(356, 38)) `
     -ToolTipText "Cambiar carpeta de destino"
 $lblVideoFmt = Create-Label -Text "Formato de VIDEO:" `
-    -Location (New-Object System.Drawing.Point(20, 85)) `
+    -Location (New-Object System.Drawing.Point(20, 60)) `
     -Size (New-Object System.Drawing.Size(360, 20)) -Font $boldFont
 $cmbVideoFmt = Create-ComboBox `
-    -Location (New-Object System.Drawing.Point(20, 108)) `
+    -Location (New-Object System.Drawing.Point(20, 93)) `
     -Size (New-Object System.Drawing.Size(360, 28))
 $lblAudioFmt = Create-Label -Text "Formato de AUDIO:" `
-    -Location (New-Object System.Drawing.Point(20, 140)) `
+    -Location (New-Object System.Drawing.Point(20, 125)) `
     -Size (New-Object System.Drawing.Size(360, 20)) -Font $boldFont
 $cmbAudioFmt = Create-ComboBox `
-    -Location (New-Object System.Drawing.Point(20, 163)) `
+    -Location (New-Object System.Drawing.Point(20, 148)) `
     -Size (New-Object System.Drawing.Size(360, 28))
-$btnPickCookies = Create-IconButton -Text "🍪" `
-    -Location (New-Object System.Drawing.Point(324, 10)) `
-    -ToolTipText "Seleccionar cookies.txt (opcional)"
-$btnInfo = Create-IconButton -Text "?" `
-    -Location (New-Object System.Drawing.Point(354, 10)) `
-    -ToolTipText "Información de la aplicación"
-$btnInfo.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Right
-$btnInfo.Size = New-Object System.Drawing.Size(26, 24)
-$btnInfo.Add_Click({ Show-AppInfo })
-$formPrincipal.Controls.Add($btnInfo)
 $txtUrl = Create-TextBox `
     -Location (New-Object System.Drawing.Point(20, 195)) `
     -Size (New-Object System.Drawing.Size(360, 46)) `
@@ -1447,14 +1447,14 @@ $txtUrl = Create-TextBox `
 $ctxUrlHistory = New-Object System.Windows.Forms.ContextMenuStrip
 $lblEstadoConsulta = Create-Label `
     -Text "Estado: sin consultar" `
-    -Location (New-Object System.Drawing.Point(20, 235)) `
+    -Location (New-Object System.Drawing.Point(20, 550)) `
     -Size (New-Object System.Drawing.Size(360, 44)) `
     -Font $defaultFont `
     -BorderStyle ([System.Windows.Forms.BorderStyle]::FixedSingle) `
     -TextAlign ([System.Drawing.ContentAlignment]::TopLeft)
 $lblEstadoConsulta.Font = New-Object System.Drawing.Font("Consolas", 9)
-$lblEstadoConsulta.AutoEllipsis = $true
-$lblEstadoConsulta.UseCompatibleTextRendering = $true
+    $lblEstadoConsulta.AutoEllipsis = $true
+    $lblEstadoConsulta.UseCompatibleTextRendering = $true
 $btnConsultar = Create-Button -Text "Consultar" `
     -Location (New-Object System.Drawing.Point(100, 100)) `
     -Size (New-Object System.Drawing.Size(100, 100)) `
@@ -1464,12 +1464,35 @@ $btnConsultar = Create-Button -Text "Consultar" `
     $btnConsultar.Visible = $false
     $btnConsultar.Enabled = $false
 $btnDescargar = Create-Button -Text "Descargar" `
-    -Location (New-Object System.Drawing.Point(20, 290)) `
+    -Location (New-Object System.Drawing.Point(20, 250)) `
     -Size (New-Object System.Drawing.Size(360, 45)) `
     -BackColor ([System.Drawing.Color]::Black) `
     -ForeColor ([System.Drawing.Color]::White) `
     -ToolTipText "Descargar usando bestvideo+bestaudio -> mp4"
     Set-DownloadButtonVisual
+$lblPreview = Create-Label -Text "Vista previa:" `
+    -Location (New-Object System.Drawing.Point(20, 300)) `
+    -Size (New-Object System.Drawing.Size(360, 22)) `
+    -Font $boldFont
+$picPreview = New-Object System.Windows.Forms.PictureBox
+    $picPreview.Location   = New-Object System.Drawing.Point(20, 325)
+    $picPreview.Size       = New-Object System.Drawing.Size(360, 203)
+    $picPreview.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
+    $picPreview.SizeMode   = [System.Windows.Forms.PictureBoxSizeMode]::Zoom
+    $picPreview.BackColor  = [System.Drawing.Color]::White
+    $formPrincipal.Controls.Add($lblPreview)
+    $formPrincipal.Controls.Add($picPreview)
+    $formPrincipal.Controls.Add($txtUrl)
+    $formPrincipal.Controls.Add($lblEstadoConsulta)
+    $formPrincipal.Controls.Add($btnConsultar)
+    $formPrincipal.Controls.Add($btnDescargar)
+$lblTituloDeps = Create-Label -Text "Dependencias:" -Location (New-Object System.Drawing.Point(20, 590)) -Size (New-Object System.Drawing.Size(360, 24)) -Font $boldFont
+$lblYtDlp      = Create-Label -Text "yt-dlp: verificando..." -Location (New-Object System.Drawing.Point(80, 620)) -Size (New-Object System.Drawing.Size(300, 24)) -Font $defaultFont -BorderStyle ([System.Windows.Forms.BorderStyle]::FixedSingle)
+$lblFfmpeg     = Create-Label -Text "ffmpeg: verificando..." -Location (New-Object System.Drawing.Point(80, 650)) -Size (New-Object System.Drawing.Size(300, 24)) -Font $defaultFont -BorderStyle ([System.Windows.Forms.BorderStyle]::FixedSingle)
+$lblNode       = Create-Label -Text "Node.js: verificando..." -Location (New-Object System.Drawing.Point(80, 680)) -Size (New-Object System.Drawing.Size(300, 24)) -Font $defaultFont -BorderStyle ([System.Windows.Forms.BorderStyle]::FixedSingle)
+$btnExit    = Create-Button -Text "Salir"    -Location (New-Object System.Drawing.Point(20, 720)) -BackColor ([System.Drawing.Color]::Black) -ForeColor ([System.Drawing.Color]::White) -ToolTipText "Cerrar la aplicación" -Size (New-Object System.Drawing.Size(180, 35))
+$btnYtRefresh   = Create-IconButton -Text "↻" -Location (New-Object System.Drawing.Point(20, 620)) -ToolTipText "Buscar/actualizar yt-dlp"
+$btnYtUninstall = Create-IconButton -Text "✖" -Location (New-Object System.Drawing.Point(48, 620)) -ToolTipText "Desinstalar yt-dlp"
 function Show-UrlHistoryMenu {
     $ctxUrlHistory.Items.Clear()
     $items = @(Get-HistoryUrls)
@@ -1657,29 +1680,6 @@ $btnPickDestino.Add_Click({
         Write-Host ("[DESTINO] Carpeta configurada: {0}" -f $script:ultimaRutaDescarga) -ForegroundColor Cyan
     }
 })
-$lblPreview = Create-Label -Text "Vista previa:" `
-    -Location (New-Object System.Drawing.Point(20, 350)) `
-    -Size (New-Object System.Drawing.Size(360, 22)) `
-    -Font $boldFont
-$picPreview = New-Object System.Windows.Forms.PictureBox
-    $picPreview.Location   = New-Object System.Drawing.Point(20, 375)
-    $picPreview.Size       = New-Object System.Drawing.Size(360, 203)
-    $picPreview.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
-    $picPreview.SizeMode   = [System.Windows.Forms.PictureBoxSizeMode]::Zoom
-    $picPreview.BackColor  = [System.Drawing.Color]::White
-    $formPrincipal.Controls.Add($lblPreview)
-    $formPrincipal.Controls.Add($picPreview)
-    $formPrincipal.Controls.Add($txtUrl)
-    $formPrincipal.Controls.Add($lblEstadoConsulta)
-    $formPrincipal.Controls.Add($btnConsultar)
-    $formPrincipal.Controls.Add($btnDescargar)
-$lblTituloDeps = Create-Label -Text "Dependencias:" -Location (New-Object System.Drawing.Point(20, 590)) -Size (New-Object System.Drawing.Size(360, 24)) -Font $boldFont
-$lblYtDlp      = Create-Label -Text "yt-dlp: verificando..." -Location (New-Object System.Drawing.Point(80, 620)) -Size (New-Object System.Drawing.Size(300, 24)) -Font $defaultFont -BorderStyle ([System.Windows.Forms.BorderStyle]::FixedSingle)
-$lblFfmpeg     = Create-Label -Text "ffmpeg: verificando..." -Location (New-Object System.Drawing.Point(80, 650)) -Size (New-Object System.Drawing.Size(300, 24)) -Font $defaultFont -BorderStyle ([System.Windows.Forms.BorderStyle]::FixedSingle)
-$lblNode       = Create-Label -Text "Node.js: verificando..." -Location (New-Object System.Drawing.Point(80, 680)) -Size (New-Object System.Drawing.Size(300, 24)) -Font $defaultFont -BorderStyle ([System.Windows.Forms.BorderStyle]::FixedSingle)
-$btnExit    = Create-Button -Text "Salir"    -Location (New-Object System.Drawing.Point(20, 720)) -BackColor ([System.Drawing.Color]::Black) -ForeColor ([System.Drawing.Color]::White) -ToolTipText "Cerrar la aplicación" -Size (New-Object System.Drawing.Size(180, 35))
-$btnYtRefresh   = Create-IconButton -Text "↻" -Location (New-Object System.Drawing.Point(20, 620)) -ToolTipText "Buscar/actualizar yt-dlp"
-$btnYtUninstall = Create-IconButton -Text "✖" -Location (New-Object System.Drawing.Point(48, 620)) -ToolTipText "Desinstalar yt-dlp"
 $btnYtRefresh.Add_Click({
     Update-Dependency -ChocoPkg "yt-dlp" -FriendlyName "yt-dlp" -CommandName "yt-dlp" -LabelRef ([ref]$lblYtDlp) -VersionArgs "--version" -Parse "FirstLine"
 })
