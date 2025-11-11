@@ -1409,26 +1409,26 @@ $lblDestino = Create-Label -Text "Carpeta de destino:" `
     -Size (New-Object System.Drawing.Size(360, 20)) -Font $boldFont
 $txtDestino = Create-TextBox `
     -Location (New-Object System.Drawing.Point(20, 38)) `
-    -Size (New-Object System.Drawing.Size(320, 26)) `
+    -Size (New-Object System.Drawing.Size(330, 26)) `
     -ReadOnly $true `
     -Text $script:ultimaRutaDescarga
 $btnPickDestino = Create-IconButton -Text "📁" `
-    -Location (New-Object System.Drawing.Point(346, 38)) `
+    -Location (New-Object System.Drawing.Point(356, 38)) `
     -ToolTipText "Cambiar carpeta de destino"
 $lblVideoFmt = Create-Label -Text "Formato de VIDEO:" `
-    -Location (New-Object System.Drawing.Point(20, 235)) `
+    -Location (New-Object System.Drawing.Point(20, 135)) `
     -Size (New-Object System.Drawing.Size(360, 20)) -Font $boldFont
 $cmbVideoFmt = Create-ComboBox `
-    -Location (New-Object System.Drawing.Point(20, 258)) `
+    -Location (New-Object System.Drawing.Point(20, 158)) `
     -Size (New-Object System.Drawing.Size(360, 28))
 $lblAudioFmt = Create-Label -Text "Formato de AUDIO:" `
-    -Location (New-Object System.Drawing.Point(20, 290)) `
+    -Location (New-Object System.Drawing.Point(20, 190)) `
     -Size (New-Object System.Drawing.Size(360, 20)) -Font $boldFont
 $cmbAudioFmt = Create-ComboBox `
-    -Location (New-Object System.Drawing.Point(20, 313)) `
+    -Location (New-Object System.Drawing.Point(20, 213)) `
     -Size (New-Object System.Drawing.Size(360, 28))
 $txtUrl = Create-TextBox `
-    -Location (New-Object System.Drawing.Point(20, 65)) `
+    -Location (New-Object System.Drawing.Point(20, 165)) `
     -Size (New-Object System.Drawing.Size(360, 46)) `
     -Font (New-Object System.Drawing.Font("Segoe UI", 20, [System.Drawing.FontStyle]::Regular)) `
     -Text $global:UrlPlaceholder `
@@ -1447,7 +1447,7 @@ $btnInfo.Add_Click({ Show-AppInfo })
 $formPrincipal.Controls.Add($btnInfo)
 $lblEstadoConsulta = Create-Label `
     -Text "Estado: sin consultar" `
-    -Location (New-Object System.Drawing.Point(20, 115)) `
+    -Location (New-Object System.Drawing.Point(20, 215)) `
     -Size (New-Object System.Drawing.Size(360, 44)) `
     -Font $defaultFont `
     -BorderStyle ([System.Windows.Forms.BorderStyle]::FixedSingle) `
@@ -1456,15 +1456,15 @@ $lblEstadoConsulta.Font = New-Object System.Drawing.Font("Consolas", 9)
 $lblEstadoConsulta.AutoEllipsis = $true
 $lblEstadoConsulta.UseCompatibleTextRendering = $true
 $btnConsultar = Create-Button -Text "Consultar" `
-    -Location (New-Object System.Drawing.Point(20, 125)) `
-    -Size (New-Object System.Drawing.Size(170, 35)) `
+    -Location (New-Object System.Drawing.Point(100, 100)) `
+    -Size (New-Object System.Drawing.Size(100, 100)) `
     -BackColor ([System.Drawing.Color]::White) `
     -ForeColor ([System.Drawing.Color]::Black) `
     -ToolTipText "Obtener información del video"
     $btnConsultar.Visible = $false
     $btnConsultar.Enabled = $false
 $btnDescargar = Create-Button -Text "Descargar" `
-    -Location (New-Object System.Drawing.Point(20, 190)) `
+    -Location (New-Object System.Drawing.Point(20, 290)) `
     -Size (New-Object System.Drawing.Size(360, 45)) `
     -BackColor ([System.Drawing.Color]::Black) `
     -ForeColor ([System.Drawing.Color]::White) `
