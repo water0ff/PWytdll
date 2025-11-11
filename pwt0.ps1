@@ -7,12 +7,10 @@ if (-not (Test-Path $iconDir)) {
     New-Item -ItemType Directory -Path $iconDir -Force | Out-Null
     Write-Host "Carpeta de íconos creada: $iconDir"
 }
-# --- Historial de URLs ---
 $script:LogFile = "C:\Temp\ytdll_history.txt"
 if (-not (Test-Path -LiteralPath $script:LogFile)) {
     New-Item -ItemType File -Path $script:LogFile -Force | Out-Null
 }
-
 function Get-HistoryUrls {
     try {
         $content = Get-Content -LiteralPath $script:LogFile -ErrorAction Stop -Raw
@@ -71,7 +69,7 @@ $global:defaultInstructions = @"
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 [System.Windows.Forms.Application]::EnableVisualStyles()
-                                                                                                $version = "beta 251110.1500"
+                                                                                                $version = "beta 251111.0852"
 $formPrincipal = New-Object System.Windows.Forms.Form
 $formPrincipal.Size = New-Object System.Drawing.Size(400, 800)
 $formPrincipal.StartPosition = "CenterScreen"
@@ -721,10 +719,19 @@ function Get-CurrentUrl {
     if ($t -eq $global:UrlPlaceholder) { return "" }
     return $t
 }
+function New-HttpClient {
+    $hc = [System.Net.Http.HttpClient]::new()
+    try {
+        $hc.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) PowerShell-YTDLL")
+        $hc.DefaultRequestHeaders.Accept.ParseAdd("image/*")
+    } catch {}
+    return $hc
+}
 function Get-ImageFromUrl {
     param([Parameter(Mandatory=$true)][string]$Url)
+    $hc = $null
     try {
-        $hc = [System.Net.Http.HttpClient]::new()
+        $hc = New-HttpClient
         $bytes = $hc.GetByteArrayAsync($Url).Result
         $ms = New-Object System.IO.MemoryStream(,$bytes)
         return [System.Drawing.Image]::FromStream($ms)
@@ -734,29 +741,58 @@ function Get-ImageFromUrl {
         if ($hc) { $hc.Dispose() }
     }
 }
-function Show-PreviewFromUrl {
+function Get-TempThumbPattern {
+    $tmp = [System.IO.Path]::GetTempPath()
+    return (Join-Path $tmp "ytdll_thumb_*")
+}
+function Fetch-ThumbnailFile {
+    param(
+        [Parameter(Mandatory=$true)][string]$Url
+    )
+    try { $yt = Get-Command yt-dlp -ErrorAction Stop } catch { return $null }
+    Get-ChildItem -Path (Get-TempThumbPattern) -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
+    $outTmpl = Join-Path ([System.IO.Path]::GetTempPath()) "ytdll_thumb_%(id)s.%(ext)s"
+    $args = @(
+        "--skip-download",
+        "--quiet","--no-warnings",
+        "--write-thumbnail",
+        "--convert-thumbnails","jpg",
+        "-o", $outTmpl
+    )
+    if ($script:cookiesPath) { $args += @("--cookies",$script:cookiesPath) }
+    $args += $Url
+    $res = Invoke-Capture -ExePath $yt.Source -Args $args
+    $thumb = Get-ChildItem -Path (Get-TempThumbPattern) -ErrorAction SilentlyContinue |
+             Where-Object { $_.Extension -match '^\.(jpg|jpeg|png)$' } |
+             Sort-Object LastWriteTime -Descending |
+             Select-Object -First 1
+    if ($thumb) { return $thumb.FullName }
+    return $null
+}
+function Show-PreviewUniversal {
     param(
         [Parameter(Mandatory=$true)][string]$Url,
-        [string]$Titulo = $null
+        [string]$Titulo = $null,
+        [string]$DirectThumbUrl = $null
     )
-    $picPreview.Image = $null
-    $id = Get-YouTubeVideoId -Url $Url
-    if (-not $id) { return }
-    $candidatas = @(
-        "https://img.youtube.com/vi/$id/maxresdefault.jpg",
-        "https://img.youtube.com/vi/$id/sddefault.jpg",
-        "https://img.youtube.com/vi/$id/hqdefault.jpg",
-        "https://img.youtube.com/vi/$id/mqdefault.jpg",
-        "https://img.youtube.com/vi/$id/default.jpg"
-    )
-    foreach ($u in $candidatas) {
-        $img = Get-ImageFromUrl -Url $u
-        if ($img) {
-            $picPreview.Image = $img
+    if ($DirectThumbUrl) {
+        $img1 = Get-ImageFromUrl -Url $DirectThumbUrl
+        if ($img1) {
+            $picPreview.Image = $img1
             if ($Titulo) { $toolTip.SetToolTip($picPreview, $Titulo) }
-            break
+            return $true
         }
     }
+    $file = Fetch-ThumbnailFile -Url $Url
+    if ($file -and (Test-Path -LiteralPath $file)) {
+        try {
+            $img2 = [System.Drawing.Image]::FromFile($file)
+            $picPreview.Image = $img2
+            if ($Titulo) { $toolTip.SetToolTip($picPreview, $Titulo) }
+            return $true
+        } catch { return $false }
+    }
+    return $false
 }
 function Show-PreviewImage {
     param(
@@ -764,7 +800,6 @@ function Show-PreviewImage {
         [string]$Titulo = $null
     )
     try {
-        # Si es webp, probablemente no lo soporte GDI+ => falla rápido
         if ($ImageUrl -match '\.webp($|\?)') { return $false }
 
         $img = Get-ImageFromUrl -Url $ImageUrl
@@ -839,8 +874,8 @@ function Invoke-ConsultaFromUI {
         $meta = Get-Metadata -Url $Url
         $script:lastExtractor = $meta?.Extractor
         $script:lastDomain    = $meta?.Domain
+        $script:lastThumbUrl  = $meta?.Thumbnail
         if ($meta -and $meta.Thumbnail) { $script:lastThumbUrl = $meta.Thumbnail }
-
         try {
             if (Fetch-Formats -Url $Url) {
                 foreach ($i in $script:formatsVideo) { [void]$cmbVideoFmt.Items.Add($i) }
@@ -893,11 +928,7 @@ function Invoke-ConsultaFromUI {
             $lblEstadoConsulta.Text = $prevLabelText
 }
     $shown = $false
-        if ($script:lastThumbUrl) {
-            Show-PreviewImage -ImageUrl $script:lastThumbUrl -Titulo $titulo
-        } else {
-            $picPreview.Image = $null  # sin fallback YouTube (multi-sitio real)
-        }
+    $null = Show-PreviewUniversal -Url $Url -Titulo $titulo -DirectThumbUrl $script:lastThumbUrl
             if ($script:formatsEnumerated) {
         Add-HistoryUrl -Url $Url
     }
