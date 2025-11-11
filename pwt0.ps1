@@ -943,6 +943,25 @@ function Show-PreviewUniversal {
         }
     }
     Write-Host "[PREVIEW] No se pudo cargar vista previa" -ForegroundColor Red
+    Write-Host "[PREVIEW] Probando fallback por fotograma (ffmpeg)..." -ForegroundColor Yellow
+        $stream = Get-BestStreamUrl -Url $Url
+        if ($stream) {
+            $snap = Build-PreviewFromStream -StreamUrl $stream -SeekSec 2
+            if ($snap -and (Test-Path $snap)) {
+                try {
+                    $img3 = [System.Drawing.Image]::FromFile($snap)
+                    try { if ($picPreview.Image) { $picPreview.Image.Dispose() } } catch {}
+                    $picPreview.Image = $img3
+                    if ($Titulo) { $toolTip.SetToolTip($picPreview, $Titulo) }
+                    Write-Host "[PREVIEW] Vista previa cargada (fotograma HLS)" -ForegroundColor Green
+                    return $true
+                } catch {
+                    Write-Host "[PREVIEW] Error cargando fotograma: $_" -ForegroundColor Red
+                }
+            } else {
+                Write-Host "[PREVIEW] No se pudo generar fotograma de HLS." -ForegroundColor Red
+            }
+        }
     return $false
 }
 function Show-PreviewImage {
@@ -979,42 +998,53 @@ function Show-PreviewImage {
 function Get-BestThumbnailUrl {
     param([Parameter(Mandatory=$true)]$Json)
     $candidate = $null
-    if ($Json.thumbnail -and [string]::IsNullOrWhiteSpace($Json.thumbnail) -eq $false) {
+    if ($Json.thumbnail -and -not [string]::IsNullOrWhiteSpace($Json.thumbnail)) {
         $candidate = [string]$Json.thumbnail
     }
     if (-not $candidate -and $Json.thumbnails -and $Json.thumbnails.Count -gt 0) {
-        $ordered = $Json.thumbnails | Sort-Object @{Expression='preference';Descending=$true},
-                                                @{Expression='width';Descending=$true}
-        $thumbNonWebp = $ordered | Where-Object { 
-            $_.url -and ($_.url -notmatch '\.webp($|\?)') 
-        } | Select-Object -First 1
-        if ($thumbNonWebp -and $thumbNonWebp.url) { 
-            $candidate = [string]$thumbNonWebp.url 
-        }
+        $ordered = $Json.thumbnails | Sort-Object @{Expression='preference';Descending=$true}, @{Expression='width';Descending=$true}
+        $thumbNonWebp = $ordered | Where-Object { $_.url -and ($_.url -notmatch '\.webp($|\?)') } | Select-Object -First 1
+        if ($thumbNonWebp?.url) { $candidate = [string]$thumbNonWebp.url }
         if (-not $candidate) {
             $thumb = $ordered | Select-Object -First 1
-            if ($thumb -and $thumb.url) { 
-                $candidate = [string]$thumb.url 
-            }
-        }
-    }
-    if (-not $candidate -and $Json.extractor -match 'twitch') {
-        Write-Host "[TWITCH] No se encontró miniatura en metadatos, intentando construir URL..." -ForegroundColor Yellow
-        $vodId = $Json.id
-        if ($vodId) {
-            $candidate = "https://static-cdn.jtvnw.net/cf_vods/d2vj7p5g7y6u8s/$vodId//thumb/thumb0-1280x720.jpg"
-            Write-Host "[TWITCH] URL construida: $candidate" -ForegroundColor Cyan
+            if ($thumb?.url) { $candidate = [string]$thumb.url }
         }
     }
     if ($candidate) {
-        $original = $candidate
         $candidate = Normalize-ThumbUrl -Url $candidate -Extractor $Json.extractor
-        if ($original -ne $candidate) {
-            Write-Host "[THUMB] URL normalizada: $candidate" -ForegroundColor Cyan
-        }
     }
-    
+
     return $candidate
+}
+function Get-BestStreamUrl {
+    param([Parameter(Mandatory=$true)][string]$Url)
+    try { $yt = Get-Command yt-dlp -ErrorAction Stop } catch { return $null }
+    $args = @("-g","-f","best",$Url)
+    if ($script:cookiesPath) { $args += @("--cookies",$script:cookiesPath) }
+    $res = Invoke-Capture -ExePath $yt.Source -Args $args
+    if ($res.ExitCode -ne 0) { return $null }
+    $line = ($res.StdOut -split "`r?`n" | Where-Object { $_.Trim() } | Select-Object -First 1)
+    return ([string]$line).Trim()
+}
+function Build-PreviewFromStream {
+    param(
+        [Parameter(Mandatory=$true)][string]$StreamUrl,
+        [int]$SeekSec = 2
+    )
+    try { $ff = (Get-Command ffmpeg -ErrorAction Stop).Source } catch { return $null }
+    $tmp = Join-Path ([IO.Path]::GetTempPath()) ("ytdll_snap_{0}.jpg" -f ([guid]::NewGuid()))
+    $args = @(
+        "-y","-hide_banner","-loglevel","error",
+        "-ss", $SeekSec.ToString(),
+        "-i", $StreamUrl,
+        "-frames:v","1",
+        "-vf","scale=1280:-2",
+        $tmp
+    )
+    $env:FFREPORT=""
+    $p = Start-Process -FilePath $ff -ArgumentList $args -NoNewWindow -Wait -PassThru
+    if ($p.ExitCode -eq 0 -and (Test-Path $tmp)) { return $tmp }
+    return $null
 }
 function Invoke-ConsultaFromUI {
     param(
