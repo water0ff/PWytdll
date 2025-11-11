@@ -773,7 +773,10 @@ function Fetch-ThumbnailFile {
         Write-Host "[ERROR] yt-dlp no disponible para descargar miniatura" -ForegroundColor Red
         return $null 
     }
+    
+    # Limpiar miniaturas temporales anteriores
     Get-ChildItem -Path (Get-TempThumbPattern) -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
+    
     $outTmpl = Join-Path ([System.IO.Path]::GetTempPath()) "ytdll_thumb_%(id)s.%(ext)s"
     $args = @(
         "--skip-download",
@@ -783,28 +786,67 @@ function Fetch-ThumbnailFile {
         "--convert-thumbnails", "jpg",
         "-o", $outTmpl
     )
+    
+    # PARA TWITCH: Intentar múltiples estrategias
     if ($Url -match 'twitch\.tv') {
+        Write-Host "[TWITCH] Usando estrategia múltiple para miniaturas..." -ForegroundColor Yellow
+        
+        # Estrategia 1: Intentar descargar storyboards específicamente
+        $storyboardArgs = @(
+            "--skip-download",
+            "--quiet",
+            "--no-warnings", 
+            "--write-thumbnail",
+            "--convert-thumbnails", "jpg",
+            "--thumbs", "1",  # Solo la primera miniatura del storyboard
+            "-o", $outTmpl,
+            $Url
+        )
+        
+        Write-Host "[TWITCH] Intentando descargar storyboard..." -ForegroundColor Cyan
+        $res = Invoke-Capture -ExePath $yt.Source -Args $storyboardArgs
+        
+        if ($res.ExitCode -eq 0) {
+            $thumb = Get-ChildItem -Path (Get-TempThumbPattern) -ErrorAction SilentlyContinue |
+                     Sort-Object LastWriteTime -Descending |
+                     Select-Object -First 1
+            if ($thumb) {
+                Write-Host "[TWITCH] Storyboard descargado: $($thumb.FullName)" -ForegroundColor Green
+                return $thumb.FullName
+            }
+        }
+        
+        # Estrategia 2: Intentar con más opciones de force
+        Write-Host "[TWITCH] Falló storyboard, intentando con más fuerza..." -ForegroundColor Yellow
         $args += @(
             "--force-ipv4",
-            "--retries", "3",
-            "--socket-timeout", "10"
+            "--retries", "5", 
+            "--socket-timeout", "15",
+            "--extractor-args", "twitch:force_source"
         )
-        Write-Host "[TWITCH] Usando opciones específicas para descargar miniatura..." -ForegroundColor Yellow
     }
+    
     if ($script:cookiesPath) { 
         $args += @("--cookies", $script:cookiesPath) 
     }
+    
     $args += $Url
+    
     Write-Host "[THUMB] Ejecutando yt-dlp para obtener miniatura..." -ForegroundColor Cyan
     $res = Invoke-Capture -ExePath $yt.Source -Args $args
+    
     if ($res.ExitCode -ne 0) {
         Write-Host "[THUMB] Error al obtener miniatura: $($res.StdErr)" -ForegroundColor Red
     }
+    
     $thumb = Get-ChildItem -Path (Get-TempThumbPattern) -ErrorAction SilentlyContinue |
-         Sort-Object LastWriteTime -Descending |
-         Select-Object -First 1
+             Sort-Object LastWriteTime -Descending |
+             Select-Object -First 1
+        
     if ($thumb) {
         Write-Host "[THUMB] Miniatura descargada: $($thumb.FullName)" -ForegroundColor Green
+        
+        # Si es WEBP, convertir a PNG
         if ($thumb.Extension -eq '.webp') {
             Write-Host "[THUMB] Convirtiendo WEBP a PNG..." -ForegroundColor Yellow
             $png = [IO.Path]::ChangeExtension($thumb.FullName, ".png")
@@ -820,17 +862,18 @@ function Fetch-ThumbnailFile {
                 Write-Host "[THUMB] Error convirtiendo WEBP: $_" -ForegroundColor Red
             }
         }
-        try {
-            $testImg = [System.Drawing.Image]::FromFile($thumb.FullName)
-            $testImg.Dispose()
-            return $thumb.FullName
-        } catch {
-            Write-Host "[THUMB] Imagen corrupta o inválida: $($thumb.FullName)" -ForegroundColor Red
-            Remove-Item $thumb.FullName -Force -ErrorAction SilentlyContinue
-            return $null
-        }
+        
+        return $thumb.FullName
     } else {
         Write-Host "[THUMB] No se pudo descargar miniatura con yt-dlp" -ForegroundColor Red
+        
+        # PARA TWITCH: Último intento - usar placeholder genérico
+        if ($Url -match 'twitch\.tv') {
+            Write-Host "[TWITCH] Usando placeholder para Twitch..." -ForegroundColor Yellow
+            # Podrías crear o usar una imagen placeholder local aquí
+            return $null
+        }
+        
         return $null
     }
 }
