@@ -1413,7 +1413,7 @@ $btnInfo = Create-IconButton -Text "?" `
 $btnInfo.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Right
 $btnInfo.Size = New-Object System.Drawing.Size(26, 24)
 $btnInfo.Add_Click({ Show-AppInfo })
-$formPrincipal.Controls.Add($btnInfo)
+
 $lblDestino = Create-Label -Text "Carpeta de destino:" `
     -Location (New-Object System.Drawing.Point(20, 15)) `
     -Size (New-Object System.Drawing.Size(360, 20)) -Font $boldFont
@@ -1439,7 +1439,7 @@ $cmbAudioFmt = Create-ComboBox `
     -Size (New-Object System.Drawing.Size(360, 28))
 $txtUrl = Create-TextBox `
     -Location (New-Object System.Drawing.Point(20, 180)) `
-    -Size (New-Object System.Drawing.Size(360, 60)) `
+    -Size (New-Object System.Drawing.Size(360, 80)) `
     -Font (New-Object System.Drawing.Font("Segoe UI", 20, [System.Drawing.FontStyle]::Regular)) `
     -Text $global:UrlPlaceholder `
     -BackColor ([System.Drawing.Color]::White) `
@@ -1480,12 +1480,6 @@ $picPreview = New-Object System.Windows.Forms.PictureBox
     $picPreview.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
     $picPreview.SizeMode   = [System.Windows.Forms.PictureBoxSizeMode]::Zoom
     $picPreview.BackColor  = [System.Drawing.Color]::White
-    $formPrincipal.Controls.Add($lblPreview)
-    $formPrincipal.Controls.Add($picPreview)
-    $formPrincipal.Controls.Add($txtUrl)
-    $formPrincipal.Controls.Add($lblEstadoConsulta)
-    $formPrincipal.Controls.Add($btnConsultar)
-    $formPrincipal.Controls.Add($btnDescargar)
 $lblTituloDeps = Create-Label -Text "Dependencias:" -Location (New-Object System.Drawing.Point(20, 590)) -Size (New-Object System.Drawing.Size(360, 24)) -Font $boldFont
 $lblYtDlp      = Create-Label -Text "yt-dlp: verificando..." -Location (New-Object System.Drawing.Point(80, 620)) -Size (New-Object System.Drawing.Size(300, 24)) -Font $defaultFont -BorderStyle ([System.Windows.Forms.BorderStyle]::FixedSingle)
 $lblFfmpeg     = Create-Label -Text "ffmpeg: verificando..." -Location (New-Object System.Drawing.Point(80, 650)) -Size (New-Object System.Drawing.Size(300, 24)) -Font $defaultFont -BorderStyle ([System.Windows.Forms.BorderStyle]::FixedSingle)
@@ -1560,7 +1554,7 @@ $txtUrl.Add_LostFocus({
     }
 })
 $txtUrl.Add_TextChanged({ Set-DownloadButtonVisual })
-$formPrincipal.Controls.Add($btnPickCookies)
+
 $btnPickCookies.Add_Click({
     $ofd = New-Object System.Windows.Forms.OpenFileDialog
     $ofd.Title = "Selecciona cookies.txt"
@@ -1579,7 +1573,7 @@ $btnSites = Create-Button -Text "Sitios compatibles" `
     -BackColor ([System.Drawing.Color]::White) `
     -ForeColor ([System.Drawing.Color]::Black) `
     -ToolTipText "Mostrar extractores de yt-dlp"
-$formPrincipal.Controls.Add($btnSites)
+
 $btnSites.Add_Click({
     try { $yt = Get-Command yt-dlp -ErrorAction Stop } catch {
         [System.Windows.Forms.MessageBox]::Show("yt-dlp no está disponible.","Error") | Out-Null
@@ -1659,13 +1653,6 @@ $btnSites.Add_Click({
         $dlg.Controls.Add($btnClose)
         $dlg.ShowDialog() | Out-Null
 })
-$formPrincipal.Controls.Add($lblVideoFmt)
-$formPrincipal.Controls.Add($cmbVideoFmt)
-$formPrincipal.Controls.Add($lblAudioFmt)
-$formPrincipal.Controls.Add($cmbAudioFmt)
-$formPrincipal.Controls.Add($lblDestino)
-$formPrincipal.Controls.Add($txtDestino)
-$formPrincipal.Controls.Add($btnPickDestino)
 $btnPickDestino.Add_Click({
     $fbd = New-Object System.Windows.Forms.FolderBrowserDialog
     $fbd.Description  = "Selecciona la carpeta de descarga"
@@ -1686,8 +1673,6 @@ $btnYtRefresh.Add_Click({
 $btnYtUninstall.Add_Click({
     Uninstall-Dependency -ChocoPkg "yt-dlp" -FriendlyName "yt-dlp" -LabelRef ([ref]$lblYtDlp)
 })
-$formPrincipal.Controls.Add($btnYtRefresh)
-$formPrincipal.Controls.Add($btnYtUninstall)
 $btnFfmpegRefresh   = Create-IconButton -Text "↻" -Location (New-Object System.Drawing.Point(20, 650)) -ToolTipText "Buscar/actualizar ffmpeg"
 $btnFfmpegUninstall = Create-IconButton -Text "✖" -Location (New-Object System.Drawing.Point(48, 650)) -ToolTipText "Desinstalar ffmpeg"
 $btnFfmpegRefresh.Add_Click({
@@ -1696,8 +1681,7 @@ $btnFfmpegRefresh.Add_Click({
 $btnFfmpegUninstall.Add_Click({
     Uninstall-Dependency -ChocoPkg "ffmpeg" -FriendlyName "ffmpeg" -LabelRef ([ref]$lblFfmpeg)
 })
-$formPrincipal.Controls.Add($btnFfmpegRefresh)
-$formPrincipal.Controls.Add($btnFfmpegUninstall)
+
 $btnNodeRefresh   = Create-IconButton -Text "↻" -Location (New-Object System.Drawing.Point(20, 680)) -ToolTipText "Buscar/actualizar Node.js (LTS)"
 $btnNodeUninstall = Create-IconButton -Text "✖" -Location (New-Object System.Drawing.Point(48, 680)) -ToolTipText "Desinstalar Node.js (LTS)"
 $btnNodeRefresh.Add_Click({
@@ -1706,13 +1690,33 @@ $btnNodeRefresh.Add_Click({
 $btnNodeUninstall.Add_Click({
     Uninstall-Dependency -ChocoPkg "nodejs-lts" -FriendlyName "Node.js" -LabelRef ([ref]$lblNode)
 })
-$formPrincipal.Controls.Add($btnNodeRefresh)
-$formPrincipal.Controls.Add($btnNodeUninstall)
-$formPrincipal.Controls.Add($lblTituloDeps)
-$formPrincipal.Controls.Add($lblNode)
-$formPrincipal.Controls.Add($lblYtDlp)
-$formPrincipal.Controls.Add($lblFfmpeg)
-$formPrincipal.Controls.Add($btnExit)
+    $formPrincipal.Controls.Add($btnNodeRefresh)
+    $formPrincipal.Controls.Add($btnNodeUninstall)
+    $formPrincipal.Controls.Add($lblTituloDeps)
+    $formPrincipal.Controls.Add($lblNode)
+    $formPrincipal.Controls.Add($lblYtDlp)
+    $formPrincipal.Controls.Add($lblFfmpeg)
+    $formPrincipal.Controls.Add($btnExit)
+    $formPrincipal.Controls.Add($btnFfmpegRefresh)
+    $formPrincipal.Controls.Add($btnFfmpegUninstall)
+    $formPrincipal.Controls.Add($btnYtRefresh)
+    $formPrincipal.Controls.Add($btnYtUninstall)
+    $formPrincipal.Controls.Add($lblVideoFmt)
+    $formPrincipal.Controls.Add($cmbVideoFmt)
+    $formPrincipal.Controls.Add($lblAudioFmt)
+    $formPrincipal.Controls.Add($cmbAudioFmt)
+    $formPrincipal.Controls.Add($lblDestino)
+    $formPrincipal.Controls.Add($txtDestino)
+    $formPrincipal.Controls.Add($btnPickDestino)
+    $formPrincipal.Controls.Add($btnSites)
+    $formPrincipal.Controls.Add($btnPickCookies)
+    $formPrincipal.Controls.Add($lblPreview)
+    $formPrincipal.Controls.Add($picPreview)
+    $formPrincipal.Controls.Add($txtUrl)
+    $formPrincipal.Controls.Add($lblEstadoConsulta)
+    $formPrincipal.Controls.Add($btnConsultar)
+    $formPrincipal.Controls.Add($btnDescargar)
+    $formPrincipal.Controls.Add($btnInfo)
 function New-WorkingBox {
     param([string]$Text)
     $f = New-Object System.Windows.Forms.Form
