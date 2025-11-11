@@ -69,7 +69,7 @@ $global:defaultInstructions = @"
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 [System.Windows.Forms.Application]::EnableVisualStyles()
-                                                                                                $version = "beta 251111.0852"
+                                                                                                $version = "beta 251111.0931"
 $formPrincipal = New-Object System.Windows.Forms.Form
 $formPrincipal.Size = New-Object System.Drawing.Size(400, 800)
 $formPrincipal.StartPosition = "CenterScreen"
@@ -233,7 +233,7 @@ function Normalize-ThumbUrl {
     if ([string]::IsNullOrWhiteSpace($Url)) { return $Url }
     $u = $Url.Trim()
     if ($Extractor -match '^twitch' -or $u -match 'twitch\.tv|static-cdn\.jtvnw\.net') {
-        Write-Host "[DEBUG] Normalizando miniatura Twitch: $u" -ForegroundColor Yellow
+        Write-Host "[TWITCH] Normalizando miniatura: $u" -ForegroundColor Yellow
         $u = $u -replace '%\{width\}x%\{height\}', '1280x720'
         $u = $u -replace '\{width\}x\{height\}', '1280x720'
         $u = $u -replace '%\{width\}', '1280'
@@ -245,7 +245,10 @@ function Normalize-ThumbUrl {
         if ($u -match 'thumb0-\{width\}x\{height\}') {
             $u = $u -replace 'thumb0-\{width\}x\{height\}', 'thumb0-1280x720'
         }
-        Write-Host "[DEBUG] Miniatura Twitch normalizada: $u" -ForegroundColor Green
+        if ($u -match '(thumb0?|preview)-(\d+)x(\d+)') {
+            $u = $u -replace '(thumb0?|preview)-(\d+)x(\d+)', '${1}-1280x720'
+        }
+        Write-Host "[TWITCH] Miniatura normalizada: $u" -ForegroundColor Green
     }
     return $u
 }
@@ -764,39 +767,72 @@ function Fetch-ThumbnailFile {
     param(
         [Parameter(Mandatory=$true)][string]$Url
     )
-    try { $yt = Get-Command yt-dlp -ErrorAction Stop } catch { return $null }
+    try { 
+        $yt = Get-Command yt-dlp -ErrorAction Stop 
+    } catch { 
+        Write-Host "[ERROR] yt-dlp no disponible para descargar miniatura" -ForegroundColor Red
+        return $null 
+    }
     Get-ChildItem -Path (Get-TempThumbPattern) -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
     $outTmpl = Join-Path ([System.IO.Path]::GetTempPath()) "ytdll_thumb_%(id)s.%(ext)s"
     $args = @(
         "--skip-download",
-        "--quiet","--no-warnings",
+        "--quiet",
+        "--no-warnings",
         "--write-thumbnail",
-        "--convert-thumbnails","jpg",
+        "--convert-thumbnails", "jpg",
         "-o", $outTmpl
     )
-    if ($script:cookiesPath) { $args += @("--cookies",$script:cookiesPath) }
+    if ($Url -match 'twitch\.tv') {
+        $args += @(
+            "--force-ipv4",
+            "--retries", "3",
+            "--socket-timeout", "10"
+        )
+        Write-Host "[TWITCH] Usando opciones específicas para descargar miniatura..." -ForegroundColor Yellow
+    }
+    if ($script:cookiesPath) { 
+        $args += @("--cookies", $script:cookiesPath) 
+    }
     $args += $Url
+    Write-Host "[THUMB] Ejecutando yt-dlp para obtener miniatura..." -ForegroundColor Cyan
     $res = Invoke-Capture -ExePath $yt.Source -Args $args
+    if ($res.ExitCode -ne 0) {
+        Write-Host "[THUMB] Error al obtener miniatura: $($res.StdErr)" -ForegroundColor Red
+    }
     $thumb = Get-ChildItem -Path (Get-TempThumbPattern) -ErrorAction SilentlyContinue |
          Sort-Object LastWriteTime -Descending |
          Select-Object -First 1
-        if ($thumb) {
-            if ($thumb.Extension -match '^\.(jpg|jpeg|png)$') {
-                return $thumb.FullName
-            }
-            if ($thumb.Extension -eq '.webp') {
-                # convierte a PNG con ffmpeg y devuelve el nuevo archivo
-                $png = [IO.Path]::ChangeExtension($thumb.FullName, ".png")
-                try {
-                    $ff = Get-Command ffmpeg -ErrorAction Stop | Select-Object -ExpandProperty Source
-                    $proc = Start-Process -FilePath $ff -ArgumentList @("-y","-hide_banner","-loglevel","error","-i", $thumb.FullName, $png) `
-                                          -NoNewWindow -PassThru
-                    $proc.WaitForExit()
-                    if ($proc.ExitCode -eq 0 -and (Test-Path $png)) { return $png }
-                } catch {}
+    if ($thumb) {
+        Write-Host "[THUMB] Miniatura descargada: $($thumb.FullName)" -ForegroundColor Green
+        if ($thumb.Extension -eq '.webp') {
+            Write-Host "[THUMB] Convirtiendo WEBP a PNG..." -ForegroundColor Yellow
+            $png = [IO.Path]::ChangeExtension($thumb.FullName, ".png")
+            try {
+                $ff = Get-Command ffmpeg -ErrorAction Stop | Select-Object -ExpandProperty Source
+                $proc = Start-Process -FilePath $ff -ArgumentList @("-y", "-hide_banner", "-loglevel", "error", "-i", $thumb.FullName, $png) `
+                                      -NoNewWindow -PassThru -Wait
+                if ($proc.ExitCode -eq 0 -and (Test-Path $png)) {
+                    Remove-Item $thumb.FullName -Force -ErrorAction SilentlyContinue
+                    return $png
+                }
+            } catch {
+                Write-Host "[THUMB] Error convirtiendo WEBP: $_" -ForegroundColor Red
             }
         }
+        try {
+            $testImg = [System.Drawing.Image]::FromFile($thumb.FullName)
+            $testImg.Dispose()
+            return $thumb.FullName
+        } catch {
+            Write-Host "[THUMB] Imagen corrupta o inválida: $($thumb.FullName)" -ForegroundColor Red
+            Remove-Item $thumb.FullName -Force -ErrorAction SilentlyContinue
+            return $null
+        }
+    } else {
+        Write-Host "[THUMB] No se pudo descargar miniatura con yt-dlp" -ForegroundColor Red
         return $null
+    }
 }
 function Show-PreviewUniversal {
     param(
@@ -804,14 +840,19 @@ function Show-PreviewUniversal {
         [string]$Titulo = $null,
         [string]$DirectThumbUrl = $null
     )
-
     Write-Host "[PREVIEW] Intentando vista previa para: $Url" -ForegroundColor Cyan
-    Write-Host "[PREVIEW] Thumbnail URL: $DirectThumbUrl" -ForegroundColor Cyan
-
+    Write-Host "[PREVIEW] Thumbnail URL: $(if ($DirectThumbUrl) { $DirectThumbUrl } else { 'NULO' })" -ForegroundColor Cyan
+    Write-Host "[PREVIEW] Extractor: $($script:lastExtractor)" -ForegroundColor Cyan
+    if (-not $DirectThumbUrl -and $script:lastExtractor -match 'twitch') {
+        Write-Host "[TWITCH] No hay miniatura directa, intentando construir URL alternativa..." -ForegroundColor Yellow
+        $vodId = $script:ultimaURL -replace '.*videos/(\d+).*', '$1'
+        if ($vodId -and $vodId -match '^\d+$') {
+            $DirectThumbUrl = "https://static-cdn.jtvnw.net/cf_vods/d2vj7p5g7y6u8s/$vodId//thumb/thumb0-1280x720.jpg"
+            Write-Host "[TWITCH] URL alternativa construida: $DirectThumbUrl" -ForegroundColor Green
+        }
+    }
     if ($DirectThumbUrl) {
         Write-Host "[PREVIEW] Usando miniatura directa..." -ForegroundColor Yellow
-        
-        # 1) Si es WEBP, convertir
         if ($DirectThumbUrl -match '\.webp($|\?)') {
             Write-Host "[PREVIEW] Detectado WEBP, intentando conversión..." -ForegroundColor Yellow
             $png = Convert-WebpUrlToPng -Url $DirectThumbUrl
@@ -828,8 +869,6 @@ function Show-PreviewUniversal {
                 }
             }
         }
-
-        # 2) Intento directo
         Write-Host "[PREVIEW] Intentando carga directa de imagen..." -ForegroundColor Yellow
         $img1 = Get-ImageFromUrl -Url $DirectThumbUrl
         if ($img1) {
@@ -843,11 +882,8 @@ function Show-PreviewUniversal {
                 Write-Host "[PREVIEW] Error en carga directa: $_" -ForegroundColor Red
             }
         }
-
         Write-Host "[PREVIEW] Falló carga directa" -ForegroundColor Red
     }
-
-    # 3) Fallback con yt-dlp
     Write-Host "[PREVIEW] Usando fallback con yt-dlp..." -ForegroundColor Yellow
     $file = Fetch-ThumbnailFile -Url $Url
     if ($file -and (Test-Path -LiteralPath $file)) {
@@ -863,7 +899,6 @@ function Show-PreviewUniversal {
             return $false
         }
     }
-
     Write-Host "[PREVIEW] No se pudo cargar vista previa" -ForegroundColor Red
     return $false
 }
@@ -901,7 +936,6 @@ function Show-PreviewImage {
 function Get-BestThumbnailUrl {
     param([Parameter(Mandatory=$true)]$Json)
     $candidate = $null
-    
     if ($Json.thumbnail -and [string]::IsNullOrWhiteSpace($Json.thumbnail) -eq $false) {
         $candidate = [string]$Json.thumbnail
     }
@@ -909,9 +943,8 @@ function Get-BestThumbnailUrl {
         $ordered = $Json.thumbnails | Sort-Object @{Expression='preference';Descending=$true},
                                                 @{Expression='width';Descending=$true}
         $thumbNonWebp = $ordered | Where-Object { 
-            $_.url -and ($_.url -notmatch '\.webp($|\?)') -and ($_.url -notmatch '\{width\}|\%\{width\}')
+            $_.url -and ($_.url -notmatch '\.webp($|\?)') 
         } | Select-Object -First 1
-        
         if ($thumbNonWebp -and $thumbNonWebp.url) { 
             $candidate = [string]$thumbNonWebp.url 
         }
@@ -922,6 +955,14 @@ function Get-BestThumbnailUrl {
             }
         }
     }
+    if (-not $candidate -and $Json.extractor -match 'twitch') {
+        Write-Host "[TWITCH] No se encontró miniatura en metadatos, intentando construir URL..." -ForegroundColor Yellow
+        $vodId = $Json.id
+        if ($vodId) {
+            $candidate = "https://static-cdn.jtvnw.net/cf_vods/d2vj7p5g7y6u8s/$vodId//thumb/thumb0-1280x720.jpg"
+            Write-Host "[TWITCH] URL construida: $candidate" -ForegroundColor Cyan
+        }
+    }
     if ($candidate) {
         $original = $candidate
         $candidate = Normalize-ThumbUrl -Url $candidate -Extractor $Json.extractor
@@ -929,6 +970,7 @@ function Get-BestThumbnailUrl {
             Write-Host "[THUMB] URL normalizada: $candidate" -ForegroundColor Cyan
         }
     }
+    
     return $candidate
 }
 function Invoke-ConsultaFromUI {
