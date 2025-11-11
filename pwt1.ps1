@@ -1416,25 +1416,17 @@ $btnPickDestino = Create-IconButton -Text "📁" `
     -Location (New-Object System.Drawing.Point(356, 38)) `
     -ToolTipText "Cambiar carpeta de destino"
 $lblVideoFmt = Create-Label -Text "Formato de VIDEO:" `
-    -Location (New-Object System.Drawing.Point(20, 135)) `
+    -Location (New-Object System.Drawing.Point(20, 85)) `
     -Size (New-Object System.Drawing.Size(360, 20)) -Font $boldFont
 $cmbVideoFmt = Create-ComboBox `
-    -Location (New-Object System.Drawing.Point(20, 158)) `
+    -Location (New-Object System.Drawing.Point(20, 108)) `
     -Size (New-Object System.Drawing.Size(360, 28))
 $lblAudioFmt = Create-Label -Text "Formato de AUDIO:" `
-    -Location (New-Object System.Drawing.Point(20, 190)) `
+    -Location (New-Object System.Drawing.Point(20, 140)) `
     -Size (New-Object System.Drawing.Size(360, 20)) -Font $boldFont
 $cmbAudioFmt = Create-ComboBox `
-    -Location (New-Object System.Drawing.Point(20, 213)) `
+    -Location (New-Object System.Drawing.Point(20, 163)) `
     -Size (New-Object System.Drawing.Size(360, 28))
-$txtUrl = Create-TextBox `
-    -Location (New-Object System.Drawing.Point(20, 165)) `
-    -Size (New-Object System.Drawing.Size(360, 46)) `
-    -Font (New-Object System.Drawing.Font("Segoe UI", 20, [System.Drawing.FontStyle]::Regular)) `
-    -Text $global:UrlPlaceholder `
-    -BackColor ([System.Drawing.Color]::White) `
-    -ForeColor ([System.Drawing.Color]::Gray)
-$ctxUrlHistory = New-Object System.Windows.Forms.ContextMenuStrip
 $btnPickCookies = Create-IconButton -Text "🍪" `
     -Location (New-Object System.Drawing.Point(324, 10)) `
     -ToolTipText "Seleccionar cookies.txt (opcional)"
@@ -1445,9 +1437,17 @@ $btnInfo.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.
 $btnInfo.Size = New-Object System.Drawing.Size(26, 24)
 $btnInfo.Add_Click({ Show-AppInfo })
 $formPrincipal.Controls.Add($btnInfo)
+$txtUrl = Create-TextBox `
+    -Location (New-Object System.Drawing.Point(20, 195)) `
+    -Size (New-Object System.Drawing.Size(360, 46)) `
+    -Font (New-Object System.Drawing.Font("Segoe UI", 20, [System.Drawing.FontStyle]::Regular)) `
+    -Text $global:UrlPlaceholder `
+    -BackColor ([System.Drawing.Color]::White) `
+    -ForeColor ([System.Drawing.Color]::Gray)
+$ctxUrlHistory = New-Object System.Windows.Forms.ContextMenuStrip
 $lblEstadoConsulta = Create-Label `
     -Text "Estado: sin consultar" `
-    -Location (New-Object System.Drawing.Point(20, 215)) `
+    -Location (New-Object System.Drawing.Point(20, 235)) `
     -Size (New-Object System.Drawing.Size(360, 44)) `
     -Font $defaultFont `
     -BorderStyle ([System.Windows.Forms.BorderStyle]::FixedSingle) `
