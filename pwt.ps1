@@ -230,12 +230,24 @@ function Normalize-ThumbUrl {
         [Parameter(Mandatory=$true)][string]$Url,
         [string]$Extractor = $null
     )
-    $u = $Url
-        if ($Extractor -match '^twitch' -or $u -match 'twitch\.tv|static-cdn\.jtvnw\.net') {
-            $u = $u -replace '%\{?\s*width\s*\}?\s*x\s*%\{?\s*height\s*\}?', '1280x720'
-            $u = $u -replace '\{\s*width\s*\}\s*x\s*\{\s*height\s*\}', '1280x720'
+    if ([string]::IsNullOrWhiteSpace($Url)) { return $Url }
+    $u = $Url.Trim()
+    if ($Extractor -match '^twitch' -or $u -match 'twitch\.tv|static-cdn\.jtvnw\.net') {
+        Write-Host "[DEBUG] Normalizando miniatura Twitch: $u" -ForegroundColor Yellow
+        $u = $u -replace '%\{width\}x%\{height\}', '1280x720'
+        $u = $u -replace '\{width\}x\{height\}', '1280x720'
+        $u = $u -replace '%\{width\}', '1280'
+        $u = $u -replace '%\{height\}', '720'
+        $u = $u -replace '\{width\}', '1280'
+        $u = $u -replace '\{height\}', '720'
+        $u = $u -replace '%\{\s*width\s*\}', '1280'
+        $u = $u -replace '%\{\s*height\s*\}', '720'
+        if ($u -match 'thumb0-\{width\}x\{height\}') {
+            $u = $u -replace 'thumb0-\{width\}x\{height\}', 'thumb0-1280x720'
         }
-        return $u
+        Write-Host "[DEBUG] Miniatura Twitch normalizada: $u" -ForegroundColor Green
+    }
+    return $u
 }
 function Refresh-GateByDeps {
     $haveYt   = Test-CommandExists -Name "yt-dlp"
@@ -793,45 +805,50 @@ function Show-PreviewUniversal {
         [string]$DirectThumbUrl = $null
     )
 
+    Write-Host "[PREVIEW] Intentando vista previa para: $Url" -ForegroundColor Cyan
+    Write-Host "[PREVIEW] Thumbnail URL: $DirectThumbUrl" -ForegroundColor Cyan
+
     if ($DirectThumbUrl) {
-        # 1) Si la miniatura directa es WEBP, intenta convertirla a PNG con ffmpeg
+        Write-Host "[PREVIEW] Usando miniatura directa..." -ForegroundColor Yellow
+        
+        # 1) Si es WEBP, convertir
         if ($DirectThumbUrl -match '\.webp($|\?)') {
+            Write-Host "[PREVIEW] Detectado WEBP, intentando conversión..." -ForegroundColor Yellow
             $png = Convert-WebpUrlToPng -Url $DirectThumbUrl
             if ($png -and (Test-Path $png)) {
-                try { if ($picPreview.Image) { $picPreview.Image.Dispose() } } catch {}
-                $imgW = [System.Drawing.Image]::FromFile($png)
-                $picPreview.Image = $imgW
-                if ($Titulo) { $toolTip.SetToolTip($picPreview, $Titulo) }
-                return $true
+                try { 
+                    if ($picPreview.Image) { $picPreview.Image.Dispose() } 
+                    $imgW = [System.Drawing.Image]::FromFile($png)
+                    $picPreview.Image = $imgW
+                    if ($Titulo) { $toolTip.SetToolTip($picPreview, $Titulo) }
+                    Write-Host "[PREVIEW] Vista previa cargada (WEBP convertido)" -ForegroundColor Green
+                    return $true
+                } catch {
+                    Write-Host "[PREVIEW] Error cargando WEBP convertido: $_" -ForegroundColor Red
+                }
             }
-            # si no se pudo convertir, seguimos con flujo normal
         }
 
         # 2) Intento directo
+        Write-Host "[PREVIEW] Intentando carga directa de imagen..." -ForegroundColor Yellow
         $img1 = Get-ImageFromUrl -Url $DirectThumbUrl
         if ($img1) {
-            try { if ($picPreview.Image) { $picPreview.Image.Dispose() } } catch {}
-            $picPreview.Image = $img1
-            if ($Titulo) { $toolTip.SetToolTip($picPreview, $Titulo) }
-            return $true
-        }
-
-        # 3) Twitch: mismo URL pero con tamaño 1280x720 (sin cambiar extensión)
-        if ($Url -match 'twitch\.tv' -and $DirectThumbUrl -notmatch '1280x720') {
-            $try2 = ($DirectThumbUrl `
-                -replace '%\{?\s*width\s*\}?\s*x\s*%\{?\s*height\s*\}?', '1280x720' `
-                -replace '\{\s*width\s*\}\s*x\s*\{\s*height\s*\}', '1280x720')
-            $img2 = Get-ImageFromUrl -Url $try2
-            if ($img2) {
-                try { if ($picPreview.Image) { $picPreview.Image.Dispose() } } catch {}
-                $picPreview.Image = $img2
+            try { 
+                if ($picPreview.Image) { $picPreview.Image.Dispose() } 
+                $picPreview.Image = $img1
                 if ($Titulo) { $toolTip.SetToolTip($picPreview, $Titulo) }
+                Write-Host "[PREVIEW] Vista previa cargada (directa)" -ForegroundColor Green
                 return $true
+            } catch {
+                Write-Host "[PREVIEW] Error en carga directa: $_" -ForegroundColor Red
             }
         }
+
+        Write-Host "[PREVIEW] Falló carga directa" -ForegroundColor Red
     }
 
-    # 4) Fallback usando yt-dlp --write-thumbnail (y convierte webp si hace falta dentro de Fetch-ThumbnailFile)
+    # 3) Fallback con yt-dlp
+    Write-Host "[PREVIEW] Usando fallback con yt-dlp..." -ForegroundColor Yellow
     $file = Fetch-ThumbnailFile -Url $Url
     if ($file -and (Test-Path -LiteralPath $file)) {
         try {
@@ -839,12 +856,15 @@ function Show-PreviewUniversal {
             try { if ($picPreview.Image) { $picPreview.Image.Dispose() } } catch {}
             $picPreview.Image = $img2
             if ($Titulo) { $toolTip.SetToolTip($picPreview, $Titulo) }
+            Write-Host "[PREVIEW] Vista previa cargada (yt-dlp fallback)" -ForegroundColor Green
             return $true
         } catch {
+            Write-Host "[PREVIEW] Error cargando thumbnail de yt-dlp: $_" -ForegroundColor Red
             return $false
         }
     }
 
+    Write-Host "[PREVIEW] No se pudo cargar vista previa" -ForegroundColor Red
     return $false
 }
 function Show-PreviewImage {
@@ -881,21 +901,33 @@ function Show-PreviewImage {
 function Get-BestThumbnailUrl {
     param([Parameter(Mandatory=$true)]$Json)
     $candidate = $null
+    
     if ($Json.thumbnail -and [string]::IsNullOrWhiteSpace($Json.thumbnail) -eq $false) {
         $candidate = [string]$Json.thumbnail
     }
     if (-not $candidate -and $Json.thumbnails -and $Json.thumbnails.Count -gt 0) {
         $ordered = $Json.thumbnails | Sort-Object @{Expression='preference';Descending=$true},
                                                 @{Expression='width';Descending=$true}
-        $thumbNonWebp = $ordered | Where-Object { $_.url -and ($_.url -notmatch '\.webp($|\?)') } | Select-Object -First 1
-        if ($thumbNonWebp -and $thumbNonWebp.url) { $candidate = [string]$thumbNonWebp.url }
+        $thumbNonWebp = $ordered | Where-Object { 
+            $_.url -and ($_.url -notmatch '\.webp($|\?)') -and ($_.url -notmatch '\{width\}|\%\{width\}')
+        } | Select-Object -First 1
+        
+        if ($thumbNonWebp -and $thumbNonWebp.url) { 
+            $candidate = [string]$thumbNonWebp.url 
+        }
         if (-not $candidate) {
             $thumb = $ordered | Select-Object -First 1
-            if ($thumb -and $thumb.url) { $candidate = [string]$thumb.url }
+            if ($thumb -and $thumb.url) { 
+                $candidate = [string]$thumb.url 
+            }
         }
     }
     if ($candidate) {
+        $original = $candidate
         $candidate = Normalize-ThumbUrl -Url $candidate -Extractor $Json.extractor
+        if ($original -ne $candidate) {
+            Write-Host "[THUMB] URL normalizada: $candidate" -ForegroundColor Cyan
+        }
     }
     return $candidate
 }
