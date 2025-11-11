@@ -1426,7 +1426,7 @@ $btnPickDestino = Create-IconButton -Text "📁" `
     -Location (New-Object System.Drawing.Point(356, 38)) `
     -ToolTipText "Cambiar carpeta de destino"
 $lblVideoFmt = Create-Label -Text "Formato de VIDEO:" `
-    -Location (New-Object System.Drawing.Point(20, 60)) `
+    -Location (New-Object System.Drawing.Point(20, 70)) `
     -Size (New-Object System.Drawing.Size(360, 20)) -Font $boldFont
 $cmbVideoFmt = Create-ComboBox `
     -Location (New-Object System.Drawing.Point(20, 93)) `
@@ -1438,8 +1438,8 @@ $cmbAudioFmt = Create-ComboBox `
     -Location (New-Object System.Drawing.Point(20, 148)) `
     -Size (New-Object System.Drawing.Size(360, 28))
 $txtUrl = Create-TextBox `
-    -Location (New-Object System.Drawing.Point(20, 195)) `
-    -Size (New-Object System.Drawing.Size(360, 46)) `
+    -Location (New-Object System.Drawing.Point(20, 180)) `
+    -Size (New-Object System.Drawing.Size(360, 60)) `
     -Font (New-Object System.Drawing.Font("Segoe UI", 20, [System.Drawing.FontStyle]::Regular)) `
     -Text $global:UrlPlaceholder `
     -BackColor ([System.Drawing.Color]::White) `
@@ -1447,7 +1447,7 @@ $txtUrl = Create-TextBox `
 $ctxUrlHistory = New-Object System.Windows.Forms.ContextMenuStrip
 $lblEstadoConsulta = Create-Label `
     -Text "Estado: sin consultar" `
-    -Location (New-Object System.Drawing.Point(20, 550)) `
+    -Location (New-Object System.Drawing.Point(20, 530)) `
     -Size (New-Object System.Drawing.Size(360, 44)) `
     -Font $defaultFont `
     -BorderStyle ([System.Windows.Forms.BorderStyle]::FixedSingle) `
