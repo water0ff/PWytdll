@@ -1405,15 +1405,15 @@ $script:cookiesPath = $null
 $script:ultimaRutaDescarga = [Environment]::GetFolderPath('Desktop')
 $global:UrlPlaceholder = "Escribe la URL del video"
 $lblDestino = Create-Label -Text "Carpeta de destino:" `
-    -Location (New-Object System.Drawing.Point(20, 10)) `
+    -Location (New-Object System.Drawing.Point(20, 15)) `
     -Size (New-Object System.Drawing.Size(360, 20)) -Font $boldFont
 $txtDestino = Create-TextBox `
-    -Location (New-Object System.Drawing.Point(20, 33)) `
+    -Location (New-Object System.Drawing.Point(20, 38)) `
     -Size (New-Object System.Drawing.Size(320, 26)) `
     -ReadOnly $true `
     -Text $script:ultimaRutaDescarga
 $btnPickDestino = Create-IconButton -Text "📁" `
-    -Location (New-Object System.Drawing.Point(346, 33)) `
+    -Location (New-Object System.Drawing.Point(346, 38)) `
     -ToolTipText "Cambiar carpeta de destino"
 $lblVideoFmt = Create-Label -Text "Formato de VIDEO:" `
     -Location (New-Object System.Drawing.Point(20, 235)) `
@@ -1428,7 +1428,7 @@ $cmbAudioFmt = Create-ComboBox `
     -Location (New-Object System.Drawing.Point(20, 313)) `
     -Size (New-Object System.Drawing.Size(360, 28))
 $txtUrl = Create-TextBox `
-    -Location (New-Object System.Drawing.Point(20, 45)) `
+    -Location (New-Object System.Drawing.Point(20, 65)) `
     -Size (New-Object System.Drawing.Size(360, 46)) `
     -Font (New-Object System.Drawing.Font("Segoe UI", 20, [System.Drawing.FontStyle]::Regular)) `
     -Text $global:UrlPlaceholder `
@@ -1447,7 +1447,7 @@ $btnInfo.Add_Click({ Show-AppInfo })
 $formPrincipal.Controls.Add($btnInfo)
 $lblEstadoConsulta = Create-Label `
     -Text "Estado: sin consultar" `
-    -Location (New-Object System.Drawing.Point(20, 95)) `
+    -Location (New-Object System.Drawing.Point(20, 115)) `
     -Size (New-Object System.Drawing.Size(360, 44)) `
     -Font $defaultFont `
     -BorderStyle ([System.Windows.Forms.BorderStyle]::FixedSingle) `
@@ -1464,8 +1464,8 @@ $btnConsultar = Create-Button -Text "Consultar" `
     $btnConsultar.Visible = $false
     $btnConsultar.Enabled = $false
 $btnDescargar = Create-Button -Text "Descargar" `
-    -Location (New-Object System.Drawing.Point(20, 145)) `
-    -Size (New-Object System.Drawing.Size(360, 35)) `
+    -Location (New-Object System.Drawing.Point(20, 190)) `
+    -Size (New-Object System.Drawing.Size(360, 45)) `
     -BackColor ([System.Drawing.Color]::Black) `
     -ForeColor ([System.Drawing.Color]::White) `
     -ToolTipText "Descargar usando bestvideo+bestaudio -> mp4"
