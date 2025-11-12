@@ -1,4 +1,24 @@
-if (!(Test-Path -Path "C:\Temp")) {
+$versionMinimaRequerida = [version]"7.0"
+$versionActual = $PSVersionTable.PSVersion
+if ($versionActual -lt $versionMinimaRequerida) {
+    Write-Host "==================================================" -ForegroundColor Red
+    Write-Host "¡Se requiere PowerShell 7.0 o superior!" -ForegroundColor Red
+    Write-Host "==================================================" -ForegroundColor Red
+    Write-Host "Versión actual: $versionActual" -ForegroundColor Yellow
+    Write-Host "Este script utiliza características no disponibles en versiones antiguas." -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "Por favor, descarga e instala PowerShell 7 desde:" -ForegroundColor White
+    Write-Host "https://aka.ms/powershell-release?tag=stable" -ForegroundColor Cyan
+    Write-Host ""
+    Write-Host "PowerShell 7 se instala de forma paralela a Windows PowerShell" -ForegroundColor Green
+    Write-Host "y no afectará tus scripts existentes." -ForegroundColor Green
+    Write-Host ""
+$respuesta = Read-Host "¿Abrir la página de descarga ahora? (S/N)"
+    if ($respuesta -eq 'S' -or $respuesta -eq 's') {
+        Start-Process "https://aka.ms/powershell-release?tag=stable"
+    }   
+    exit 1
+}if (!(Test-Path -Path "C:\Temp")) {
     New-Item -ItemType Directory -Path "C:\Temp" | Out-Null
     Write-Host "Carpeta 'C:\Temp' creada correctamente."
 }
@@ -69,7 +89,7 @@ $global:defaultInstructions = @"
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 [System.Windows.Forms.Application]::EnableVisualStyles()
-                                                                                                $version = "beta 251111.1118"
+                                                                                                $version = "beta 251112.0912"
 $formPrincipal = New-Object System.Windows.Forms.Form
 $formPrincipal.Size = New-Object System.Drawing.Size(400, 800)
 $formPrincipal.StartPosition = "CenterScreen"
