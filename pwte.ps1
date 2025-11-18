@@ -65,6 +65,9 @@ $global:defaultInstructions = @"
 - Se agregó dependencia Node.
 - Se agregó validar consulta de video para descargar.
 "@
+    Add-Type -AssemblyName System.Windows.Forms
+    Add-Type -AssemblyName System.Drawing
+    [System.Windows.Forms.Application]::EnableVisualStyles()
 $formPrincipal = New-Object System.Windows.Forms.Form
 $formPrincipal.Size = New-Object System.Drawing.Size(400, 800)
 $formPrincipal.StartPosition = "CenterScreen"
