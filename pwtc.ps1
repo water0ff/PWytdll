@@ -1311,6 +1311,14 @@ function Ensure-ToolHeadless {
     Write-Host ("`t[OK] {0} detectado." -f $FriendlyName) -ForegroundColor Green
     return $true
 }
+function Get-DisplayUrl {
+    param([string]$Url)
+    if ([string]::IsNullOrWhiteSpace($Url)) { return $Url }
+    $u = $Url.Trim()
+    $u = $u -replace '^https?://', ''
+    $u = $u -replace '^www\.', ''
+    return $u
+}
 function Initialize-AppHeadless {
     Add-Type -AssemblyName System.Windows.Forms
     Add-Type -AssemblyName System.Drawing
@@ -1512,16 +1520,13 @@ $txtUrl = Create-TextBox `
     -Font (New-Object System.Drawing.Font("Segoe UI", 16, [System.Drawing.FontStyle]::Regular)) `
     -Text $global:UrlPlaceholder `
     -BackColor ([System.Drawing.Color]::FromArgb(255, 255, 220)) `  # Amarillo suave llamativo
-    -ForeColor ([System.Drawing.Color]::Gray) `
     -Multiline $false `
     -ScrollBars ([System.Windows.Forms.ScrollBars]::None)
-
-# (Opcional) bordecito más marcado si quieres
 $txtUrl.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
-
+$txtUrl.TextAlign = [System.Windows.Forms.HorizontalAlignment]::Right
 $txtUrl.Add_TextChanged({
-    if ($txtUrl.Text -ne $global:UrlPlaceholder) {
-        $toolTip.SetToolTip($txtUrl, $txtUrl.Text)
+    if ($txtUrl.Text -ne $global:UrlPlaceholder -and -not [string]::IsNullOrWhiteSpace($txtUrl.Text)) {
+        $toolTip.SetToolTip($txtUrl, (Get-DisplayUrl -Url $txtUrl.Text))
     } else {
         $toolTip.SetToolTip($txtUrl, "")
     }
@@ -1543,6 +1548,7 @@ $txtUrl.Add_LostFocus({
     # Regresa al color “llamativo” pero neutro
     $this.BackColor = [System.Drawing.Color]::FromArgb(255, 255, 220)
 })
+
 $ctxUrlHistory = New-Object System.Windows.Forms.ContextMenuStrip
 $lblEstadoConsulta = Create-Label `
     -Text "Estado: sin consultar" `
@@ -1553,6 +1559,7 @@ $lblEstadoConsulta = Create-Label `
 $lblEstadoConsulta.Font = New-Object System.Drawing.Font("Consolas", 9)
     $lblEstadoConsulta.AutoEllipsis = $true
     $lblEstadoConsulta.UseCompatibleTextRendering = $true
+
 $btnDescargar = Create-Button -Text "Descargar" `
     -Location (New-Object System.Drawing.Point(20, 250)) `
     -Size (New-Object System.Drawing.Size(360, 50)) `
