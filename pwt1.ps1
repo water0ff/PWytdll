@@ -1513,6 +1513,19 @@ $txtUrl = Create-TextBox `
     -Text $global:UrlPlaceholder `
     -BackColor ([System.Drawing.Color]::White) `
     -ForeColor ([System.Drawing.Color]::Gray)
+# Ajustar al alto “real” según la fuente
+    $txtUrl.Multiline = $false        # URL es de una sola línea
+    $txtUrl.AutoSize  = $true
+    $txtUrl.Height    = $txtUrl.PreferredHeight
+    $maxWidth = 360   # ancho máximo permitido
+    $minWidth = 200   # ancho mínimo
+    $txtUrl.Add_TextChanged({
+        $size = [System.Windows.Forms.TextRenderer]::MeasureText($txtUrl.Text + " ", $txtUrl.Font)
+        $nuevoAncho = $size.Width + 20   # un poco de padding
+        if ($nuevoAncho -lt $minWidth) { $nuevoAncho = $minWidth }
+        if ($nuevoAncho -gt $maxWidth) { $nuevoAncho = $maxWidth }
+        $txtUrl.Width = $nuevoAncho
+    })
 $ctxUrlHistory = New-Object System.Windows.Forms.ContextMenuStrip
 $lblEstadoConsulta = Create-Label `
     -Text "Estado: sin consultar" `
@@ -1524,8 +1537,8 @@ $lblEstadoConsulta.Font = New-Object System.Drawing.Font("Consolas", 9)
     $lblEstadoConsulta.AutoEllipsis = $true
     $lblEstadoConsulta.UseCompatibleTextRendering = $true
 $btnDescargar = Create-Button -Text "Descargar" `
-    -Location (New-Object System.Drawing.Point(20, 220)) `
-    -Size (New-Object System.Drawing.Size(360, 65)) `
+    -Location (New-Object System.Drawing.Point(20, 230)) `
+    -Size (New-Object System.Drawing.Size(360, 55)) `
     -BackColor ([System.Drawing.Color]::Black) -ForeColor ([System.Drawing.Color]::White) `
     -ToolTipText "Descargar usando bestvideo+bestaudio -> mp4"
     Set-DownloadButtonVisual
