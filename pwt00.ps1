@@ -1508,24 +1508,20 @@ $cmbAudioFmt = Create-ComboBox `
     -Size (New-Object System.Drawing.Size(360, 28))
 $txtUrl = Create-TextBox `
     -Location (New-Object System.Drawing.Point(20, 180)) `
-    -Size (New-Object System.Drawing.Size(360, 150)) `
-    -Font (New-Object System.Drawing.Font("Segoe UI", 20, [System.Drawing.FontStyle]::Regular)) `
+    -Size (New-Object System.Drawing.Size(360, 50)) `
+    -Font (New-Object System.Drawing.Font("Segoe UI", 18, [System.Drawing.FontStyle]::Regular)) `
     -Text $global:UrlPlaceholder `
     -BackColor ([System.Drawing.Color]::White) `
-    -ForeColor ([System.Drawing.Color]::Gray)
-# Ajustar al alto “real” según la fuente
-    $txtUrl.Multiline = $false        # URL es de una sola línea
-    $txtUrl.AutoSize  = $true
-    $txtUrl.Height    = $txtUrl.PreferredHeight
-    $maxWidth = 360   # ancho máximo permitido
-    $minWidth = 200   # ancho mínimo
-    $txtUrl.Add_TextChanged({
-        $size = [System.Windows.Forms.TextRenderer]::MeasureText($txtUrl.Text + " ", $txtUrl.Font)
-        $nuevoAncho = $size.Width + 20   # un poco de padding
-        if ($nuevoAncho -lt $minWidth) { $nuevoAncho = $minWidth }
-        if ($nuevoAncho -gt $maxWidth) { $nuevoAncho = $maxWidth }
-        $txtUrl.Width = $nuevoAncho
-    })
+    -ForeColor ([System.Drawing.Color]::Gray) `
+    -Multiline $true `
+    -ScrollBars ([System.Windows.Forms.ScrollBars]::Horizontal)
+$txtUrl.Add_TextChanged({
+    if ($txtUrl.Text -ne $global:UrlPlaceholder) {
+        $toolTip.SetToolTip($txtUrl, $txtUrl.Text)
+    } else {
+        $toolTip.SetToolTip($txtUrl, "")
+    }
+})
 $ctxUrlHistory = New-Object System.Windows.Forms.ContextMenuStrip
 $lblEstadoConsulta = Create-Label `
     -Text "Estado: sin consultar" `
