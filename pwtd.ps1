@@ -1514,12 +1514,15 @@ $lblAudioFmt = Create-Label -Text "Formato de AUDIO:" `
 $cmbAudioFmt = Create-ComboBox `
     -Location (New-Object System.Drawing.Point(20, 148)) `
     -Size (New-Object System.Drawing.Size(360, 28))
+
+
 $txtUrl = Create-TextBox `
     -Location (New-Object System.Drawing.Point(20, 180)) `
     -Size (New-Object System.Drawing.Size(360, 40)) `
     -Font (New-Object System.Drawing.Font("Segoe UI", 16, [System.Drawing.FontStyle]::Regular)) `
     -Text $global:UrlPlaceholder `
-    -BackColor ([System.Drawing.Color]::FromArgb(255, 255, 220)) `  # Amarillo suave llamativo
+    -BackColor ([System.Drawing.Color]::FromArgb(255,255,220)) `
+    -ForeColor ([System.Drawing.Color]::Gray) `
     -Multiline $false `
     -ScrollBars ([System.Windows.Forms.ScrollBars]::None)
 $txtUrl.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
@@ -1536,7 +1539,6 @@ $txtUrl.Add_GotFocus({
         $this.Text = ""
         $this.ForeColor = [System.Drawing.Color]::Black
     }
-    # Resaltar aún más cuando el usuario va a escribir
     $this.BackColor = [System.Drawing.Color]::FromArgb(255, 245, 180)
 })
 
@@ -1545,11 +1547,10 @@ $txtUrl.Add_LostFocus({
         $this.Text = $global:UrlPlaceholder
         $this.ForeColor = [System.Drawing.Color]::Gray
     }
-    # Regresa al color “llamativo” pero neutro
     $this.BackColor = [System.Drawing.Color]::FromArgb(255, 255, 220)
 })
-
 $ctxUrlHistory = New-Object System.Windows.Forms.ContextMenuStrip
+
 $lblEstadoConsulta = Create-Label `
     -Text "Estado: sin consultar" `
     -Location (New-Object System.Drawing.Point(20, 530)) `
