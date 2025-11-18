@@ -11,6 +11,7 @@ $script:LogFile = "C:\Temp\ytdll_history.txt"
 if (-not (Test-Path -LiteralPath $script:LogFile)) {
     New-Item -ItemType File -Path $script:LogFile -Force | Out-Null
 }
+                                                                                                $version = "beta 251118.1012"
 function Get-HistoryUrls {
     try {
         $content = Get-Content -LiteralPath $script:LogFile -ErrorAction Stop -Raw
@@ -64,7 +65,6 @@ $global:defaultInstructions = @"
 - Se agregó dependencia Node.
 - Se agregó validar consulta de video para descargar.
 "@
-                                                                                                $version = "beta 251117.0912"
 $formPrincipal = New-Object System.Windows.Forms.Form
 $formPrincipal.Size = New-Object System.Drawing.Size(400, 800)
 $formPrincipal.StartPosition = "CenterScreen"
@@ -291,19 +291,6 @@ function Refresh-GateByDeps {
     $haveNode = if ($script:RequireNode) { Test-CommandExists -Name "node" } else { $true }
     $allOk = $haveYt -and $haveFfm -and $haveNode
     Set-DownloadButtonVisual
-    $btnConsultar.Enabled = $allOk
-    if ($allOk) {
-        $toolTip.SetToolTip($btnConsultar, "Obtener información del video")
-    } else {
-        $toolTip.SetToolTip($btnConsultar, "Deshabilitado: instala/activa dependencias")
-        $script:videoConsultado = $false
-        $script:ultimaURL       = $null
-        $script:ultimoTitulo    = $null
-        Set-DownloadButtonVisual
-        $lblEstadoConsulta.Text = "Estado: sin consultar"
-        $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::Black
-        if ($picPreview) { $picPreview.Image = $null }
-    }
 }
 $script:formatsIndex = @{}   # format_id -> objeto con metadatos (tipo, codecs, label)
 $script:formatsVideo = @()   # lista de objetos mostrables en Combo Video
@@ -1536,13 +1523,6 @@ $lblEstadoConsulta = Create-Label `
 $lblEstadoConsulta.Font = New-Object System.Drawing.Font("Consolas", 9)
     $lblEstadoConsulta.AutoEllipsis = $true
     $lblEstadoConsulta.UseCompatibleTextRendering = $true
-$btnConsultar = Create-Button -Text "Consultar" `
-    -Location (New-Object System.Drawing.Point(100, 100)) `
-    -Size (New-Object System.Drawing.Size(100, 100)) `
-    -BackColor ([System.Drawing.Color]::White) -ForeColor ([System.Drawing.Color]::Black) `
-    -ToolTipText "Obtener información del video"
-    $btnConsultar.Visible = $false
-    $btnConsultar.Enabled = $false
 $btnDescargar = Create-Button -Text "Descargar" `
     -Location (New-Object System.Drawing.Point(20, 220)) `
     -Size (New-Object System.Drawing.Size(360, 65)) `
@@ -1794,7 +1774,6 @@ $btnNodeUninstall.Add_Click({
     $formPrincipal.Controls.Add($picPreview)
     $formPrincipal.Controls.Add($txtUrl)
     $formPrincipal.Controls.Add($lblEstadoConsulta)
-    $formPrincipal.Controls.Add($btnConsultar)
     $formPrincipal.Controls.Add($btnDescargar)
 function New-WorkingBox {
     param([string]$Text)
@@ -2006,101 +1985,7 @@ function Invoke-YtDlpConsoleProgress {
     }
     return $proc.ExitCode
 }
-$btnConsultar.Add_Click({
-    $btnConsultar.Enabled = $false
-    try {
-        Refresh-GateByDeps
-        if (-not $btnConsultar.Enabled) { return }
-        $url = Get-CurrentUrl
-        if ([string]::IsNullOrWhiteSpace($url)) {
-            [System.Windows.Forms.MessageBox]::Show("Escribe una URL de YouTube.","Falta URL",
-                [System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Warning) | Out-Null
-            return
-        }
-        Write-Host ("[CONSULTA] Consultando URL: {0}" -f $url) -ForegroundColor Cyan
-        try { $yt = Get-Command yt-dlp -ErrorAction Stop } catch {
-            Write-Host "[ERROR] yt-dlp no disponible. Valida dependencias." -ForegroundColor Red
-            [System.Windows.Forms.MessageBox]::Show("yt-dlp no está disponible. Valídalo en Dependencias.","yt-dlp no encontrado",
-                [System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Error) | Out-Null
-            return
-        }
-        $res = Invoke-CaptureResponsive -ExePath $yt.Source `
-                -Args @("--no-playlist","--get-title",$url) `
-                -WorkingText "Consultando URL…"
-        $titulo = ($res.StdOut + "`n" + $res.StdErr).Trim() -split "`r?`n" |
-                  Where-Object { $_.Trim() -ne "" } | Select-Object -First 1
-        if ($res.ExitCode -ne 0 -or -not $titulo) {
-            $script:videoConsultado = $false; $script:ultimaURL = $null; $script:ultimoTitulo = $null
-            $lblEstadoConsulta.Text = "Error al consultar la URL"; $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::Red
-            Set-DownloadButtonVisual
-            $picPreview.Image = $null
-            Write-Host "[ERROR] No se pudo consultar el video. STDOUT/ERR:" -ForegroundColor Red
-            Write-Host $res.StdOut
-            Write-Host $res.StdErr
-            [System.Windows.Forms.MessageBox]::Show("No se pudo consultar el video. Revisa la URL o tu conexión.","Consulta fallida",
-                [System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Error) | Out-Null
-            return
-        }
-        $script:videoConsultado = $true; $script:ultimaURL = $url; $script:ultimoTitulo = $titulo
-        $lblEstadoConsulta.Text = ("Consultado: {0}" -f $titulo); $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::ForestGreen
-        Set-DownloadButtonVisual
-        Write-Host ("`t[OK] Video consultado: {0}" -f $titulo) -ForegroundColor Green
-        $cmbVideoFmt.Items.Clear()
-        $cmbAudioFmt.Items.Clear()
-        $prevLabelText = $lblEstadoConsulta.Text
-        $meta = Get-Metadata -Url $url
-        $script:lastExtractor = $null
-        $script:lastDomain    = $null
-        if ($meta) {
-            $script:lastExtractor = $meta.Extractor
-            $script:lastDomain    = $meta.Domain
-        
-            if ($meta.Thumbnail) {
-                $script:lastThumbUrl = $meta.Thumbnail
-            }
-        }
-        $lblEstadoConsulta.Text = "Consultando formatos…"
-        try {
-            if (Fetch-Formats -Url $url) {
-                foreach ($i in $script:formatsVideo) { [void]$cmbVideoFmt.Items.Add($i) }
-                foreach ($i in $script:formatsAudio) { [void]$cmbAudioFmt.Items.Add($i) }
-                if ($cmbVideoFmt.Items.Count -gt 0) {
-                    $idx = 0
-                    for ($n=0; $n -lt $cmbVideoFmt.Items.Count; $n++) {
-                        if ($cmbVideoFmt.Items[$n].ToString().StartsWith("bestvideo")) { $idx = $n; break }
-                        if ($cmbVideoFmt.Items[$n].ToString().StartsWith("best")) { $idx = $n }
-                    }
-                    $cmbVideoFmt.SelectedIndex = $idx
-                }
-                if ($cmbAudioFmt.Items.Count -gt 0) {
-                    $idx = 0
-                    for ($n=0; $n -lt $cmbAudioFmt.Items.Count; $n++) {
-                        if ($cmbAudioFmt.Items[$n].ToString().StartsWith("bestaudio")) { $idx = $n; break }
-                    }
-                    $cmbAudioFmt.SelectedIndex = $idx
-                }
-                } else {
-                    $script:formatsEnumerated = $false
-                    $cmbVideoFmt.Items.Clear()
-                    $cmbAudioFmt.Items.Clear()
-                    Write-Host "[WARN] No fue posible extraer formatos. Vuelve a consultar." -ForegroundColor Yellow
-                    $lblEstadoConsulta.Text = "No fue posible extraer formatos. Vuelve a consultar."
-                    $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::DarkOrange
-                    Set-DownloadButtonVisual
-                    return
-                    if ($script:lastFormats) {
-                    Print-FormatsTable -formats $script:lastFormats
-                    }
-                Add-HistoryUrl -Url $url
-                }
-        } finally {
-            $lblEstadoConsulta.Text = $prevLabelText
-        }
-    } finally {
-        $btnConsultar.Enabled = $true
-    }
-})
-        function Is-ProgressiveOnlySite([string]$extractor) {
+function Is-ProgressiveOnlySite([string]$extractor) {
             return ($extractor -match '(tiktok|douyin|instagram|twitter|x)')
         }
 $btnDescargar.Add_Click({
