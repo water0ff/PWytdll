@@ -1526,14 +1526,14 @@ $ctxUrlHistory = New-Object System.Windows.Forms.ContextMenuStrip
 $lblEstadoConsulta = Create-Label `
     -Text "Estado: sin consultar" `
     -Location (New-Object System.Drawing.Point(20, 530)) `
-    -Size (New-Object System.Drawing.Size(360, 44)) `
+    -Size (New-Object System.Drawing.Size(360, 55)) `
     -Font $defaultFont -BorderStyle ([System.Windows.Forms.BorderStyle]::FixedSingle) `
     -TextAlign ([System.Drawing.ContentAlignment]::TopLeft)
 $lblEstadoConsulta.Font = New-Object System.Drawing.Font("Consolas", 9)
     $lblEstadoConsulta.AutoEllipsis = $true
     $lblEstadoConsulta.UseCompatibleTextRendering = $true
 $btnDescargar = Create-Button -Text "Descargar" `
-    -Location (New-Object System.Drawing.Point(20, 240)) `
+    -Location (New-Object System.Drawing.Point(20, 250)) `
     -Size (New-Object System.Drawing.Size(360, 50)) `
     -BackColor ([System.Drawing.Color]::Black) -ForeColor ([System.Drawing.Color]::White) `
     -ToolTipText "Descargar usando bestvideo+bestaudio -> mp4"
