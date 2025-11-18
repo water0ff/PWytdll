@@ -1,8 +1,8 @@
-$versionMinimaRequerida = [version]"7.0"
+$versionMinimaRequerida = [version]"5.0"
 $versionActual = $PSVersionTable.PSVersion
 if ($versionActual -lt $versionMinimaRequerida) {
     Write-Host "==================================================" -ForegroundColor Red
-    Write-Host "¡Se requiere PowerShell 7.0 o superior!" -ForegroundColor Red
+    Write-Host "¡Se requiere PowerShell 5.0 o superior!" -ForegroundColor Red
     Write-Host "==================================================" -ForegroundColor Red
     Write-Host "Versión actual: $versionActual" -ForegroundColor Yellow
     Write-Host "Este script utiliza características no disponibles en versiones antiguas." -ForegroundColor Yellow
@@ -70,7 +70,9 @@ $OutputEncoding = [System.Text.Encoding]::UTF8
 $env:PYTHONIOENCODING = 'utf-8'
 chcp 65001 | Out-Null               # Forzar code page de consola a UTF-8
 $env:PYTHONUTF8 = '1'               # Python/yt-dlp en modo UTF-8
-$PSStyle.OutputRendering = 'Ansi'   # Evita rarezas con ANSI/UTF-8 en PS 7+
+if ($PSVersionTable.PSVersion.Major -ge 7) {
+    $PSStyle.OutputRendering = 'Ansi'
+}
 $global:defaultInstructions = @"
 ----- CAMBIOS -----
 - Ahora ya guarda un log con URLS consultadas.
@@ -405,10 +407,11 @@ function Print-FormatsTable {
     Write-Host ("{0,-9} {1,-5} {2,-10} {3,-7} {4,-9} {5}" -f "format_id","ext","res","vcodec","acodec","nota/tamaño/tbr") -ForegroundColor DarkGray
     foreach ($f in $formats) {
         $sz = Human-Size $f.filesize
-        $tbr = if ($f.tbr) { "{0}k" -f [math]::Round($f.tbr) } else { "" }
+        $tbrStr = if ($f.tbr) { "{0}k" -f [math]::Round($f.tbr) } else { "" }
         $res = if ($f.height) { "{0}p" -f $f.height } else { "" }
-        $note = ($f.format_note ? $f.format_note : "")
-        $extra = ($note, $sz, $tbr) -join " "
+        $note = ""
+        if ($f.format_note) { $note = $f.format_note }
+        $extra = ($note, $sz, $tbrStr) -join " "
         Write-Host ("{0,-9} {1,-5} {2,-10} {3,-7} {4,-9} {5}" -f $f.format_id, $f.ext, $res, $f.vcodec, $f.acodec, $extra)
     }
 }
@@ -461,9 +464,11 @@ function Fetch-Formats {
             # Evitar el pseudo-formato "download" (marcado como watermarked)
             if ($klass.Progressive -and $klass.Id -ne 'download') {
                 # ranking sencillo: mayor altura + mayor tbr
-                $height = [int]($klass.VRes ? $klass.VRes : 0)
-                $tbr    = [int]($klass.Tbr  ? $klass.Tbr  : 0)
-                $rank   = ($height * 100000) + $tbr  # peso alto a la resolución
+                $height = 0
+                if ($klass.VRes) { $height = [int]$klass.VRes }
+                $tbrStr = 0
+                if ($klass.Tbr) { $tbrStr = [int]$klass.Tbr }
+                $rank   = ($height * 100000) + $tbrStr  # peso alto a la resolución
             
                 if ($rank -gt $script:bestProgRank) {
                     $script:bestProgRank = $rank
@@ -474,12 +479,13 @@ function Fetch-Formats {
             $script:formatsIndex[$klass.Id] = $klass
             if ($klass.Progressive -and $script:ExcludedFormatIds -contains $klass.Id) { continue }
 
-            $res = if ($klass.VRes) { "{0}p" -f $klass.VRes } else { "" }
+            $res = ""
+            if ($klass.VRes) { $res = "{0}p" -f $klass.VRes }
             $sz  = Human-Size $klass.Filesize
-            $tbr = if ($klass.Tbr) { "{0}k" -f [math]::Round($klass.Tbr) } else { "" }
-
-            if     ($klass.Progressive) { $script:formatsVideo += (New-FormatDisplay -Id $klass.Id -Label ("{0} {1} {2}/{3} (progresivo) {4} {5}" -f $klass.Ext,$res,$klass.VCodec,$klass.ACodec,$sz,$tbr)) }
-            elseif ($klass.VideoOnly)   { $script:formatsVideo += (New-FormatDisplay -Id $klass.Id -Label ("{0} {1} {2} (v-only) {3} {4}" -f $klass.Ext,$res,$klass.VCodec,$sz,$tbr)) }
+            $tbrStr = ""
+            if ($klass.Tbr) { $tbrStr = "{0}k" -f [math]::Round($klass.Tbr) }
+            if     ($klass.Progressive) { $script:formatsVideo += (New-FormatDisplay -Id $klass.Id -Label ("{0} {1} {2}/{3} (progresivo) {4} {5}" -f $klass.Ext,$res,$klass.VCodec,$klass.ACodec,$sz,$tbrStr)) }
+            elseif ($klass.VideoOnly)   { $script:formatsVideo += (New-FormatDisplay -Id $klass.Id -Label ("{0} {1} {2} (v-only) {3} {4}" -f $klass.Ext,$res,$klass.VCodec,$sz,$tbrStr)) }
             elseif ($klass.AudioOnly)   { $script:formatsAudio += (New-FormatDisplay -Id $klass.Id -Label ("{0} ~{1} {2} (a-only) {3}" -f $klass.Ext,$klass.ABr,$klass.ACodec,$sz)) }
         }
             # Headers “best*” (único lugar donde se agregan)
@@ -993,11 +999,11 @@ function Get-BestThumbnailUrl {
     }
     if (-not $candidate -and $Json.thumbnails -and $Json.thumbnails.Count -gt 0) {
         $ordered = $Json.thumbnails | Sort-Object @{Expression='preference';Descending=$true}, @{Expression='width';Descending=$true}
-        $thumbNonWebp = $ordered | Where-Object { $_.url -and ($_.url -notmatch '\.webp($|\?)') } | Select-Object -First 1
-        if ($thumbNonWebp?.url) { $candidate = [string]$thumbNonWebp.url }
+                $thumbNonWebp = $ordered | Where-Object { $_.url -and ($_.url -notmatch '\.webp($|\?)') } | Select-Object -First 1
+        if ($thumbNonWebp -and $thumbNonWebp.url) { $candidate = [string]$thumbNonWebp.url }
         if (-not $candidate) {
             $thumb = $ordered | Select-Object -First 1
-            if ($thumb?.url) { $candidate = [string]$thumb.url }
+            if ($thumb -and $thumb.url) { $candidate = [string]$thumb.url }
         }
     }
     if ($candidate) {
@@ -1074,9 +1080,17 @@ function Invoke-ConsultaFromUI {
         $prevLabelText = $lblEstadoConsulta.Text
         $lblEstadoConsulta.Text = "Consultando formatos…"
         $meta = Get-Metadata -Url $Url
-        $script:lastExtractor = $meta?.Extractor
-        $script:lastDomain    = $meta?.Domain
-        $script:lastThumbUrl  = $meta?.Thumbnail
+        $script:lastExtractor = $null
+        $script:lastDomain    = $null
+        $script:lastThumbUrl  = $null
+        
+        if ($meta) {
+            $script:lastExtractor = $meta.Extractor
+            $script:lastDomain    = $meta.Domain
+            if ($meta.Thumbnail) { 
+                $script:lastThumbUrl = $meta.Thumbnail 
+            }
+        }
         if ($meta -and $meta.Thumbnail) { $script:lastThumbUrl = $meta.Thumbnail }
         try {
             if (Fetch-Formats -Url $Url) {
@@ -1375,11 +1389,25 @@ function Show-AppInfo {
     $ytVer  = (Get-ToolVersion -Command "yt-dlp" -ArgsForVersion "--version" -Parse "FirstLine")
     $ffVer  = (Get-ToolVersion -Command "ffmpeg" -ArgsForVersion "-version"  -Parse "FirstLine")
     $ndVer  = if ($script:RequireNode) { (Get-ToolVersion -Command "node" -ArgsForVersion "--version" -Parse "FirstLine") } else { $null }
-    $txtDeps.Text = @(
-        ("yt-dlp: " + ($ytVer  ? $ytVer : "no instalado"))
-        ("ffmpeg: " + ($ffVer  ? $ffVer : "no instalado"))
-        ($script:RequireNode ? ("Node.js: " + ($ndVer ? $ndVer : "no instalado")) : $null)
-    ) | Where-Object { $_ } | Out-String
+    $list = @()
+        if ($ytVer) { 
+            $list += "yt-dlp: $ytVer"
+        } else {
+            $list += "yt-dlp: no instalado"
+        }
+        if ($ffVer) { 
+            $list += "ffmpeg: $ffVer"
+        } else {
+            $list += "ffmpeg: no instalado"
+        }
+        if ($script:RequireNode) {
+            if ($ndVer) {
+                $list += "Node.js: $ndVer"
+            } else {
+                $list += "Node.js: no instalado"
+            }
+        }
+        $txtDeps.Text = ($list -join [Environment]::NewLine)
     $lblLinks = Create-Label -Text "Proyectos:" `
         -Location (New-Object System.Drawing.Point(20, 378)) `
         -Size (New-Object System.Drawing.Size(460, 22)) `
@@ -1893,7 +1921,11 @@ function Invoke-YtDlpConsoleProgress {
             $eta = $m.Groups['eta'].Value; $spd = $m.Groups['spd'].Value
             if ($pct -ne $script:lastPct) {
                 $script:lastPct = $pct
-                Set-Ui ("{0} {1}%  ETA {2}  {3}" -f ($phase -replace '\.\.\.$','…'), $pct, ($eta ? $eta : "--:--"), ($spd ? $spd : ""))
+                $etaText = "--:--"
+                if ($eta) { $etaText = $eta }
+                $spdText = ""
+                if ($spd) { $spdText = $spd }
+                Set-Ui ("{0} {1}%  ETA {2}  {3}" -f ($phase -replace '\.\.\.$','…'), $pct, $etaText, $spdText)
                 Write-Host ("`r[PROGRESO] {0,3}%  ETA {1,-8}  {2,-16}" -f $pct, $eta, $spd) -NoNewline
             }
             return
@@ -1982,9 +2014,16 @@ $btnConsultar.Add_Click({
         $cmbAudioFmt.Items.Clear()
         $prevLabelText = $lblEstadoConsulta.Text
         $meta = Get-Metadata -Url $url
-        $script:lastExtractor = $meta?.Extractor
-        $script:lastDomain    = $meta?.Domain
-        if ($meta -and $meta.Thumbnail) { $script:lastThumbUrl = $meta.Thumbnail }
+        $script:lastExtractor = $null
+        $script:lastDomain    = $null
+        if ($meta) {
+            $script:lastExtractor = $meta.Extractor
+            $script:lastDomain    = $meta.Domain
+        
+            if ($meta.Thumbnail) {
+                $script:lastThumbUrl = $meta.Thumbnail
+            }
+        }
         $lblEstadoConsulta.Text = "Consultando formatos…"
         try {
             if (Fetch-Formats -Url $url) {
@@ -2106,7 +2145,11 @@ $btnDescargar.Add_Click({
         }
         elseif (Is-ProgressiveOnlySite $script:lastExtractor) {
             if ($videoSel -match '^best(video)?$') {
-                $fSelector = ($script:bestProgId ? $script:bestProgId : "best")
+                if ($script:bestProgId) {
+                    $fSelector = $script:bestProgId
+                } else {
+                    $fSelector = "best"
+                }
             } else {
                 $fSelector = $videoSel
             }
@@ -2142,9 +2185,15 @@ $btnDescargar.Add_Click({
     $cmbVideoFmt.Enabled = $false
     $cmbAudioFmt.Enabled = $false
     $lblEstadoConsulta.Text = "Preparando descarga…"
-    $baseTitle = if ($script:ultimoTitulo) { $script:ultimoTitulo } else {
+    if ($script:ultimoTitulo) {
+    $baseTitle = $script:ultimoTitulo
+    } else {
         $vid = Get-YouTubeVideoId -Url $script:ultimaURL
-        if ($vid) { "video_$vid" } else { "video" }
+        if ($vid) {
+            $baseTitle = "video_$vid"
+        } else {
+            $baseTitle = "video"
+        }
     }
     $baseTitle = Get-SafeFileName -Name $baseTitle
     $finalExt = $mergeExt
