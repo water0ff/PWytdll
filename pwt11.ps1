@@ -1533,8 +1533,8 @@ $lblEstadoConsulta.Font = New-Object System.Drawing.Font("Consolas", 9)
     $lblEstadoConsulta.AutoEllipsis = $true
     $lblEstadoConsulta.UseCompatibleTextRendering = $true
 $btnDescargar = Create-Button -Text "Descargar" `
-    -Location (New-Object System.Drawing.Point(20, 230)) `
-    -Size (New-Object System.Drawing.Size(360, 55)) `
+    -Location (New-Object System.Drawing.Point(20, 240)) `
+    -Size (New-Object System.Drawing.Size(360, 50)) `
     -BackColor ([System.Drawing.Color]::Black) -ForeColor ([System.Drawing.Color]::White) `
     -ToolTipText "Descargar usando bestvideo+bestaudio -> mp4"
     Set-DownloadButtonVisual
