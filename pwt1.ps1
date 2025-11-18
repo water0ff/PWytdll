@@ -64,16 +64,15 @@ $global:defaultInstructions = @"
 - Se agregó dependencia Node.
 - Se agregó validar consulta de video para descargar.
 "@
-                                                                                                $version = "beta 251112.0912"
+                                                                                                $version = "beta 251117.0912"
 $formPrincipal = New-Object System.Windows.Forms.Form
-$formPrincipal = New-Object System.Windows.Forms.Form
-
 $formPrincipal.Size = New-Object System.Drawing.Size(400, 800)
 $formPrincipal.StartPosition = "CenterScreen"
 $formPrincipal.BackColor = [System.Drawing.Color]::White
-$formPrincipal.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::FixedDialog
-$formPrincipal.MaximizeBox = $false
-$formPrincipal.MinimizeBox = $false
+$formPrincipal.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::None
+$formPrincipal.ControlBox      = $false
+$formPrincipal.MaximizeBox     = $false
+$formPrincipal.MinimizeBox     = $false
 $formPrincipal.Opacity = 0.97
 $formPrincipal.Add_Shown({
     param($sender, $e)
@@ -85,7 +84,6 @@ $formPrincipal.Add_Resize({
 })
 $defaultFont = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Regular)
 $boldFont    = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
-$formPrincipal.Text = ("YTDLL v{0}" -f $version)
 Write-Host "`n=============================================" -ForegroundColor DarkCyan
 Write-Host "                   YTDLL                       " -ForegroundColor Green
 Write-Host ("              Versión: v{0}" -f $version) -ForegroundColor Green
