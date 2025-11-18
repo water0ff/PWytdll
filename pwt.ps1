@@ -64,13 +64,17 @@ $global:defaultInstructions = @"
 - Se agregó dependencia Node.
 - Se agregó validar consulta de video para descargar.
 "@
-Add-Type -AssemblyName System.Windows.Forms
-Add-Type -AssemblyName System.Drawing
-[System.Windows.Forms.Application]::EnableVisualStyles()
                                                                                                 $version = "beta 251112.0912"
-$formPrincipal = New-Object DropShadowForm
+$formPrincipal = New-Object System.Windows.Forms.Form
+$formPrincipal = New-Object System.Windows.Forms.Form
+
 $formPrincipal.Size = New-Object System.Drawing.Size(400, 800)
-$formPrincipal.Opacity = 0.97  # ligera transparencia “moderna”
+$formPrincipal.StartPosition = "CenterScreen"
+$formPrincipal.BackColor = [System.Drawing.Color]::White
+$formPrincipal.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::FixedDialog
+$formPrincipal.MaximizeBox = $false
+$formPrincipal.MinimizeBox = $false
+$formPrincipal.Opacity = 0.97
 $formPrincipal.Add_Shown({
     param($sender, $e)
     Set-RoundedRegion -Control $sender -Radius 20
@@ -79,11 +83,6 @@ $formPrincipal.Add_Resize({
     param($sender, $e)
     Set-RoundedRegion -Control $sender -Radius 20
 })
-$formPrincipal.StartPosition = "CenterScreen"
-$formPrincipal.BackColor = [System.Drawing.Color]::White
-$formPrincipal.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::FixedDialog
-$formPrincipal.MaximizeBox = $false
-$formPrincipal.MinimizeBox = $false
 $defaultFont = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Regular)
 $boldFont    = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
 $formPrincipal.Text = ("YTDLL v{0}" -f $version)
@@ -167,25 +166,6 @@ function Create-Label {
     if ($ToolTipText) { $toolTip.SetToolTip($label, $ToolTipText) }
     return $label
 }
-Add-Type -TypeDefinition @"
-using System;
-using System.Windows.Forms;
-
-public class DropShadowForm : Form
-{
-    private const int CS_DROPSHADOW = 0x00020000;
-
-    protected override CreateParams CreateParams
-    {
-        get
-        {
-            CreateParams cp = base.CreateParams;
-            cp.ClassStyle |= CS_DROPSHADOW;
-            return cp;
-        }
-    }
-}
-"@ -ReferencedAssemblies System.Windows.Forms
 function Create-Form {
     param(
         [Parameter(Mandatory=$true)][string]$Title,
@@ -1350,6 +1330,30 @@ function Initialize-AppHeadless {
     Add-Type -AssemblyName System.Windows.Forms
     Add-Type -AssemblyName System.Drawing
     [System.Windows.Forms.Application]::EnableVisualStyles()
+    function Set-RoundedRegion {
+    param(
+        [Parameter(Mandatory = $true)]
+        [System.Windows.Forms.Control]$Control,
+
+        [int]$Radius = 10
+    )
+
+    if ($Radius -lt 1 -or -not $Control.Width -or -not $Control.Height) { return }
+
+    $rect = New-Object System.Drawing.Rectangle(0, 0, $Control.Width, $Control.Height)
+    $path = New-Object System.Drawing.Drawing2D.GraphicsPath
+
+    $diam = $Radius * 2
+
+    # Esquinas: TL, TR, BR, BL
+    $path.AddArc($rect.X, $rect.Y, $diam, $diam, 180, 90)
+    $path.AddArc($rect.Right - $diam, $rect.Y, $diam, $diam, 270, 90)
+    $path.AddArc($rect.Right - $diam, $rect.Bottom - $diam, $diam, 0, 90)
+    $path.AddArc($rect.X, $rect.Bottom - $diam, $diam, $diam, 90, 90)
+
+    $path.CloseFigure()
+    $Control.Region = New-Object System.Drawing.Region($path)
+    }
 
     if (-not (Check-Chocolatey)) {
         Write-Host "[EXIT] Falta Chocolatey o se requiere reinicio." -ForegroundColor Yellow
