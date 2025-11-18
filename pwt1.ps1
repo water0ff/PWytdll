@@ -1,24 +1,4 @@
-$versionMinimaRequerida = [version]"5.0"
-$versionActual = $PSVersionTable.PSVersion
-if ($versionActual -lt $versionMinimaRequerida) {
-    Write-Host "==================================================" -ForegroundColor Red
-    Write-Host "¡Se requiere PowerShell 5.0 o superior!" -ForegroundColor Red
-    Write-Host "==================================================" -ForegroundColor Red
-    Write-Host "Versión actual: $versionActual" -ForegroundColor Yellow
-    Write-Host "Este script utiliza características no disponibles en versiones antiguas." -ForegroundColor Yellow
-    Write-Host ""
-    Write-Host "Por favor, descarga e instala PowerShell 7 desde:" -ForegroundColor White
-    Write-Host "https://aka.ms/powershell-release?tag=stable" -ForegroundColor Cyan
-    Write-Host ""
-    Write-Host "PowerShell 7 se instala de forma paralela a Windows PowerShell" -ForegroundColor Green
-    Write-Host "y no afectará tus scripts existentes." -ForegroundColor Green
-    Write-Host ""
-$respuesta = Read-Host "¿Abrir la página de descarga ahora? (S/N)"
-    if ($respuesta -eq 'S' -or $respuesta -eq 's') {
-        Start-Process "https://aka.ms/powershell-release?tag=stable"
-    }   
-    exit 1
-}if (!(Test-Path -Path "C:\Temp")) {
+if (!(Test-Path -Path "C:\Temp")) {
     New-Item -ItemType Directory -Path "C:\Temp" | Out-Null
     Write-Host "Carpeta 'C:\Temp' creada correctamente."
 }
@@ -44,13 +24,10 @@ function Add-HistoryUrl {
     param([Parameter(Mandatory=$true)][string]$Url)
     $u = $Url.Trim()
     if ([string]::IsNullOrWhiteSpace($u)) { return }
-    # No guardar placeholders
     if ($u -eq $global:UrlPlaceholder) { return }
-    # Validar rudamente que parezca URL
     if ($u -notmatch '^(https?://|www\.)') { return }
     $list = Get-HistoryUrls
     if ($list -notcontains $u) {
-        # Limitar a 200 entradas
         $newList = @($u) + $list
         if ($newList.Count -gt 200) { $newList = $newList[0..199] }
         try {
@@ -58,7 +35,6 @@ function Add-HistoryUrl {
         } catch {}
     }
 }
-
 function Clear-History {
     try { Clear-Content -LiteralPath $script:LogFile -ErrorAction Stop } catch {}
 }
@@ -92,8 +68,17 @@ Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 [System.Windows.Forms.Application]::EnableVisualStyles()
                                                                                                 $version = "beta 251112.0912"
-$formPrincipal = New-Object System.Windows.Forms.Form
+$formPrincipal = New-Object DropShadowForm
 $formPrincipal.Size = New-Object System.Drawing.Size(400, 800)
+$formPrincipal.Opacity = 0.97  # ligera transparencia “moderna”
+$formPrincipal.Add_Shown({
+    param($sender, $e)
+    Set-RoundedRegion -Control $sender -Radius 20
+})
+$formPrincipal.Add_Resize({
+    param($sender, $e)
+    Set-RoundedRegion -Control $sender -Radius 20
+})
 $formPrincipal.StartPosition = "CenterScreen"
 $formPrincipal.BackColor = [System.Drawing.Color]::White
 $formPrincipal.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::FixedDialog
@@ -107,6 +92,25 @@ Write-Host "                   YTDLL                       " -ForegroundColor Gr
 Write-Host ("              Versión: v{0}" -f $version) -ForegroundColor Green
 Write-Host "=============================================" -ForegroundColor DarkCyan
 $toolTip = New-Object System.Windows.Forms.ToolTip
+# Requiere System.Drawing (ya lo estás usando)
+function Set-RoundedRegion {
+    param(
+        [Parameter(Mandatory = $true)]
+        [System.Windows.Forms.Control]$Control,
+
+        [int]$Radius = 10
+    )
+    if ($Radius -lt 1 -or -not $Control.Width -or -not $Control.Height) { return }
+    $rect = New-Object System.Drawing.Rectangle(0, 0, $Control.Width, $Control.Height)
+    $path = New-Object System.Drawing.Drawing2D.GraphicsPath
+    $diam = $Radius * 2
+    $path.AddArc($rect.X, $rect.Y, $diam, $diam, 180, 90)
+    $path.AddArc($rect.Right - $diam, $rect.Y, $diam, $diam, 270, 90)
+    $path.AddArc($rect.Right - $diam, $rect.Bottom - $diam, $diam, $diam, 0, 90)
+    $path.AddArc($rect.X, $rect.Bottom - $diam, $diam, $diam, 90, 90)
+    $path.CloseFigure()
+    $Control.Region = New-Object System.Drawing.Region($path)
+}
 function Create-Button {
     param (
         [string]$Text,
@@ -118,20 +122,30 @@ function Create-Button {
         [System.Drawing.Font]$Font = $defaultFont,
         [bool]$Enabled = $true
     )
-    $buttonStyle = @{ FlatStyle = [System.Windows.Forms.FlatStyle]::Standard; Font = $defaultFont }
-    $button_MouseEnter = { $this.BackColor = [System.Drawing.Color]::FromArgb(200,200,255); $this.Font = $boldFont }
-    $button_MouseLeave = { $this.BackColor = $this.Tag; $this.Font = $defaultFont }
     $button = New-Object System.Windows.Forms.Button
-    $button.Text = $Text
-    $button.Size = $Size
-    $button.Location = $Location
+    $button.Text      = $Text
+    $button.Size      = $Size
+    $button.Location  = $Location
     $button.BackColor = $BackColor
     $button.ForeColor = $ForeColor
-    $button.Font = $Font
-    $button.FlatStyle = $buttonStyle.FlatStyle
+    $button.Font      = $Font
+    $button.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+    $button.FlatAppearance.BorderSize = 0
     $button.Tag = $BackColor
+    $button_MouseEnter = {
+        $this.BackColor = [System.Drawing.Color]::FromArgb(200,200,255)
+        $this.Font = $boldFont
+    }
+    $button_MouseLeave = {
+        $this.BackColor = $this.Tag
+        $this.Font = $defaultFont
+    }
     $button.Add_MouseEnter($button_MouseEnter)
     $button.Add_MouseLeave($button_MouseLeave)
+    $button.Add_Resize({
+        param($sender, $e)
+        Set-RoundedRegion -Control $sender -Radius 12
+    })
     $button.Enabled = $Enabled
     if ($ToolTipText) { $toolTip.SetToolTip($button, $ToolTipText) }
     return $button
@@ -153,6 +167,25 @@ function Create-Label {
     if ($ToolTipText) { $toolTip.SetToolTip($label, $ToolTipText) }
     return $label
 }
+Add-Type -TypeDefinition @"
+using System;
+using System.Windows.Forms;
+
+public class DropShadowForm : Form
+{
+    private const int CS_DROPSHADOW = 0x00020000;
+
+    protected override CreateParams CreateParams
+    {
+        get
+        {
+            CreateParams cp = base.CreateParams;
+            cp.ClassStyle |= CS_DROPSHADOW;
+            return cp;
+        }
+    }
+}
+"@ -ReferencedAssemblies System.Windows.Forms
 function Create-Form {
     param(
         [Parameter(Mandatory=$true)][string]$Title,
