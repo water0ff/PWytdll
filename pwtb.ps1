@@ -1508,19 +1508,40 @@ $cmbAudioFmt = Create-ComboBox `
     -Size (New-Object System.Drawing.Size(360, 28))
 $txtUrl = Create-TextBox `
     -Location (New-Object System.Drawing.Point(20, 180)) `
-    -Size (New-Object System.Drawing.Size(360, 50)) `
-    -Font (New-Object System.Drawing.Font("Segoe UI", 18, [System.Drawing.FontStyle]::Regular)) `
+    -Size (New-Object System.Drawing.Size(360, 40)) `
+    -Font (New-Object System.Drawing.Font("Segoe UI", 16, [System.Drawing.FontStyle]::Regular)) `
     -Text $global:UrlPlaceholder `
-    -BackColor ([System.Drawing.Color]::White) `
+    -BackColor ([System.Drawing.Color]::FromArgb(255, 255, 220)) `  # Amarillo suave llamativo
     -ForeColor ([System.Drawing.Color]::Gray) `
-    -Multiline $true `
-    -ScrollBars ([System.Windows.Forms.ScrollBars]::Horizontal)
+    -Multiline $false `
+    -ScrollBars ([System.Windows.Forms.ScrollBars]::None)
+
+# (Opcional) bordecito más marcado si quieres
+$txtUrl.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
+
 $txtUrl.Add_TextChanged({
     if ($txtUrl.Text -ne $global:UrlPlaceholder) {
         $toolTip.SetToolTip($txtUrl, $txtUrl.Text)
     } else {
         $toolTip.SetToolTip($txtUrl, "")
     }
+})
+$txtUrl.Add_GotFocus({
+    if ($this.Text -eq $global:UrlPlaceholder) {
+        $this.Text = ""
+        $this.ForeColor = [System.Drawing.Color]::Black
+    }
+    # Resaltar aún más cuando el usuario va a escribir
+    $this.BackColor = [System.Drawing.Color]::FromArgb(255, 245, 180)
+})
+
+$txtUrl.Add_LostFocus({
+    if ([string]::IsNullOrWhiteSpace($this.Text)) {
+        $this.Text = $global:UrlPlaceholder
+        $this.ForeColor = [System.Drawing.Color]::Gray
+    }
+    # Regresa al color “llamativo” pero neutro
+    $this.BackColor = [System.Drawing.Color]::FromArgb(255, 255, 220)
 })
 $ctxUrlHistory = New-Object System.Windows.Forms.ContextMenuStrip
 $lblEstadoConsulta = Create-Label `
