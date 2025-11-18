@@ -1544,7 +1544,7 @@ $btnConsultar = Create-Button -Text "Consultar" `
     $btnConsultar.Visible = $false
     $btnConsultar.Enabled = $false
 $btnDescargar = Create-Button -Text "Descargar" `
-    -Location (New-Object System.Drawing.Point(20, 200)) `
+    -Location (New-Object System.Drawing.Point(20, 220)) `
     -Size (New-Object System.Drawing.Size(360, 65)) `
     -BackColor ([System.Drawing.Color]::Black) -ForeColor ([System.Drawing.Color]::White) `
     -ToolTipText "Descargar usando bestvideo+bestaudio -> mp4"
