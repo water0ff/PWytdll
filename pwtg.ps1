@@ -1602,7 +1602,7 @@ $btnDescargar = Create-Button -Text "Descargar" `
     -Location (New-Object System.Drawing.Point(20, 250)) `
     -Size (New-Object System.Drawing.Size(360, 50)) `
     -BackColor $ColorPrimaryDark `
-    -ForeColor [System.Drawing.Color]::White `
+    -ForeColor ([System.Drawing.Color]::White) `
     -ToolTipText "Descargar usando bestvideo+bestaudio -> mp4"
     Set-DownloadButtonVisual
 $lblPreview = Create-Label -Text "Vista previa:" `
@@ -1625,8 +1625,8 @@ $lblNode       = Create-Label -Text "Node.js: verificando..." -Location (New-Obj
 $btnExit = Create-Button -Text "Salir" `
     -Location (New-Object System.Drawing.Point(20, 720)) `
     -Size (New-Object System.Drawing.Size(180, 35)) `
-    -BackColor $ColorPrimaryDark `
-    -ForeColor [System.Drawing.Color]::White `
+    -BackColor ([System.Drawing.Color]::Black) `
+    -ForeColor ([System.Drawing.Color]::White) `
     -ToolTipText "Cerrar la aplicación"
 $btnSites = Create-Button -Text "Sitios compatibles" `
     -Location (New-Object System.Drawing.Point(200, 720)) `
