@@ -11,7 +11,7 @@ $script:LogFile = "C:\Temp\ytdll_history.txt"
 if (-not (Test-Path -LiteralPath $script:LogFile)) {
     New-Item -ItemType File -Path $script:LogFile -Force | Out-Null
 }
-                                                                                                $version = "beta 251119.0906"
+                                                                                                $version = "beta 251119.1001"
 function Get-HistoryUrls {
     try {
         $content = Get-Content -LiteralPath $script:LogFile -ErrorAction Stop -Raw
@@ -857,6 +857,92 @@ function Get-TempThumbPattern {
     $tmp = [System.IO.Path]::GetTempPath()
     return (Join-Path $tmp "ytdll_thumb_*")
 }
+function Get-ThumbnailListFromYtDlp {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Url
+    )
+    try {
+        $yt = Get-Command yt-dlp -ErrorAction Stop
+    } catch {
+        Write-Host "[THUMB] yt-dlp no disponible para listar thumbnails." -ForegroundColor Red
+        return @()
+    }
+    $res = Invoke-Capture -ExePath $yt.Source -Args @("--list-thumbnails", $Url)
+    if ($res.ExitCode -ne 0 -or [string]::IsNullOrWhiteSpace($res.StdOut)) {
+        Write-Host "[THUMB] --list-thumbnails devolvió error o salida vacía." -ForegroundColor Yellow
+        return @()
+    }
+    $lines = $res.StdOut -split "`r?`n"
+    $startIndex = -1
+    for ($i = 0; $i -lt $lines.Length; $i++) {
+        if ($lines[$i] -match '^\s*ID\s+Width\s+Height\s+URL') {
+            $startIndex = $i + 1
+            break
+        }
+    }
+    if ($startIndex -lt 0) {
+        Write-Host "[THUMB] No se encontró encabezado de tabla de thumbnails." -ForegroundColor Yellow
+        return @()
+    }
+    $thumbs = @()
+    for ($i = $startIndex; $i -lt $lines.Length; $i++) {
+        $line = $lines[$i].Trim()
+        if (-not $line) { continue }
+        $m = [regex]::Match($line, '^\s*(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s*$')
+        if (-not $m.Success) { continue }
+        $id     = $m.Groups[1].Value
+        $width  = $m.Groups[2].Value
+        $height = $m.Groups[3].Value
+        $url    = $m.Groups[4].Value
+        $wInt = 0
+        $hInt = 0
+        [void][int]::TryParse($width,  [ref]$wInt)
+        [void][int]::TryParse($height, [ref]$hInt)
+        $thumbs += [pscustomobject]@{
+            Id     = $id
+            Width  = $wInt
+            Height = $hInt
+            Url    = $url
+        }
+    }
+    if (-not $thumbs -or $thumbs.Count -eq 0) {
+        Write-Host "[THUMB] Tabla de thumbnails vacía o no parseada." -ForegroundColor Yellow
+        return @()
+    }
+    foreach ($t in $thumbs) {
+        if ($t.Url) {
+            $t.Url = Normalize-ThumbUrl -Url $t.Url -Extractor $script:lastExtractor
+        }
+    }
+    return $thumbs
+}
+function Select-BestThumbnail {
+    param(
+        [Parameter(Mandatory = $true)]
+        [array]$Thumbs
+    )
+    if (-not $Thumbs -or $Thumbs.Count -eq 0) { return $null }
+    $ranked = $Thumbs | ForEach-Object {
+        $isWebp = 0
+        if ($_.Url -match '\.webp($|\?)') { $isWebp = 1 }
+        $w = if ($_.Width  -gt 0) { $_.Width }  else { 0 }
+        $h = if ($_.Height -gt 0) { $_.Height } else { 0 }
+        $area = [math]::Max($w * $h, 1)
+        $idNum = 0
+        [void][int]::TryParse($_.Id, [ref]$idNum)
+        [pscustomobject]@{
+            Thumb   = $_
+            IsWebp  = $isWebp
+            Area    = $area
+            IdNum   = $idNum
+        }
+    }
+    $best = $ranked |
+        Sort-Object IsWebp, @{Expression = "Area"; Descending = $true}, @{Expression = "IdNum"; Descending = $true} |
+        Select-Object -First 1
+    return $best.Thumb
+}
 function Fetch-ThumbnailFile {
     param(
         [Parameter(Mandatory=$true)][string]$Url
@@ -972,34 +1058,40 @@ function Show-PreviewUniversal {
             Write-Host "[PREVIEW] Detectado WEBP, intentando conversión..." -ForegroundColor Yellow
             $png = Convert-WebpUrlToPng -Url $DirectThumbUrl
             if ($png -and (Test-Path $png)) {
-                try { 
-                    if ($picPreview.Image) { $picPreview.Image.Dispose() } 
-                    $imgW = [System.Drawing.Image]::FromFile($png)
-                    $picPreview.Image = $imgW
-                    if ($Titulo) { $toolTip.SetToolTip($picPreview, $Titulo) }
-                    Write-Host "[PREVIEW] Vista previa cargada (WEBP convertido)" -ForegroundColor Green
-                    return $true
-                } catch {
-                    Write-Host "[PREVIEW] Error cargando WEBP convertido: $_" -ForegroundColor Red
-                }
+                try { if ($picPreview.Image) { $picPreview.Image.Dispose() } } catch {}
+                $imgW = [System.Drawing.Image]::FromFile($png)
+                $picPreview.Image = $imgW
+                if ($Titulo) { $toolTip.SetToolTip($picPreview, $Titulo) }
+                Write-Host "[PREVIEW] Vista previa cargada (WEBP convertido)" -ForegroundColor Green
+                return $true
             }
         }
         Write-Host "[PREVIEW] Intentando carga directa de imagen..." -ForegroundColor Yellow
         $img1 = Get-ImageFromUrl -Url $DirectThumbUrl
         if ($img1) {
-            try { 
-                if ($picPreview.Image) { $picPreview.Image.Dispose() } 
-                $picPreview.Image = $img1
-                if ($Titulo) { $toolTip.SetToolTip($picPreview, $Titulo) }
-                Write-Host "[PREVIEW] Vista previa cargada (directa)" -ForegroundColor Green
-                return $true
-            } catch {
-                Write-Host "[PREVIEW] Error en carga directa: $_" -ForegroundColor Red
-            }
+            try { if ($picPreview.Image) { $picPreview.Image.Dispose() } } catch {}
+            $picPreview.Image = $img1
+            if ($Titulo) { $toolTip.SetToolTip($picPreview, $Titulo) }
+            Write-Host "[PREVIEW] Vista previa cargada (directa)" -ForegroundColor Green
+            return $true
         }
         Write-Host "[PREVIEW] Falló carga directa" -ForegroundColor Red
     }
-    Write-Host "[PREVIEW] Usando fallback con yt-dlp..." -ForegroundColor Yellow
+    Write-Host "[PREVIEW] Intentando obtener thumbnails con --list-thumbnails..." -ForegroundColor Yellow
+    $thumbList = Get-ThumbnailListFromYtDlp -Url $Url
+    if ($thumbList -and $thumbList.Count -gt 0) {
+        $bestThumb = Select-BestThumbnail -Thumbs $thumbList
+        if ($bestThumb -and $bestThumb.Url) {
+            Write-Host "[PREVIEW] Miniatura elegida desde lista: $($bestThumb.Url)" -ForegroundColor Green
+            if (Show-PreviewImage -ImageUrl $bestThumb.Url -Titulo $Titulo) {
+                Write-Host "[PREVIEW] Vista previa cargada desde --list-thumbnails" -ForegroundColor Green
+                return $true
+            } else {
+                Write-Host "[PREVIEW] Falló carga de URL desde --list-thumbnails" -ForegroundColor Red
+            }
+        }
+    }
+    Write-Host "[PREVIEW] Usando fallback con yt-dlp (write-thumbnail)..." -ForegroundColor Yellow
     $file = Fetch-ThumbnailFile -Url $Url
     if ($file -and (Test-Path -LiteralPath $file)) {
         try {
@@ -1016,24 +1108,24 @@ function Show-PreviewUniversal {
     }
     Write-Host "[PREVIEW] No se pudo cargar vista previa" -ForegroundColor Red
     Write-Host "[PREVIEW] Probando fallback por fotograma (ffmpeg)..." -ForegroundColor Yellow
-        $stream = Get-BestStreamUrl -Url $Url
-        if ($stream) {
-            $snap = Build-PreviewFromStream -StreamUrl $stream -SeekSec 2
-            if ($snap -and (Test-Path $snap)) {
-                try {
-                    $img3 = [System.Drawing.Image]::FromFile($snap)
-                    try { if ($picPreview.Image) { $picPreview.Image.Dispose() } } catch {}
-                    $picPreview.Image = $img3
-                    if ($Titulo) { $toolTip.SetToolTip($picPreview, $Titulo) }
-                    Write-Host "[PREVIEW] Vista previa cargada (fotograma HLS)" -ForegroundColor Green
-                    return $true
-                } catch {
-                    Write-Host "[PREVIEW] Error cargando fotograma: $_" -ForegroundColor Red
-                }
-            } else {
-                Write-Host "[PREVIEW] No se pudo generar fotograma de HLS." -ForegroundColor Red
+    $stream = Get-BestStreamUrl -Url $Url
+    if ($stream) {
+        $snap = Build-PreviewFromStream -StreamUrl $stream -SeekSec 2
+        if ($snap -and (Test-Path $snap)) {
+            try {
+                $img3 = [System.Drawing.Image]::FromFile($snap)
+                try { if ($picPreview.Image) { $picPreview.Image.Dispose() } } catch {}
+                $picPreview.Image = $img3
+                if ($Titulo) { $toolTip.SetToolTip($picPreview, $Titulo) }
+                Write-Host "[PREVIEW] Vista previa cargada (fotograma HLS)" -ForegroundColor Green
+                return $true
+            } catch {
+                Write-Host "[PREVIEW] Error cargando fotograma: $_" -ForegroundColor Red
             }
+        } else {
+            Write-Host "[PREVIEW] No se pudo generar fotograma de HLS." -ForegroundColor Red
         }
+    }
     return $false
 }
 function Show-PreviewImage {
