@@ -87,6 +87,14 @@ $formPrincipal.Add_Resize({
 })
 $defaultFont = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Regular)
 $boldFont    = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
+$ColorBgForm      = [System.Drawing.Color]::FromArgb(245,245,250)
+$ColorPrimary     = [System.Drawing.Color]::FromArgb(33,150,243)   # azul moderno
+$ColorPrimaryDark = [System.Drawing.Color]::FromArgb(25,118,210)
+$ColorAccent      = [System.Drawing.Color]::FromArgb(255,193,7)    # amarillo acento
+$ColorText        = [System.Drawing.Color]::FromArgb(33,33,33)
+$ColorSubText     = [System.Drawing.Color]::FromArgb(120,120,120)
+$ColorPanel       = [System.Drawing.Color]::FromArgb(250,250,252)
+$formPrincipal.BackColor = $ColorBgForm
 Write-Host "`n=============================================" -ForegroundColor DarkCyan
 Write-Host "                   YTDLL                       " -ForegroundColor Green
 Write-Host ("              Versión: v{0}" -f $version) -ForegroundColor Green
@@ -115,8 +123,8 @@ function Create-Button {
     param (
         [string]$Text,
         [System.Drawing.Point]$Location,
-        [System.Drawing.Color]$BackColor = [System.Drawing.Color]::White,
-        [System.Drawing.Color]$ForeColor = [System.Drawing.Color]::Black,
+        [System.Drawing.Color]$BackColor = $ColorPrimary,
+        [System.Drawing.Color]$ForeColor = [System.Drawing.Color]::White,
         [string]$ToolTipText = $null,
         [System.Drawing.Size]$Size = (New-Object System.Drawing.Size(220, 35)),
         [System.Drawing.Font]$Font = $defaultFont,
@@ -131,20 +139,26 @@ function Create-Button {
     $button.Font      = $Font
     $button.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
     $button.FlatAppearance.BorderSize = 0
+    $button.FlatAppearance.MouseDownBackColor = $ColorPrimaryDark
+    $button.FlatAppearance.MouseOverBackColor = $ColorPrimary
     $button.Tag = $BackColor
     $button_MouseEnter = {
-        $this.BackColor = [System.Drawing.Color]::FromArgb(200,200,255)
+        $this.BackColor = $ColorPrimaryDark
         $this.Font = $boldFont
+        $this.Cursor = [System.Windows.Forms.Cursors]::Hand
     }
     $button_MouseLeave = {
         $this.BackColor = $this.Tag
         $this.Font = $defaultFont
+        $this.Cursor = [System.Windows.Forms.Cursors]::Default
     }
     $button.Add_MouseEnter($button_MouseEnter)
     $button.Add_MouseLeave($button_MouseLeave)
     $button.Add_Resize({
         param($sender, $e)
-        Set-RoundedRegion -Control $sender -Radius 12
+        $radius = [int]([math]::Round($sender.Height / 2))
+        if ($radius -lt 10) { $radius = 10 }
+        Set-RoundedRegion -Control $sender -Radius $radius
     })
     $button.Enabled = $Enabled
     if ($ToolTipText) { $toolTip.SetToolTip($button, $ToolTipText) }
@@ -152,18 +166,35 @@ function Create-Button {
 }
 function Create-Label {
     param(
-        [string]$Text,[System.Drawing.Point]$Location,
+        [string]$Text,
+        [System.Drawing.Point]$Location,
         [System.Drawing.Color]$BackColor = [System.Drawing.Color]::Transparent,
-        [System.Drawing.Color]$ForeColor = [System.Drawing.Color]::Black,
-        [string]$ToolTipText = $null,[System.Drawing.Size]$Size = (New-Object System.Drawing.Size(200, 30)),
+        [System.Drawing.Color]$ForeColor = $ColorText,
+        [string]$ToolTipText = $null,
+        [System.Drawing.Size]$Size = (New-Object System.Drawing.Size(200, 30)),
         [System.Drawing.Font]$Font = $defaultFont,
         [System.Windows.Forms.BorderStyle]$BorderStyle = [System.Windows.Forms.BorderStyle]::None,
-        [System.Drawing.ContentAlignment]$TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft
+        [System.Drawing.ContentAlignment]$TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft,
+        [switch]$IsTitle,
+        [switch]$IsTag
     )
     $label = New-Object System.Windows.Forms.Label
-    $label.Text = $Text; $label.Size = $Size; $label.Location = $Location
-    $label.BackColor = $BackColor; $label.ForeColor = $ForeColor; $label.Font = $Font
-    $label.BorderStyle = $BorderStyle; $label.TextAlign = $TextAlign
+    $label.Text       = $Text
+    $label.Size       = $Size
+    $label.Location   = $Location
+    $label.BackColor  = $BackColor
+    $label.ForeColor  = $ForeColor
+    $label.Font       = $Font
+    $label.BorderStyle= $BorderStyle
+    $label.TextAlign  = $TextAlign
+    if ($IsTitle) {
+        $label.Font      = $boldFont
+        $label.ForeColor = $ColorPrimaryDark
+    }
+    if ($IsTag) {
+        $label.BackColor = [System.Drawing.Color]::FromArgb(230,235,245)
+        $label.ForeColor = $ColorSubText
+    }
     if ($ToolTipText) { $toolTip.SetToolTip($label, $ToolTipText) }
     return $label
 }
@@ -549,17 +580,19 @@ function Create-IconButton {
         [System.Drawing.Point]$Location,
         [string]$ToolTipText
     )
-    $btn = New-Object System.Windows.Forms.Button
-    $btn.Text = $Text
-    $btn.Size = New-Object System.Drawing.Size(26, 24) # compacto
-    $btn.Location = $Location
-    $btn.Font = New-Object System.Drawing.Font("Segoe UI Symbol", 10, [System.Drawing.FontStyle]::Bold)
-    $btn.FlatStyle = [System.Windows.Forms.FlatStyle]::Standard
-    $btn.BackColor = [System.Drawing.Color]::White
-    $btn.Tag = $btn.BackColor
-    $btn.Add_MouseEnter({ $this.BackColor = [System.Drawing.Color]::FromArgb(220,230,255) })
-    $btn.Add_MouseLeave({ $this.BackColor = $this.Tag })
-    if ($ToolTipText) { $toolTip.SetToolTip($btn, $ToolTipText) }
+    $btn = Create-Button `
+        -Text $Text `
+        -Location $Location `
+        -Size (New-Object System.Drawing.Size(28, 28)) `
+        -BackColor $ColorPanel `
+        -ForeColor $ColorPrimary `
+        -ToolTipText $ToolTipText `
+        -Font (New-Object System.Drawing.Font("Segoe UI Symbol", 11, [System.Drawing.FontStyle]::Bold))
+    $btn.Add_Resize({
+        param($sender, $e)
+        $radius = [int]([math]::Round([math]::Min($sender.Width, $sender.Height) / 2))
+        Set-RoundedRegion -Control $sender -Radius $radius
+    })
     return $btn
 }
 function New-LinkLabel {
@@ -1378,7 +1411,7 @@ function Show-AppInfo {
     $lblTitulo = Create-Label -Text "YTDLL — Información" `
         -Location (New-Object System.Drawing.Point(20,16)) `
         -Size (New-Object System.Drawing.Size(460,28)) `
-        -Font (New-Object System.Drawing.Font("Segoe UI",12,[System.Drawing.FontStyle]::Bold))
+        -IsTitle
     $lblVer = Create-Label -Text ("Versión: {0}" -f $version) `
         -Location (New-Object System.Drawing.Point(20,46)) `
         -Size (New-Object System.Drawing.Size(460,22)) `
@@ -1386,7 +1419,7 @@ function Show-AppInfo {
     $lblCamb = Create-Label -Text "Cambios recientes:" `
         -Location (New-Object System.Drawing.Point(20,76)) `
         -Size (New-Object System.Drawing.Size(460,20)) `
-        -Font $boldFont
+        -IsTitle
     $psBlue = [System.Drawing.Color]::FromArgb(1,36,86)      # Azul PS clásico
     $psText = [System.Drawing.Color]::Gainsboro              # Texto claro
     $fontCambios = New-Object System.Drawing.Font("Consolas", 10)
@@ -1410,7 +1443,7 @@ function Show-AppInfo {
     $lblDeps = Create-Label -Text "Dependencias detectadas:" `
         -Location (New-Object System.Drawing.Point(20,258)) `
         -Size (New-Object System.Drawing.Size(460,22)) `
-        -Font $boldFont
+        -IsTitle
     $txtDeps = Create-TextBox `
         -Location (New-Object System.Drawing.Point(20,282)) `
         -Size (New-Object System.Drawing.Size(460,90)) `
@@ -1444,7 +1477,7 @@ function Show-AppInfo {
     $lblLinks = Create-Label -Text "Proyectos:" `
         -Location (New-Object System.Drawing.Point(20, 378)) `
         -Size (New-Object System.Drawing.Size(460, 22)) `
-        -Font $boldFont
+        -IsTitle
     $lnkApp = New-LinkLabel -Text "PWytdll (GitHub)" `
               -Url "https://github.com/water0ff/PWytdll/tree/main" `
               -Location (New-Object System.Drawing.Point(20, 404)) `
@@ -1494,10 +1527,10 @@ $btnInfo = Create-IconButton -Text "?" `
 $btnInfo.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Right
 $btnInfo.Size = New-Object System.Drawing.Size(26, 24)
 $btnInfo.Add_Click({ Show-AppInfo })
-
 $lblDestino = Create-Label -Text "Carpeta de destino:" `
     -Location (New-Object System.Drawing.Point(20, 15)) `
-    -Size (New-Object System.Drawing.Size(260, 20)) -Font $boldFont
+    -Size (New-Object System.Drawing.Size(260, 20)) `
+    -IsTitle
 $txtDestino = Create-TextBox `
     -Location (New-Object System.Drawing.Point(20, 38)) `
     -Size (New-Object System.Drawing.Size(330, 26)) `
@@ -1507,13 +1540,15 @@ $btnPickDestino = Create-IconButton -Text "📁" `
     -ToolTipText "Cambiar carpeta de destino"
 $lblVideoFmt = Create-Label -Text "Formato de VIDEO:" `
     -Location (New-Object System.Drawing.Point(20, 70)) `
-    -Size (New-Object System.Drawing.Size(360, 20)) -Font $boldFont
+    -Size (New-Object System.Drawing.Size(360, 20)) `
+    -IsTitle
 $cmbVideoFmt = Create-ComboBox `
     -Location (New-Object System.Drawing.Point(20, 93)) `
     -Size (New-Object System.Drawing.Size(360, 28))
 $lblAudioFmt = Create-Label -Text "Formato de AUDIO:" `
     -Location (New-Object System.Drawing.Point(20, 125)) `
-    -Size (New-Object System.Drawing.Size(360, 20)) -Font $boldFont
+    -Size (New-Object System.Drawing.Size(360, 20)) `
+    -IsTitle
 $cmbAudioFmt = Create-ComboBox `
     -Location (New-Object System.Drawing.Point(20, 148)) `
     -Size (New-Object System.Drawing.Size(360, 28))
@@ -1563,28 +1598,42 @@ $lblEstadoConsulta = Create-Label `
 $lblEstadoConsulta.Font = New-Object System.Drawing.Font("Consolas", 9)
     $lblEstadoConsulta.AutoEllipsis = $true
     $lblEstadoConsulta.UseCompatibleTextRendering = $true
-
 $btnDescargar = Create-Button -Text "Descargar" `
     -Location (New-Object System.Drawing.Point(20, 250)) `
     -Size (New-Object System.Drawing.Size(360, 50)) `
-    -BackColor ([System.Drawing.Color]::Black) -ForeColor ([System.Drawing.Color]::White) `
+    -BackColor $ColorPrimaryDark `
+    -ForeColor [System.Drawing.Color]::White `
     -ToolTipText "Descargar usando bestvideo+bestaudio -> mp4"
     Set-DownloadButtonVisual
 $lblPreview = Create-Label -Text "Vista previa:" `
     -Location (New-Object System.Drawing.Point(20, 300)) `
     -Size (New-Object System.Drawing.Size(360, 22)) `
-    -Font $boldFont
+    -IsTitle
 $picPreview = New-Object System.Windows.Forms.PictureBox
     $picPreview.Location   = New-Object System.Drawing.Point(20, 325)
     $picPreview.Size       = New-Object System.Drawing.Size(360, 203)
     $picPreview.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
     $picPreview.SizeMode   = [System.Windows.Forms.PictureBoxSizeMode]::Zoom
     $picPreview.BackColor  = [System.Drawing.Color]::White
-$lblTituloDeps = Create-Label -Text "Dependencias:" -Location (New-Object System.Drawing.Point(20, 590)) -Size (New-Object System.Drawing.Size(360, 24)) -Font $boldFont
+$lblTituloDeps = Create-Label -Text "Dependencias:" `
+    -Location (New-Object System.Drawing.Point(20, 590)) `
+    -Size (New-Object System.Drawing.Size(360, 24)) `
+    -IsTitle
 $lblYtDlp      = Create-Label -Text "yt-dlp: verificando..." -Location (New-Object System.Drawing.Point(80, 620)) -Size (New-Object System.Drawing.Size(300, 24)) -Font $defaultFont -BorderStyle ([System.Windows.Forms.BorderStyle]::FixedSingle)
 $lblFfmpeg     = Create-Label -Text "ffmpeg: verificando..." -Location (New-Object System.Drawing.Point(80, 650)) -Size (New-Object System.Drawing.Size(300, 24)) -Font $defaultFont -BorderStyle ([System.Windows.Forms.BorderStyle]::FixedSingle)
 $lblNode       = Create-Label -Text "Node.js: verificando..." -Location (New-Object System.Drawing.Point(80, 680)) -Size (New-Object System.Drawing.Size(300, 24)) -Font $defaultFont -BorderStyle ([System.Windows.Forms.BorderStyle]::FixedSingle)
-$btnExit    = Create-Button -Text "Salir"    -Location (New-Object System.Drawing.Point(20, 720)) -BackColor ([System.Drawing.Color]::Black) -ForeColor ([System.Drawing.Color]::White) -ToolTipText "Cerrar la aplicación" -Size (New-Object System.Drawing.Size(180, 35))
+$btnExit = Create-Button -Text "Salir" `
+    -Location (New-Object System.Drawing.Point(20, 720)) `
+    -Size (New-Object System.Drawing.Size(180, 35)) `
+    -BackColor $ColorPrimaryDark `
+    -ForeColor [System.Drawing.Color]::White `
+    -ToolTipText "Cerrar la aplicación"
+$btnSites = Create-Button -Text "Sitios compatibles" `
+    -Location (New-Object System.Drawing.Point(200, 720)) `
+    -Size (New-Object System.Drawing.Size(180, 35)) `
+    -BackColor $ColorAccent `
+    -ForeColor $ColorText `
+    -ToolTipText "Mostrar extractores de yt-dlp"
 $btnYtRefresh   = Create-IconButton -Text "↻" -Location (New-Object System.Drawing.Point(20, 620)) -ToolTipText "Buscar/actualizar yt-dlp"
 $btnYtUninstall = Create-IconButton -Text "✖" -Location (New-Object System.Drawing.Point(48, 620)) -ToolTipText "Desinstalar yt-dlp"
 function Show-UrlHistoryMenu {
@@ -1667,13 +1716,6 @@ $btnPickCookies.Add_Click({
 if ($script:cookiesPath) {
     $args += @("--cookies", $script:cookiesPath)
 }
-$btnSites = Create-Button -Text "Sitios compatibles" `
-    -Location (New-Object System.Drawing.Point(200, 720)) `
-    -Size (New-Object System.Drawing.Size(180, 35)) `
-    -BackColor ([System.Drawing.Color]::White) `
-    -ForeColor ([System.Drawing.Color]::Black) `
-    -ToolTipText "Mostrar extractores de yt-dlp"
-
 $btnSites.Add_Click({
     try { $yt = Get-Command yt-dlp -ErrorAction Stop } catch {
         [System.Windows.Forms.MessageBox]::Show("yt-dlp no está disponible.","Error") | Out-Null
