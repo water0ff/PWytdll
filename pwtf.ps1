@@ -1149,7 +1149,7 @@ function Invoke-ConsultaFromUI {
     $script:ultimaURL       = $Url
     $script:ultimoTitulo    = $titulo
     $lblEstadoConsulta.Text = ("Consultado: {0}" -f $titulo)
-    $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::ForestGreen
+    $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::Black #COLOR AQUI WE
     Write-Host ("`t[OK] Video consultado: {0}" -f $titulo) -ForegroundColor Green
     $cmbVideoFmt.Items.Clear()
         $prevLabelText = $lblEstadoConsulta.Text
@@ -1595,15 +1595,27 @@ $cmbAudioFmt = Create-ComboBox `
     -Size (New-Object System.Drawing.Size(360, 28))
 $txtUrl = Create-TextBox `
     -Location (New-Object System.Drawing.Point(20, 180)) `
-    -Size (New-Object System.Drawing.Size(360, 40)) `
+    -Size (New-Object System.Drawing.Size(330, 40)) `  # antes 360
     -Font (New-Object System.Drawing.Font("Segoe UI", 16, [System.Drawing.FontStyle]::Regular)) `
     -Text $global:UrlPlaceholder `
     -BackColor ([System.Drawing.Color]::FromArgb(255,255,220)) `
     -ForeColor ([System.Drawing.Color]::Gray) `
     -Multiline $false `
     -ScrollBars ([System.Windows.Forms.ScrollBars]::None)
+
 $txtUrl.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
-$txtUrl.TextAlign = [System.Windows.Forms.HorizontalAlignment]::Right
+$txtUrl.TextAlign = [System.Windows.Forms.HorizontalAlignment]::Center
+$btnUrlHistory = Create-IconButton -Text "▾" `
+    -Location (New-Object System.Drawing.Point(356, 186)) `  # alineado con el textbox
+    -ToolTipText "Historial de URLs"
+
+$btnUrlHistory.Size = New-Object System.Drawing.Size(24, 28)
+
+$btnUrlHistory.Add_Click({
+    Show-UrlHistoryMenu -AnchorControl $btnUrlHistory
+})
+$formPrincipal.Controls.Add($btnUrlHistory)
+
 $txtUrl.Add_TextChanged({
     if ($txtUrl.Text -ne $global:UrlPlaceholder -and -not [string]::IsNullOrWhiteSpace($txtUrl.Text)) {
         $toolTip.SetToolTip($txtUrl, (Get-DisplayUrl -Url $txtUrl.Text))
@@ -1611,14 +1623,6 @@ $txtUrl.Add_TextChanged({
         $toolTip.SetToolTip($txtUrl, "")
     }
 })
-$txtUrl.Add_GotFocus({
-    if ($this.Text -eq $global:UrlPlaceholder) {
-        $this.Text = ""
-        $this.ForeColor = [System.Drawing.Color]::Black
-    }
-    $this.BackColor = [System.Drawing.Color]::FromArgb(255, 245, 180)
-})
-
 $txtUrl.Add_LostFocus({
     if ([string]::IsNullOrWhiteSpace($this.Text)) {
         $this.Text = $global:UrlPlaceholder
@@ -1631,11 +1635,12 @@ $ctxUrlHistory = New-Object System.Windows.Forms.ContextMenuStrip
 $lblEstadoConsulta = Create-Label `
     -Text "Estado: sin consultar" `
     -Location (New-Object System.Drawing.Point(20, 530)) `
-    -Size (New-Object System.Drawing.Size(360, 55)) `
-    -Font $defaultFont -BorderStyle ([System.Windows.Forms.BorderStyle]::FixedSingle) `
-    -TextAlign ([System.Drawing.ContentAlignment]::TopLeft)
-$lblEstadoConsulta.Font = New-Object System.Drawing.Font("Consolas", 9)
-    $lblEstadoConsulta.AutoEllipsis = $true
+    -Size (New-Object System.Drawing.Size(360, 70)) ` 
+    -Font (New-Object System.Drawing.Font("Consolas", 10)) `
+    -BorderStyle ([System.Windows.Forms.BorderStyle]::FixedSingle) `
+    -TextAlign ([System.Drawing.ContentAlignment]::MiddleCenter)
+    $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::Black
+    $lblEstadoConsulta.AutoEllipsis = $false   # dejamos que haga multilínea sin "..."
     $lblEstadoConsulta.UseCompatibleTextRendering = $true
 $btnDescargar = Create-Button -Text "Descargar" `
     -Location (New-Object System.Drawing.Point(20, 250)) `
@@ -1676,6 +1681,10 @@ $btnSites = Create-Button -Text "Sitios compatibles" `
 $btnYtRefresh   = Create-IconButton -Text "↻" -Location (New-Object System.Drawing.Point(20, 620)) -ToolTipText "Buscar/actualizar yt-dlp"
 $btnYtUninstall = Create-IconButton -Text "✖" -Location (New-Object System.Drawing.Point(48, 620)) -ToolTipText "Desinstalar yt-dlp"
 function Show-UrlHistoryMenu {
+    param(
+        [Parameter(Mandatory = $true)]
+        [System.Windows.Forms.Control]$AnchorControl
+    )
     $ctxUrlHistory.Items.Clear()
     $items = @(Get-HistoryUrls)
     if (-not $items -or $items.Count -eq 0) {
@@ -1700,7 +1709,6 @@ function Show-UrlHistoryMenu {
             [void]$ctxUrlHistory.Items.Add($urlItem)
         }
     }
-
     if ($ctxUrlHistory.Items.Count -gt 0) {
         [void]$ctxUrlHistory.Items.Add((New-Object System.Windows.Forms.ToolStripSeparator))
     }
@@ -1718,23 +1726,9 @@ function Show-UrlHistoryMenu {
         }
     })
     [void]$ctxUrlHistory.Items.Add($miClear)
-    $pt = New-Object System.Drawing.Point(0, $txtUrl.Height)
-    $ctxUrlHistory.Show($txtUrl, $pt)
+    $pt = New-Object System.Drawing.Point(0, $AnchorControl.Height)
+    $ctxUrlHistory.Show($AnchorControl, $pt)
 }
-$txtUrl.Add_GotFocus({
-    if ($this.Text -eq $global:UrlPlaceholder) {
-        $this.Text = ""
-        $this.ForeColor = [System.Drawing.Color]::Black
-    }
-    Show-UrlHistoryMenu   # abrir historial al primer foco
-})
-$txtUrl.Add_MouseUp({
-    param($s,$e)
-    if ($e.Button -eq [System.Windows.Forms.MouseButtons]::Right) {
-        Show-UrlHistoryMenu
-    }
-})
-$txtUrl.ContextMenuStrip = $ctxUrlHistory
 $txtUrl.Add_LostFocus({
     if ([string]::IsNullOrWhiteSpace($this.Text)) {
         $this.Text = $global:UrlPlaceholder
