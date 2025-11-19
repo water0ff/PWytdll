@@ -1650,6 +1650,7 @@ $script:lastThumbUrl      = $null
 $script:formatsEnumerated = $false
 $script:cookiesPath = $null
 $script:ultimaRutaDescarga = [Environment]::GetFolderPath('Desktop')
+$script:lastDownloadedFile = $null
 $global:UrlPlaceholder = "Escribe la URL del video"
 $btnPickCookies = Create-IconButton -Text "🍪" `
     -Location (New-Object System.Drawing.Point(320, 10)) `
@@ -1747,6 +1748,27 @@ $picPreview = New-Object System.Windows.Forms.PictureBox
     $picPreview.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
     $picPreview.SizeMode   = [System.Windows.Forms.PictureBoxSizeMode]::Zoom
     $picPreview.BackColor  = [System.Drawing.Color]::White
+    $picPreview.Add_Click({
+        if ($script:lastDownloadedFile -and (Test-Path -LiteralPath $script:lastDownloadedFile)) {
+            try {
+                Start-Process -FilePath $script:lastDownloadedFile
+            } catch {
+                [System.Windows.Forms.MessageBox]::Show(
+                    "No se pudo abrir el archivo descargado.",
+                    "Error al reproducir",
+                    [System.Windows.Forms.MessageBoxButtons]::OK,
+                    [System.Windows.Forms.MessageBoxIcon]::Error
+                ) | Out-Null
+            }
+        } else {
+            [System.Windows.Forms.MessageBox]::Show(
+                "Aún no hay un archivo descargado para reproducir desde la vista previa.",
+                "Sin descarga",
+                [System.Windows.Forms.MessageBoxButtons]::OK,
+                [System.Windows.Forms.MessageBoxIcon]::Information
+            ) | Out-Null
+        }
+    })
 $lblTituloDeps = Create-Label -Text "Dependencias:" `
     -Location (New-Object System.Drawing.Point(20, 590)) `
     -Size (New-Object System.Drawing.Size(130, 24)) `
@@ -2378,6 +2400,7 @@ $btnDescargar.Add_Click({
         if ($exit -eq 0) {
             Add-HistoryUrl -Url $script:ultimaURL
             $lblEstadoConsulta.Text = ("Completado: {0}" -f $script:ultimoTitulo)
+                $script:lastDownloadedFile = $targetPath
             [System.Windows.Forms.MessageBox]::Show(("Descarga finalizada:`n{0}" -f $script:ultimoTitulo),
                 "Completado",[System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Information) | Out-Null
         } else {
