@@ -11,7 +11,7 @@ $script:LogFile = "C:\Temp\ytdll_history.txt"
 if (-not (Test-Path -LiteralPath $script:LogFile)) {
     New-Item -ItemType File -Path $script:LogFile -Force | Out-Null
 }
-                                                                                                $version = "beta 251118.1012"
+                                                                                                $version = "beta 251110.0812"
 function Get-HistoryUrls {
     try {
         $content = Get-Content -LiteralPath $script:LogFile -ErrorAction Stop -Raw
@@ -68,6 +68,21 @@ $global:defaultInstructions = @"
     Add-Type -AssemblyName System.Windows.Forms
     Add-Type -AssemblyName System.Drawing
     [System.Windows.Forms.Application]::EnableVisualStyles()
+    # Soporte para arrastrar ventana sin borde (user32.dll)
+Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+public static class NativeDrag {
+    public const int WM_NCLBUTTONDOWN = 0xA1;
+    public const int HTCAPTION = 0x2;
+
+    [DllImport("user32.dll")]
+    public static extern bool ReleaseCapture();
+
+    [DllImport("user32.dll")]
+    public static extern IntPtr SendMessage(IntPtr hWnd, int Msg, int wParam, int lParam);
+}
+"@
 $formPrincipal = New-Object System.Windows.Forms.Form
 $formPrincipal.Size = New-Object System.Drawing.Size(400, 800)
 $formPrincipal.StartPosition = "CenterScreen"
@@ -84,6 +99,17 @@ $formPrincipal.Add_Shown({
 $formPrincipal.Add_Resize({
     param($sender, $e)
     Set-RoundedRegion -Control $sender -Radius 20
+})
+$formPrincipal.Add_MouseDown({
+    param($sender, $e)
+    if ($e.Button -eq [System.Windows.Forms.MouseButtons]::Left) {
+        [NativeDrag]::ReleaseCapture() | Out-Null
+        [NativeDrag]::SendMessage($sender.Handle,
+            [NativeDrag]::WM_NCLBUTTONDOWN,
+            [NativeDrag]::HTCAPTION,
+            0
+        ) | Out-Null
+    }
 })
 $defaultFont = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Regular)
 $boldFont    = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
@@ -576,23 +602,36 @@ function Get-SelectedFormatId {
 }
 function Create-IconButton {
     param(
+        [Parameter(Mandatory = $true)]
         [string]$Text,
+        [Parameter(Mandatory = $true)]
         [System.Drawing.Point]$Location,
+        [System.Drawing.Size]$Size = $(New-Object System.Drawing.Size(26, 26)),
         [string]$ToolTipText
     )
-    $btn = Create-Button `
-        -Text $Text `
-        -Location $Location `
-        -Size (New-Object System.Drawing.Size(28, 28)) `
-        -BackColor $ColorPanel `
-        -ForeColor $ColorPrimary `
-        -ToolTipText $ToolTipText `
-        -Font (New-Object System.Drawing.Font("Segoe UI Symbol", 11, [System.Drawing.FontStyle]::Bold))
-    $btn.Add_Resize({
-        param($sender, $e)
-        $radius = [int]([math]::Round([math]::Min($sender.Width, $sender.Height) / 2))
-        Set-RoundedRegion -Control $sender -Radius $radius
-    })
+    $btn = New-Object System.Windows.Forms.Button
+    $btn.Text      = $Text
+    $btn.Location  = $Location
+    $btn.Size      = $Size
+    $btn.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+    $btn.FlatAppearance.BorderSize = 0
+    $btn.FlatAppearance.MouseOverBackColor = $ColorPrimaryLight
+    $btn.FlatAppearance.MouseDownBackColor = $ColorPrimaryDark
+    $btn.BackColor = $ColorSurface
+    $btn.ForeColor = $ColorText
+    try {
+        $btn.Font = New-Object System.Drawing.Font("Segoe UI Emoji", 10, [System.Drawing.FontStyle]::Regular)
+    } catch {
+        $btn.Font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Regular)
+    }
+    try {
+        Set-RoundedRegion -Control $btn -Radius 8
+    } catch {}
+    if ($ToolTipText -and $script:toolTip) {
+        $script:toolTip.SetToolTip($btn, $ToolTipText)
+    } elseif ($ToolTipText -and $toolTip) {
+        $toolTip.SetToolTip($btn, $ToolTipText)
+    }
     return $btn
 }
 function New-LinkLabel {
