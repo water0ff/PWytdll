@@ -120,6 +120,8 @@ $ColorAccent      = [System.Drawing.Color]::FromArgb(255,193,7)    # amarillo ac
 $ColorText        = [System.Drawing.Color]::FromArgb(33,33,33)
 $ColorSubText     = [System.Drawing.Color]::FromArgb(120,120,120)
 $ColorPanel       = [System.Drawing.Color]::FromArgb(250,250,252)
+$ColorPrimaryLight = [System.Drawing.Color]::FromArgb(144, 202, 249)   # azul clarito para hover
+$ColorSurface      = $ColorPanel                                      # surface = color de panel
 $formPrincipal.BackColor = $ColorBgForm
 Write-Host "`n=============================================" -ForegroundColor DarkCyan
 Write-Host "                   YTDLL                       " -ForegroundColor Green
