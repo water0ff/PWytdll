@@ -52,6 +52,7 @@ if ($PSVersionTable.PSVersion.Major -ge 7) {
 }
 $global:defaultInstructions = @"
 ----- CAMBIOS -----
+- Rediseño y agregar opción de previsualizar.
 - Ahora ya guarda un log con URLS consultadas.
 - Se agrea funcionalidad para ver y buscar sitios compatibles.
 - Soporte para VODS de twitch / vista previa.
@@ -1189,6 +1190,66 @@ function Get-BestStreamUrl {
     $line = ($res.StdOut -split "`r?`n" | Where-Object { $_.Trim() } | Select-Object -First 1)
     return ([string]$line).Trim()
 }
+function Show-VideoPreviewInline {
+    param(
+        [string]$Url,
+        [string]$Titulo = $null
+    )
+
+    if (-not $Url) {
+        [System.Windows.Forms.MessageBox]::Show(
+            "No hay URL para previsualizar.",
+            "Sin URL",
+            [System.Windows.Forms.MessageBoxButtons]::OK,
+            [System.Windows.Forms.MessageBoxIcon]::Information
+        ) | Out-Null
+        return
+    }
+
+    Write-Host "[PREVIEW-PLAY] Obteniendo stream con yt-dlp..." -ForegroundColor Cyan
+    $stream = Get-BestStreamUrl -Url $Url
+    if (-not $stream) {
+        [System.Windows.Forms.MessageBox]::Show(
+            "No se pudo obtener una URL de stream reproducible.",
+            "Error de previsualización",
+            [System.Windows.Forms.MessageBoxButtons]::OK,
+            [System.Windows.Forms.MessageBoxIcon]::Error
+        ) | Out-Null
+        return
+    }
+
+    Write-Host "[PREVIEW-PLAY] Stream: $stream" -ForegroundColor Green
+
+    # HTML simple con <video>
+    $safeTitle = ($Titulo ? $Titulo : "Vista previa")
+    $html = @"
+<html>
+<head>
+    <meta http-equiv='X-UA-Compatible' content='IE=Edge' />
+</head>
+<body style='margin:0;background-color:black;'>
+    <video controls autoplay
+           style='width:100%;height:100%;object-fit:contain;background-color:black;'
+           src='$stream'>
+        Tu navegador no puede reproducir este video.
+    </video>
+</body>
+</html>
+"@
+
+    try {
+        $script:videoBrowser.DocumentText = $html
+        $script:videoBrowser.Visible = $true
+        $picPreview.Visible = $false
+    } catch {
+        [System.Windows.Forms.MessageBox]::Show(
+            "No se pudo cargar la vista previa en el navegador interno.",
+            "Error",
+            [System.Windows.Forms.MessageBoxButtons]::OK,
+            [System.Windows.Forms.MessageBoxIcon]::Error
+        ) | Out-Null
+    }
+}
 function Build-PreviewFromStream {
     param(
         [Parameter(Mandatory=$true)][string]$StreamUrl,
@@ -1650,7 +1711,6 @@ $script:lastThumbUrl      = $null
 $script:formatsEnumerated = $false
 $script:cookiesPath = $null
 $script:ultimaRutaDescarga = [Environment]::GetFolderPath('Desktop')
-$script:lastDownloadedFile = $null
 $global:UrlPlaceholder = "Escribe la URL del video"
 $btnPickCookies = Create-IconButton -Text "🍪" `
     -Location (New-Object System.Drawing.Point(320, 10)) `
@@ -1721,9 +1781,57 @@ $txtUrl.Add_LostFocus({
     $this.BackColor = [System.Drawing.Color]::FromArgb(255, 255, 220)
 })
 $ctxUrlHistory = New-Object System.Windows.Forms.ContextMenuStrip
+$btnDescargar = Create-Button -Text "Descargar" `
+    -Location (New-Object System.Drawing.Point(20, 230)) `
+    -Size (New-Object System.Drawing.Size(360, 50)) `
+    -BackColor $ColorPrimary `
+    -ForeColor ([System.Drawing.Color]::White) `
+    -ToolTipText "Descargar usando bestvideo+bestaudio -> mp4"
+    Set-DownloadButtonVisual
+$lblPreview = Create-Label -Text "Vista previa:" `
+    -Location (New-Object System.Drawing.Point(20, 280)) `
+    -Size (New-Object System.Drawing.Size(130, 22)) `
+    -IsTitle
+$picPreview = New-Object System.Windows.Forms.PictureBox
+    $picPreview.Location   = New-Object System.Drawing.Point(20, 305)
+    $picPreview.Size       = New-Object System.Drawing.Size(360, 203)
+    $picPreview.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
+    $picPreview.SizeMode   = [System.Windows.Forms.PictureBoxSizeMode]::Zoom
+    $picPreview.BackColor  = [System.Drawing.Color]::White
+    $script:videoBrowser = New-Object System.Windows.Forms.WebBrowser
+    $script:videoBrowser.Location = $picPreview.Location
+    $script:videoBrowser.Size     = $picPreview.Size
+    $script:videoBrowser.ScrollBarsEnabled      = $false
+    $script:videoBrowser.ScriptErrorsSuppressed = $true
+    $script:videoBrowser.Visible = $false  # empieza oculto
+    $picPreview.Add_DoubleClick({
+        $url = Get-CurrentUrl
+        if ([string]::IsNullOrWhiteSpace($url)) {
+            [System.Windows.Forms.MessageBox]::Show(
+                "Escribe primero una URL para poder previsualizar.",
+                "Falta URL",
+                [System.Windows.Forms.MessageBoxButtons]::OK,
+                [System.Windows.Forms.MessageBoxIcon]::Information
+            ) | Out-Null
+            return
+        }
+        $titulo = $script:ultimoTitulo
+        Show-VideoPreviewInline -Url $url -Titulo $titulo
+    })
+    $btnClosePreview = Create-Button -Text "Cerrar vista previa" `
+        -Location (New-Object System.Drawing.Point(20, 540)) `
+        -Size (New-Object System.Drawing.Size(180, 30)) `
+        -BackColor $ColorAccent `
+        -ForeColor $ColorText `
+        -ToolTipText "Volver a la miniatura"
+    $btnClosePreview.Add_Click({
+        $script:videoBrowser.Visible = $false
+        $picPreview.Visible = $true
+    })
+    $formPrincipal.Controls.Add($btnClosePreview)
 $lblEstadoConsulta = Create-Label `
     -Text "Estado: sin consultar" `
-    -Location (New-Object System.Drawing.Point(20, 530)) `
+    -Location (New-Object System.Drawing.Point(20, 510)) `
     -Size (New-Object System.Drawing.Size(360, 70)) `
     -Font (New-Object System.Drawing.Font("Consolas", 10)) `
     -BorderStyle ([System.Windows.Forms.BorderStyle]::FixedSingle) `
@@ -1731,44 +1839,6 @@ $lblEstadoConsulta = Create-Label `
     $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::Black
     $lblEstadoConsulta.AutoEllipsis = $false   # dejamos que haga multilínea sin "..."
     $lblEstadoConsulta.UseCompatibleTextRendering = $true
-$btnDescargar = Create-Button -Text "Descargar" `
-    -Location (New-Object System.Drawing.Point(20, 250)) `
-    -Size (New-Object System.Drawing.Size(360, 50)) `
-    -BackColor $ColorPrimary `
-    -ForeColor ([System.Drawing.Color]::White) `
-    -ToolTipText "Descargar usando bestvideo+bestaudio -> mp4"
-    Set-DownloadButtonVisual
-$lblPreview = Create-Label -Text "Vista previa:" `
-    -Location (New-Object System.Drawing.Point(20, 300)) `
-    -Size (New-Object System.Drawing.Size(130, 22)) `
-    -IsTitle
-$picPreview = New-Object System.Windows.Forms.PictureBox
-    $picPreview.Location   = New-Object System.Drawing.Point(20, 325)
-    $picPreview.Size       = New-Object System.Drawing.Size(360, 203)
-    $picPreview.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
-    $picPreview.SizeMode   = [System.Windows.Forms.PictureBoxSizeMode]::Zoom
-    $picPreview.BackColor  = [System.Drawing.Color]::White
-    $picPreview.Add_Click({
-        if ($script:lastDownloadedFile -and (Test-Path -LiteralPath $script:lastDownloadedFile)) {
-            try {
-                Start-Process -FilePath $script:lastDownloadedFile
-            } catch {
-                [System.Windows.Forms.MessageBox]::Show(
-                    "No se pudo abrir el archivo descargado.",
-                    "Error al reproducir",
-                    [System.Windows.Forms.MessageBoxButtons]::OK,
-                    [System.Windows.Forms.MessageBoxIcon]::Error
-                ) | Out-Null
-            }
-        } else {
-            [System.Windows.Forms.MessageBox]::Show(
-                "Aún no hay un archivo descargado para reproducir desde la vista previa.",
-                "Sin descarga",
-                [System.Windows.Forms.MessageBoxButtons]::OK,
-                [System.Windows.Forms.MessageBoxIcon]::Information
-            ) | Out-Null
-        }
-    })
 $lblTituloDeps = Create-Label -Text "Dependencias:" `
     -Location (New-Object System.Drawing.Point(20, 590)) `
     -Size (New-Object System.Drawing.Size(130, 24)) `
@@ -1998,6 +2068,7 @@ $btnNodeUninstall.Add_Click({
     $formPrincipal.Controls.Add($btnSites)
     $formPrincipal.Controls.Add($lblPreview)
     $formPrincipal.Controls.Add($picPreview)
+    $formPrincipal.Controls.Add($script:videoBrowser)
     $formPrincipal.Controls.Add($txtUrl)
     $formPrincipal.Controls.Add($lblEstadoConsulta)
     $formPrincipal.Controls.Add($btnDescargar)
@@ -2400,7 +2471,6 @@ $btnDescargar.Add_Click({
         if ($exit -eq 0) {
             Add-HistoryUrl -Url $script:ultimaURL
             $lblEstadoConsulta.Text = ("Completado: {0}" -f $script:ultimoTitulo)
-                $script:lastDownloadedFile = $targetPath
             [System.Windows.Forms.MessageBox]::Show(("Descarga finalizada:`n{0}" -f $script:ultimoTitulo),
                 "Completado",[System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Information) | Out-Null
         } else {
