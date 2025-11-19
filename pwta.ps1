@@ -278,7 +278,8 @@ function Set-DownloadButtonVisual {
     $haveYt   = Test-CommandExists -Name "yt-dlp"
     $haveFfm  = Test-CommandExists -Name "ffmpeg"
     $haveNode = if ($script:RequireNode) { Test-CommandExists -Name "node" } else { $true }
-    $depsOk = $haveYt -and $haveFfm -and $haveNode
+        $haveMpv  = Test-CommandExists -Name "mpvnet"    # NUEVO
+        $depsOk = $haveYt -and $haveFfm -and $haveNode -and $haveMpv
     if (-not $depsOk) {
         $btnDescargar.Enabled   = $false
         $btnDescargar.BackColor = [System.Drawing.Color]::Black
@@ -352,7 +353,8 @@ function Refresh-GateByDeps {
     $haveYt   = Test-CommandExists -Name "yt-dlp"
     $haveFfm  = Test-CommandExists -Name "ffmpeg"
     $haveNode = if ($script:RequireNode) { Test-CommandExists -Name "node" } else { $true }
-    $allOk = $haveYt -and $haveFfm -and $haveNode
+        $haveMpv  = Test-CommandExists -Name "mpvnet"   # NUEVO
+        $allOk = $haveYt -and $haveFfm -and $haveNode -and $haveMpv
     Set-DownloadButtonVisual
 }
 $script:formatsIndex = @{}   # format_id -> objeto con metadatos (tipo, codecs, label)
@@ -1527,7 +1529,7 @@ function Initialize-AppHeadless {
     if ($script:RequireNode) {
         if (-not (Ensure-ToolHeadless -CommandName "node" -FriendlyName "Node.js" -ChocoPkg "nodejs-lts" -VersionArgs "--version")) { return $false }
     }
-
+    if (-not (Ensure-ToolHeadless -CommandName "mpvnet" -FriendlyName "mpv.net" -ChocoPkg "mpv.net" -VersionArgs "--version")) { return $false }
     return $true
 }
 if (-not (Initialize-AppHeadless)) {
