@@ -1190,66 +1190,6 @@ function Get-BestStreamUrl {
     $line = ($res.StdOut -split "`r?`n" | Where-Object { $_.Trim() } | Select-Object -First 1)
     return ([string]$line).Trim()
 }
-function Show-VideoPreviewInline {
-    param(
-        [string]$Url,
-        [string]$Titulo = $null
-    )
-
-    if (-not $Url) {
-        [System.Windows.Forms.MessageBox]::Show(
-            "No hay URL para previsualizar.",
-            "Sin URL",
-            [System.Windows.Forms.MessageBoxButtons]::OK,
-            [System.Windows.Forms.MessageBoxIcon]::Information
-        ) | Out-Null
-        return
-    }
-
-    Write-Host "[PREVIEW-PLAY] Obteniendo stream con yt-dlp..." -ForegroundColor Cyan
-    $stream = Get-BestStreamUrl -Url $Url
-    if (-not $stream) {
-        [System.Windows.Forms.MessageBox]::Show(
-            "No se pudo obtener una URL de stream reproducible.",
-            "Error de previsualización",
-            [System.Windows.Forms.MessageBoxButtons]::OK,
-            [System.Windows.Forms.MessageBoxIcon]::Error
-        ) | Out-Null
-        return
-    }
-
-    Write-Host "[PREVIEW-PLAY] Stream: $stream" -ForegroundColor Green
-
-    # HTML simple con <video>
-    $safeTitle = ($Titulo ? $Titulo : "Vista previa")
-    $html = @"
-<html>
-<head>
-    <meta http-equiv='X-UA-Compatible' content='IE=Edge' />
-</head>
-<body style='margin:0;background-color:black;'>
-    <video controls autoplay
-           style='width:100%;height:100%;object-fit:contain;background-color:black;'
-           src='$stream'>
-        Tu navegador no puede reproducir este video.
-    </video>
-</body>
-</html>
-"@
-
-    try {
-        $script:videoBrowser.DocumentText = $html
-        $script:videoBrowser.Visible = $true
-        $picPreview.Visible = $false
-    } catch {
-        [System.Windows.Forms.MessageBox]::Show(
-            "No se pudo cargar la vista previa en el navegador interno.",
-            "Error",
-            [System.Windows.Forms.MessageBoxButtons]::OK,
-            [System.Windows.Forms.MessageBoxIcon]::Error
-        ) | Out-Null
-    }
-}
 function Build-PreviewFromStream {
     param(
         [Parameter(Mandatory=$true)][string]$StreamUrl,
@@ -1646,10 +1586,11 @@ function Show-AppInfo {
         -Font $defaultFont `
         -Multiline $true `
         -ReadOnly $true
-    $ytVer  = (Get-ToolVersion -Command "yt-dlp" -ArgsForVersion "--version" -Parse "FirstLine")
-    $ffVer  = (Get-ToolVersion -Command "ffmpeg" -ArgsForVersion "-version"  -Parse "FirstLine")
-    $ndVer  = if ($script:RequireNode) { (Get-ToolVersion -Command "node" -ArgsForVersion "--version" -Parse "FirstLine") } else { $null }
-    $list = @()
+        $ytVer  = (Get-ToolVersion -Command "yt-dlp" -ArgsForVersion "--version" -Parse "FirstLine")
+        $ffVer  = (Get-ToolVersion -Command "ffmpeg" -ArgsForVersion "-version"  -Parse "FirstLine")
+        $ndVer  = if ($script:RequireNode) { (Get-ToolVersion -Command "node" -ArgsForVersion "--version" -Parse "FirstLine") } else { $null }
+        $mpvVer = (Get-ToolVersion -Command "mpvnet" -ArgsForVersion "--version" -Parse "FirstLine")
+        $list = @()
         if ($ytVer) { 
             $list += "yt-dlp: $ytVer"
         } else {
@@ -1666,6 +1607,11 @@ function Show-AppInfo {
             } else {
                 $list += "Node.js: no instalado"
             }
+        }
+        if ($mpvVer) {
+            $list += "mpv.net: $mpvVer"
+        } else {
+            $list += "mpv.net: no instalado"
         }
         $txtDeps.Text = ($list -join [Environment]::NewLine)
     $lblLinks = Create-Label -Text "Proyectos:" `
@@ -1798,37 +1744,62 @@ $picPreview = New-Object System.Windows.Forms.PictureBox
     $picPreview.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
     $picPreview.SizeMode   = [System.Windows.Forms.PictureBoxSizeMode]::Zoom
     $picPreview.BackColor  = [System.Drawing.Color]::White
-    $script:videoBrowser = New-Object System.Windows.Forms.WebBrowser
-    $script:videoBrowser.Location = $picPreview.Location
-    $script:videoBrowser.Size     = $picPreview.Size
-    $script:videoBrowser.ScrollBarsEnabled      = $false
-    $script:videoBrowser.ScriptErrorsSuppressed = $true
-    $script:videoBrowser.Visible = $false  # empieza oculto
-    $picPreview.Add_DoubleClick({
-        $url = Get-CurrentUrl
-        if ([string]::IsNullOrWhiteSpace($url)) {
+    $picPreview.Add_Click({
+        if (-not $script:videoConsultado -or [string]::IsNullOrWhiteSpace($script:ultimaURL)) {
             [System.Windows.Forms.MessageBox]::Show(
-                "Escribe primero una URL para poder previsualizar.",
-                "Falta URL",
+                "Primero consulta un video para poder reproducirlo.",
+                "Sin consulta",
                 [System.Windows.Forms.MessageBoxButtons]::OK,
                 [System.Windows.Forms.MessageBoxIcon]::Information
             ) | Out-Null
             return
         }
-        $titulo = $script:ultimoTitulo
-        Show-VideoPreviewInline -Url $url -Titulo $titulo
+    
+        $cmd = $null
+        try {
+            $cmd = Get-Command "mpvnet" -ErrorAction Stop
+        } catch {
+            [System.Windows.Forms.MessageBox]::Show(
+                "mpv.net no está disponible en el PATH.`nInstálalo o actualízalo desde la sección de Dependencias.",
+                "mpv.net no encontrado",
+                [System.Windows.Forms.MessageBoxButtons]::OK,
+                [System.Windows.Forms.MessageBoxIcon]::Warning
+            ) | Out-Null
+            return
+        }
+    
+        $playUrl = $null
+        try {
+            Write-Host "[PREVIEW-PLAY] Obteniendo stream con yt-dlp..." -ForegroundColor Cyan
+            $playUrl = Get-BestStreamUrl -Url $script:ultimaURL
+            if ($playUrl) {
+                Write-Host "[PREVIEW-PLAY] Stream: $playUrl" -ForegroundColor Cyan
+            }
+        } catch {
+            $playUrl = $null
+        }
+    
+        if (-not $playUrl) {
+            $playUrl = $script:ultimaURL
+        }
+    
+        try {
+            Start-Process -FilePath $cmd.Source -ArgumentList @(
+                $playUrl,
+                "--title=YTDLL Preview",
+                "--ontop=yes",
+                "--geometry=50%:50%",
+                "--autofit=60%"
+            ) | Out-Null
+        } catch {
+            [System.Windows.Forms.MessageBox]::Show(
+                "No se pudo iniciar mpv.net para reproducir el video.",
+                "Error al abrir mpv.net",
+                [System.Windows.Forms.MessageBoxButtons]::OK,
+                [System.Windows.Forms.MessageBoxIcon]::Error
+            ) | Out-Null
+        }
     })
-    $btnClosePreview = Create-Button -Text "Cerrar vista previa" `
-        -Location (New-Object System.Drawing.Point(20, 540)) `
-        -Size (New-Object System.Drawing.Size(180, 30)) `
-        -BackColor $ColorAccent `
-        -ForeColor $ColorText `
-        -ToolTipText "Volver a la miniatura"
-    $btnClosePreview.Add_Click({
-        $script:videoBrowser.Visible = $false
-        $picPreview.Visible = $true
-    })
-    $formPrincipal.Controls.Add($btnClosePreview)
 $lblEstadoConsulta = Create-Label `
     -Text "Estado: sin consultar" `
     -Location (New-Object System.Drawing.Point(20, 510)) `
@@ -1846,15 +1817,16 @@ $lblTituloDeps = Create-Label -Text "Dependencias:" `
 $lblYtDlp      = Create-Label -Text "yt-dlp: verificando..." -Location (New-Object System.Drawing.Point(80, 620)) -Size (New-Object System.Drawing.Size(300, 24)) -Font $defaultFont -BorderStyle ([System.Windows.Forms.BorderStyle]::FixedSingle)
 $lblFfmpeg     = Create-Label -Text "ffmpeg: verificando..." -Location (New-Object System.Drawing.Point(80, 650)) -Size (New-Object System.Drawing.Size(300, 24)) -Font $defaultFont -BorderStyle ([System.Windows.Forms.BorderStyle]::FixedSingle)
 $lblNode       = Create-Label -Text "Node.js: verificando..." -Location (New-Object System.Drawing.Point(80, 680)) -Size (New-Object System.Drawing.Size(300, 24)) -Font $defaultFont -BorderStyle ([System.Windows.Forms.BorderStyle]::FixedSingle)
+$lblMpvNet     = Create-Label -Text "mpv.net: verificando..." -Location (New-Object System.Drawing.Point(80, 710)) -Size (New-Object System.Drawing.Size(300, 24)) -Font $defaultFont -BorderStyle ([System.Windows.Forms.BorderStyle]::FixedSingle)
 $btnExit = Create-Button -Text "Salir" `
-    -Location (New-Object System.Drawing.Point(20, 720)) `
-    -Size (New-Object System.Drawing.Size(180, 35)) `
+    -Location (New-Object System.Drawing.Point(20, 740)) `
+    -Size (New-Object System.Drawing.Size(180, 30)) `
     -BackColor ([System.Drawing.Color]::Black) `
     -ForeColor ([System.Drawing.Color]::White) `
     -ToolTipText "Cerrar la aplicación"
 $btnSites = Create-Button -Text "Sitios compatibles" `
-    -Location (New-Object System.Drawing.Point(200, 720)) `
-    -Size (New-Object System.Drawing.Size(180, 35)) `
+    -Location (New-Object System.Drawing.Point(200, 740)) `
+    -Size (New-Object System.Drawing.Size(180, 30)) `
     -BackColor $ColorAccent `
     -ForeColor $ColorText `
     -ToolTipText "Mostrar extractores de yt-dlp"
@@ -2036,7 +2008,6 @@ $btnFfmpegRefresh.Add_Click({
 $btnFfmpegUninstall.Add_Click({
     Uninstall-Dependency -ChocoPkg "ffmpeg" -FriendlyName "ffmpeg" -LabelRef ([ref]$lblFfmpeg)
 })
-
 $btnNodeRefresh   = Create-IconButton -Text "↻" -Location (New-Object System.Drawing.Point(20, 680)) -ToolTipText "Buscar/actualizar Node.js (LTS)"
 $btnNodeUninstall = Create-IconButton -Text "✖" -Location (New-Object System.Drawing.Point(48, 680)) -ToolTipText "Desinstalar Node.js (LTS)"
 $btnNodeRefresh.Add_Click({
@@ -2044,6 +2015,15 @@ $btnNodeRefresh.Add_Click({
 })
 $btnNodeUninstall.Add_Click({
     Uninstall-Dependency -ChocoPkg "nodejs-lts" -FriendlyName "Node.js" -LabelRef ([ref]$lblNode)
+})
+$btnMpvNetRefresh   = Create-IconButton -Text "↻" -Location (New-Object System.Drawing.Point(20, 710)) -ToolTipText "Buscar/actualizar mpv.net"
+$btnMpvNetUninstall = Create-IconButton -Text "✖" -Location (New-Object System.Drawing.Point(48, 710)) -ToolTipText "Desinstalar mpv.net"
+
+$btnMpvNetRefresh.Add_Click({
+    Update-Dependency -ChocoPkg "mpv.net" -FriendlyName "mpv.net" -CommandName "mpvnet" -LabelRef ([ref]$lblMpvNet) -VersionArgs "--version" -Parse "FirstLine"
+})
+$btnMpvNetUninstall.Add_Click({
+    Uninstall-Dependency -ChocoPkg "mpv.net" -FriendlyName "mpv.net" -LabelRef ([ref]$lblMpvNet)
 })
     $formPrincipal.Controls.Add($btnNodeRefresh)
     $formPrincipal.Controls.Add($btnNodeUninstall)
@@ -2056,6 +2036,9 @@ $btnNodeUninstall.Add_Click({
     $formPrincipal.Controls.Add($btnFfmpegUninstall)
     $formPrincipal.Controls.Add($btnYtRefresh)
     $formPrincipal.Controls.Add($btnYtUninstall)
+    $formPrincipal.Controls.Add($btnMpvNetRefresh)
+    $formPrincipal.Controls.Add($btnMpvNetUninstall)
+    $formPrincipal.Controls.Add($lblMpvNet)
     $formPrincipal.Controls.Add($lblVideoFmt)
     $formPrincipal.Controls.Add($btnPickCookies)
     $formPrincipal.Controls.Add($btnInfo)
@@ -2068,7 +2051,6 @@ $btnNodeUninstall.Add_Click({
     $formPrincipal.Controls.Add($btnSites)
     $formPrincipal.Controls.Add($lblPreview)
     $formPrincipal.Controls.Add($picPreview)
-    $formPrincipal.Controls.Add($script:videoBrowser)
     $formPrincipal.Controls.Add($txtUrl)
     $formPrincipal.Controls.Add($lblEstadoConsulta)
     $formPrincipal.Controls.Add($btnDescargar)
@@ -2488,6 +2470,7 @@ $btnDescargar.Add_Click({
 })
 Refresh-DependencyLabel -CommandName "yt-dlp" -FriendlyName "yt-dlp" -LabelRef ([ref]$lblYtDlp) -VersionArgs "--version" -Parse "FirstLine"
 Refresh-DependencyLabel -CommandName "ffmpeg" -FriendlyName "ffmpeg" -LabelRef ([ref]$lblFfmpeg) -VersionArgs "-version" -Parse "FirstLine"
+Refresh-DependencyLabel -CommandName "mpvnet" -FriendlyName "mpv.net" -LabelRef ([ref]$lblMpvNet) -VersionArgs "--version" -Parse "FirstLine"
 if ($script:RequireNode) {
     Refresh-DependencyLabel -CommandName "node" -FriendlyName "Node.js" -LabelRef ([ref]$lblNode) -VersionArgs "--version" -Parse "FirstLine"
 }
