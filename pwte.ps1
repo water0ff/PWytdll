@@ -114,7 +114,7 @@ $formPrincipal.Add_MouseDown({
 $defaultFont         = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Regular)
 $boldFont            = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
 $ColorBgForm         = [System.Drawing.Color]::FromArgb(209, 209, 214)
-$ColorPrimary        = [System.Drawing.Color]::FromArgb(10, 132, 255)
+$ColorPrimary        = [System.Drawing.Color]::FromArgb(94, 92, 230) # INDIGO?
 $ColorPrimaryDark    = [System.Drawing.Color]::FromArgb(0, 92, 197)
 $ColorPrimaryLight   = [System.Drawing.Color]::FromArgb(142, 209, 255)
 $ColorSurface        = [System.Drawing.Color]::FromArgb(255, 255, 255)
@@ -1560,10 +1560,10 @@ $script:cookiesPath = $null
 $script:ultimaRutaDescarga = [Environment]::GetFolderPath('Desktop')
 $global:UrlPlaceholder = "Escribe la URL del video"
 $btnPickCookies = Create-IconButton -Text "🍪" `
-    -Location (New-Object System.Drawing.Point(300, 10)) `
+    -Location (New-Object System.Drawing.Point(320, 10)) `
     -ToolTipText "Seleccionar cookies.txt (opcional)"
 $btnInfo = Create-IconButton -Text "?" `
-    -Location (New-Object System.Drawing.Point(325, 10)) `
+    -Location (New-Object System.Drawing.Point(340, 10)) `
     -ToolTipText "Información de la aplicación"
 $btnInfo.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Right
 $btnInfo.Size = New-Object System.Drawing.Size(26, 24)
