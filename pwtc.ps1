@@ -278,8 +278,8 @@ function Set-DownloadButtonVisual {
     $haveYt   = Test-CommandExists -Name "yt-dlp"
     $haveFfm  = Test-CommandExists -Name "ffmpeg"
     $haveNode = if ($script:RequireNode) { Test-CommandExists -Name "node" } else { $true }
-        $haveMpv  = Test-CommandExists -Name "mpvnet"    # NUEVO
-        $depsOk = $haveYt -and $haveFfm -and $haveNode -and $haveMpv
+    $haveMpv  = Test-CommandExists -Name "mpvnet"
+    $depsOk = $haveYt -and $haveFfm -and $haveNode
     if (-not $depsOk) {
         $btnDescargar.Enabled   = $false
         $btnDescargar.BackColor = [System.Drawing.Color]::Black
@@ -300,16 +300,16 @@ function Set-DownloadButtonVisual {
         $btnDescargar.ForeColor = [System.Drawing.Color]::White
         $toolTip.SetToolTip($btnDescargar, "Aún no consultado: al hacer clic validará la URL (no descargará)")
     }
-        elseif (-not $script:formatsEnumerated) {
-            $btnDescargar.Enabled   = $true
-            $btnDescargar.BackColor = [System.Drawing.Color]::DarkOrange
-            $btnDescargar.ForeColor = [System.Drawing.Color]::White
-            $toolTip.SetToolTip($btnDescargar, "No se pudieron extraer formatos. Presiona 'Descargar' para volver a consultar.")
-            if ($lblEstadoConsulta) {
-                $lblEstadoConsulta.Text = "No fue posible extraer formatos. Presiona 'Descargar' para volver a consultar."
-                $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::DarkOrange
-            }
+    elseif (-not $script:formatsEnumerated) {
+        $btnDescargar.Enabled   = $true
+        $btnDescargar.BackColor = [System.Drawing.Color]::DarkOrange
+        $btnDescargar.ForeColor = [System.Drawing.Color]::White
+        $toolTip.SetToolTip($btnDescargar, "No se pudieron extraer formatos. Presiona 'Descargar' para volver a consultar.")
+        if ($lblEstadoConsulta) {
+            $lblEstadoConsulta.Text = "No fue posible extraer formatos. Presiona 'Descargar' para volver a consultar."
+            $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::DarkOrange
         }
+    }
     else {
         $btnDescargar.BackColor = [System.Drawing.Color]::ForestGreen
         $btnDescargar.ForeColor = [System.Drawing.Color]::White
@@ -317,7 +317,7 @@ function Set-DownloadButtonVisual {
     }
     $btnDescargar.Tag = $btnDescargar.BackColor
 }
-$script:RequireNode = $true
+$script:RequireNode = $false #Aqui vemos si se les va a pedir Node o No, falta probar que show
 function Test-CommandExists {
     param([Parameter(Mandatory=$true)][string]$Name)
     try { Get-Command $Name -ErrorAction Stop | Out-Null; return $true } catch { return $false }
@@ -353,8 +353,8 @@ function Refresh-GateByDeps {
     $haveYt   = Test-CommandExists -Name "yt-dlp"
     $haveFfm  = Test-CommandExists -Name "ffmpeg"
     $haveNode = if ($script:RequireNode) { Test-CommandExists -Name "node" } else { $true }
-        $haveMpv  = Test-CommandExists -Name "mpvnet"   # NUEVO
-        $allOk = $haveYt -and $haveFfm -and $haveNode -and $haveMpv
+    $haveMpv  = Test-CommandExists -Name "mpvnet"
+    $allOk = $haveYt -and $haveFfm -and $haveNode
     Set-DownloadButtonVisual
 }
 $script:formatsIndex = @{}   # format_id -> objeto con metadatos (tipo, codecs, label)
@@ -1484,11 +1484,6 @@ function Ensure-ToolHeadless {
     return $true
 }
 function Test-DotNet6DesktopRuntime {
-    <#
-        Devuelve $true si se encuentra algún runtime 6.x:
-        - Microsoft.NETCore.App 6.*
-        - Microsoft.WindowsDesktop.App 6.*
-    #>
     try {
         $cmd = Get-Command dotnet -ErrorAction Stop
     } catch {
@@ -1577,6 +1572,16 @@ function Ensure-DotNet6DesktopRuntime {
     ) | Out-Null
     Stop-Process -Id $PID -Force
     return $false
+}
+function Ensure-MpvNetOptional {
+    if (-not (Ensure-DotNet6DesktopRuntime)) {
+        return $false
+    }
+    return (Ensure-ToolHeadless `
+        -CommandName "mpvnet" `
+        -FriendlyName "mpv.net" `
+        -ChocoPkg "mpv.net" `
+        -VersionArgs "--version")
 }
 function Get-DisplayUrl {
     param([string]$Url)
@@ -1916,13 +1921,13 @@ $lblNode       = Create-Label -Text "Node.js: verificando..." -Location (New-Obj
 $lblMpvNet     = Create-Label -Text "mpv.net: verificando..." -Location (New-Object System.Drawing.Point(80, 710)) -Size (New-Object System.Drawing.Size(300, 24)) -Font $defaultFont -BorderStyle ([System.Windows.Forms.BorderStyle]::FixedSingle)
 $btnExit = Create-Button -Text "Salir" `
     -Location (New-Object System.Drawing.Point(20, 740)) `
-    -Size (New-Object System.Drawing.Size(180, 30)) `
+    -Size (New-Object System.Drawing.Size(160, 30)) `
     -BackColor ([System.Drawing.Color]::Black) `
     -ForeColor ([System.Drawing.Color]::White) `
     -ToolTipText "Cerrar la aplicación"
 $btnSites = Create-Button -Text "Sitios compatibles" `
-    -Location (New-Object System.Drawing.Point(200, 740)) `
-    -Size (New-Object System.Drawing.Size(180, 30)) `
+    -Location (New-Object System.Drawing.Point(220, 740)) `
+    -Size (New-Object System.Drawing.Size(160, 30)) `
     -BackColor $ColorAccent `
     -ForeColor $ColorText `
     -ToolTipText "Mostrar extractores de yt-dlp"
@@ -1984,7 +1989,6 @@ $txtUrl.Add_LostFocus({
     }
 })
 $txtUrl.Add_TextChanged({ Set-DownloadButtonVisual })
-
 $btnPickCookies.Add_Click({
     $ofd = New-Object System.Windows.Forms.OpenFileDialog
     $ofd.Title = "Selecciona cookies.txt"
@@ -2114,7 +2118,6 @@ $btnNodeUninstall.Add_Click({
 })
 $btnMpvNetRefresh   = Create-IconButton -Text "↻" -Location (New-Object System.Drawing.Point(20, 710)) -ToolTipText "Buscar/actualizar mpv.net"
 $btnMpvNetUninstall = Create-IconButton -Text "✖" -Location (New-Object System.Drawing.Point(48, 710)) -ToolTipText "Desinstalar mpv.net"
-
 $btnMpvNetRefresh.Add_Click({
     Update-Dependency -ChocoPkg "mpv.net" -FriendlyName "mpv.net" -CommandName "mpvnet" -LabelRef ([ref]$lblMpvNet) -VersionArgs "--version" -Parse "FirstLine"
 })
