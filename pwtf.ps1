@@ -1629,12 +1629,7 @@ function Initialize-AppHeadless {
     }
     return $true
 }
-if (-not (Initialize-AppHeadless)) {
-    return
-}
-if (-not (Initialize-AppHeadless)) {
-    return
-}
+if (-not (Initialize-AppHeadless)) {      return  }
 function Show-AppInfo {
     $f = New-Object System.Windows.Forms.Form
     $f.Text = "Información de la aplicación"
