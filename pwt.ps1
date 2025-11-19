@@ -11,7 +11,7 @@ $script:LogFile = "C:\Temp\ytdll_history.txt"
 if (-not (Test-Path -LiteralPath $script:LogFile)) {
     New-Item -ItemType File -Path $script:LogFile -Force | Out-Null
 }
-                                                                                                $version = "beta 251110.0812"
+                                                                                                $version = "beta 251119.0906"
 function Get-HistoryUrls {
     try {
         $content = Get-Content -LiteralPath $script:LogFile -ErrorAction Stop -Raw
@@ -1595,22 +1595,19 @@ $cmbAudioFmt = Create-ComboBox `
     -Size (New-Object System.Drawing.Size(360, 28))
 $txtUrl = Create-TextBox `
     -Location (New-Object System.Drawing.Point(20, 180)) `
-    -Size (New-Object System.Drawing.Size(330, 40)) `  # antes 360
+    -Size (New-Object System.Drawing.Size(330, 40)) `
     -Font (New-Object System.Drawing.Font("Segoe UI", 16, [System.Drawing.FontStyle]::Regular)) `
     -Text $global:UrlPlaceholder `
     -BackColor ([System.Drawing.Color]::FromArgb(255,255,220)) `
     -ForeColor ([System.Drawing.Color]::Gray) `
     -Multiline $false `
     -ScrollBars ([System.Windows.Forms.ScrollBars]::None)
-
 $txtUrl.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
 $txtUrl.TextAlign = [System.Windows.Forms.HorizontalAlignment]::Center
 $btnUrlHistory = Create-IconButton -Text "▾" `
-    -Location (New-Object System.Drawing.Point(356, 186)) `  # alineado con el textbox
+    -Location (New-Object System.Drawing.Point(356, 186)) `
     -ToolTipText "Historial de URLs"
-
 $btnUrlHistory.Size = New-Object System.Drawing.Size(24, 28)
-
 $btnUrlHistory.Add_Click({
     Show-UrlHistoryMenu -AnchorControl $btnUrlHistory
 })
@@ -1631,11 +1628,10 @@ $txtUrl.Add_LostFocus({
     $this.BackColor = [System.Drawing.Color]::FromArgb(255, 255, 220)
 })
 $ctxUrlHistory = New-Object System.Windows.Forms.ContextMenuStrip
-
 $lblEstadoConsulta = Create-Label `
     -Text "Estado: sin consultar" `
     -Location (New-Object System.Drawing.Point(20, 530)) `
-    -Size (New-Object System.Drawing.Size(360, 70)) ` 
+    -Size (New-Object System.Drawing.Size(360, 70)) `
     -Font (New-Object System.Drawing.Font("Consolas", 10)) `
     -BorderStyle ([System.Windows.Forms.BorderStyle]::FixedSingle) `
     -TextAlign ([System.Drawing.ContentAlignment]::MiddleCenter)
