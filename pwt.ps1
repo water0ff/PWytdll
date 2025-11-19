@@ -1667,7 +1667,7 @@ function Show-AppInfo {
     $txtCamb.ForeColor  = $psText
     $txtCamb.Font       = $fontCambios
     $txtCamb.Multiline  = $true
-    $txtCamb.WordWrap   = $false                              # NO envolver; respeta renglones
+    $txtCamb.WordWrap   = $false
     $txtCamb.ScrollBars = [System.Windows.Forms.RichTextBoxScrollBars]::Both
     $txtCamb.DetectUrls = $false
     $txtCamb.Text       = $logCambios
@@ -1683,6 +1683,7 @@ function Show-AppInfo {
         -Font $defaultFont `
         -Multiline $true `
         -ReadOnly $true
+    function Update-LocalDepsText {
         $ytVer  = (Get-ToolVersion -Command "yt-dlp" -ArgsForVersion "--version" -Parse "FirstLine")
         $ffVer  = (Get-ToolVersion -Command "ffmpeg" -ArgsForVersion "-version"  -Parse "FirstLine")
         $ndVer  = if ($script:RequireNode) { (Get-ToolVersion -Command "node" -ArgsForVersion "--version" -Parse "FirstLine") } else { $null }
@@ -1711,6 +1712,8 @@ function Show-AppInfo {
             $list += "mpv.net: no instalado"
         }
         $txtDeps.Text = ($list -join [Environment]::NewLine)
+    }
+    Update-LocalDepsText
     $lblLinks = Create-Label -Text "Proyectos:" `
         -Location (New-Object System.Drawing.Point(20, 378)) `
         -Size (New-Object System.Drawing.Size(460, 22)) `
@@ -1719,18 +1722,68 @@ function Show-AppInfo {
               -Url "https://github.com/water0ff/PWytdll/tree/main" `
               -Location (New-Object System.Drawing.Point(20, 404)) `
               -Size (New-Object System.Drawing.Size(460, 20))
+    $lblAppDesc = Create-Label -Text "Script principal en PowerShell: interfaz gráfica y lógica de YTDLL." `
+        -Location (New-Object System.Drawing.Point(40, 422)) `
+        -Size (New-Object System.Drawing.Size(440, 18)) `
+        -IsTag
     $lnkYt  = New-LinkLabel -Text "yt-dlp" `
               -Url "https://github.com/yt-dlp/yt-dlp" `
-              -Location (New-Object System.Drawing.Point(20, 428)) `
+              -Location (New-Object System.Drawing.Point(20, 446)) `
               -Size (New-Object System.Drawing.Size(460, 20))
+    $lblYtDesc = Create-Label -Text "Extractor/descargador de video/audio usado como motor principal." `
+        -Location (New-Object System.Drawing.Point(40, 464)) `
+        -Size (New-Object System.Drawing.Size(440, 18)) `
+        -IsTag
     $lnkFf  = New-LinkLabel -Text "FFmpeg" `
               -Url "https://ffmpeg.org/" `
-              -Location (New-Object System.Drawing.Point(20, 452)) `
+              -Location (New-Object System.Drawing.Point(20, 488)) `
               -Size (New-Object System.Drawing.Size(460, 20))
+    $lblFfDesc = Create-Label -Text "Herramienta para conversión, fusión de streams y capturas de miniaturas." `
+        -Location (New-Object System.Drawing.Point(40, 506)) `
+        -Size (New-Object System.Drawing.Size(440, 18)) `
+        -IsTag
     $lnkNd  = New-LinkLabel -Text "Node.js" `
               -Url "https://nodejs.org/" `
-              -Location (New-Object System.Drawing.Point(20, 476)) `
+              -Location (New-Object System.Drawing.Point(20, 530)) `
               -Size (New-Object System.Drawing.Size(460, 20))
+    $lblNdDesc = Create-Label -Text "Dependencia adicional (Node.js LTS) requerida para ciertas tareas internas." `
+        -Location (New-Object System.Drawing.Point(40, 548)) `
+        -Size (New-Object System.Drawing.Size(440, 18)) `
+        -IsTag
+    $btnActualizarTodo = Create-Button -Text "ACTUALIZAR TODO" `
+        -Location (New-Object System.Drawing.Point(20, 506)) `
+        -Size (New-Object System.Drawing.Size(150, 30)) `
+        -BackColor $ColorPrimary `
+        -ForeColor ([System.Drawing.Color]::White) `
+        -ToolTipText "Actualizar/verificar todas las dependencias con Chocolatey"
+    $btnActualizarTodo.Add_Click({
+        if (-not (Check-Chocolatey)) {
+            [System.Windows.Forms.MessageBox]::Show(
+                "Chocolatey no está disponible. No se pueden actualizar dependencias.",
+                "Chocolatey requerido",
+                [System.Windows.Forms.MessageBoxButtons]::OK,
+                [System.Windows.Forms.MessageBoxIcon]::Warning
+            ) | Out-Null
+            return
+        }
+        Update-Dependency -ChocoPkg "yt-dlp" -FriendlyName "yt-dlp" -CommandName "yt-dlp" `
+            -LabelRef ([ref]$lblYtDlp) -VersionArgs "--version" -Parse "FirstLine"
+        Update-Dependency -ChocoPkg "ffmpeg" -FriendlyName "ffmpeg" -CommandName "ffmpeg" `
+            -LabelRef ([ref]$lblFfmpeg) -VersionArgs "-version" -Parse "FirstLine"
+        if ($script:RequireNode) {
+            Update-Dependency -ChocoPkg "nodejs-lts" -FriendlyName "Node.js" -CommandName "node" `
+                -LabelRef ([ref]$lblNode) -VersionArgs "--version" -Parse "FirstLine"
+        }
+        Update-Dependency -ChocoPkg "mpv.net" -FriendlyName "mpv.net" -CommandName "mpvnet" `
+            -LabelRef ([ref]$lblMpvNet) -VersionArgs "--version" -Parse "FirstLine"
+        Update-LocalDepsText
+        [System.Windows.Forms.MessageBox]::Show(
+            "Dependencias verificadas/actualizadas.",
+            "ACTUALIZAR TODO",
+            [System.Windows.Forms.MessageBoxButtons]::OK,
+            [System.Windows.Forms.MessageBoxIcon]::Information
+        ) | Out-Null
+    })
     $btnCerrar = Create-Button -Text "Cerrar" `
         -Location (New-Object System.Drawing.Point(380, 506)) `
         -Size (New-Object System.Drawing.Size(100, 30)) `
@@ -1738,11 +1791,15 @@ function Show-AppInfo {
         -ForeColor ([System.Drawing.Color]::White) `
         -ToolTipText "Cerrar esta ventana"
     $btnCerrar.Add_Click({ $f.Close() })
-
     $f.Controls.AddRange(@(
         $lblTitulo,$lblVer,$lblCamb,$txtCamb,
         $lblDeps,$txtDeps,
-        $lblLinks,$lnkApp,$lnkYt,$lnkFf,$lnkNd,
+        $lblLinks,
+        $lnkApp,$lblAppDesc,
+        $lnkYt,$lblYtDesc,
+        $lnkFf,$lblFfDesc,
+        $lnkNd,$lblNdDesc,
+        $btnActualizarTodo,
         $btnCerrar
     ))
     $f.ShowDialog() | Out-Null
