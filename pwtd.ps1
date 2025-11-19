@@ -1596,40 +1596,41 @@ function Initialize-AppHeadless {
     Add-Type -AssemblyName System.Drawing
     [System.Windows.Forms.Application]::EnableVisualStyles()
     function Set-RoundedRegion {
-    param(
-        [Parameter(Mandatory = $true)]
-        [System.Windows.Forms.Control]$Control,
-
-        [int]$Radius = 10
-    )
-
-    if ($Radius -lt 1 -or -not $Control.Width -or -not $Control.Height) { return }
-
-    $rect = New-Object System.Drawing.Rectangle(0, 0, $Control.Width, $Control.Height)
-    $path = New-Object System.Drawing.Drawing2D.GraphicsPath
-
-    $diam = $Radius * 2
-
-    # Esquinas: TL, TR, BR, BL
-    $path.AddArc($rect.X, $rect.Y, $diam, $diam, 180, 90)
-    $path.AddArc($rect.Right - $diam, $rect.Y, $diam, $diam, 270, 90)
-    $path.AddArc($rect.Right - $diam, $rect.Bottom - $diam, $diam, 0, 90)
-    $path.AddArc($rect.X, $rect.Bottom - $diam, $diam, $diam, 90, 90)
-
-    $path.CloseFigure()
-    $Control.Region = New-Object System.Drawing.Region($path)
+        param(
+            [Parameter(Mandatory = $true)]
+            [System.Windows.Forms.Control]$Control,
+            [int]$Radius = 10
+        )
+        if ($Radius -lt 1 -or -not $Control.Width -or -not $Control.Height) { return }
+        $rect = New-Object System.Drawing.Rectangle(0, 0, $Control.Width, $Control.Height)
+        $path = New-Object System.Drawing.Drawing2D.GraphicsPath
+        $diam = $Radius * 2
+        $path.AddArc($rect.X, $rect.Y, $diam, $diam, 180, 90)
+        $path.AddArc($rect.Right - $diam, $rect.Y, $diam, $diam, 270, 90)
+        $path.AddArc($rect.Right - $diam, $rect.Bottom - $diam, $diam, $diam, 0, 90)
+        $path.AddArc($rect.X, $rect.Bottom - $diam, $diam, $diam, 90, 90)
+        $path.CloseFigure()
+        $Control.Region = New-Object System.Drawing.Region($path)
     }
-
     if (-not (Check-Chocolatey)) {
         Write-Host "[EXIT] Falta Chocolatey o se requiere reinicio." -ForegroundColor Yellow
         return $false
     }
-    if (-not (Ensure-ToolHeadless -CommandName "yt-dlp" -FriendlyName "yt-dlp" -ChocoPkg "yt-dlp" -VersionArgs "--version")) { return $false }
-    if (-not (Ensure-ToolHeadless -CommandName "ffmpeg" -FriendlyName "ffmpeg" -ChocoPkg "ffmpeg" -VersionArgs "-version")) { return $false }
-    if ($script:RequireNode) {        if (-not (Ensure-ToolHeadless -CommandName "node" -FriendlyName "Node.js" -ChocoPkg "nodejs-lts" -VersionArgs "--version")) { return $false }     }
-    if (-not (Ensure-DotNet6DesktopRuntime)) {        return $false    }
-    if (-not (Ensure-ToolHeadless -CommandName "mpvnet" -FriendlyName "mpv.net" -ChocoPkg "mpv.net" -VersionArgs "--version")) { return $false }
+    if (-not (Ensure-ToolHeadless -CommandName "yt-dlp" -FriendlyName "yt-dlp" -ChocoPkg "yt-dlp" -VersionArgs "--version")) { 
+        return $false 
+    }
+    if (-not (Ensure-ToolHeadless -CommandName "ffmpeg" -FriendlyName "ffmpeg" -ChocoPkg "ffmpeg" -VersionArgs "-version")) { 
+        return $false 
+    }
+    if ($script:RequireNode) {
+        if (-not (Ensure-ToolHeadless -CommandName "node" -FriendlyName "Node.js" -ChocoPkg "nodejs-lts" -VersionArgs "--version")) { 
+            return $false 
+        }
+    }
     return $true
+}
+if (-not (Initialize-AppHeadless)) {
+    return
 }
 if (-not (Initialize-AppHeadless)) {
     return
