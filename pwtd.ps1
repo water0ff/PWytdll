@@ -111,17 +111,17 @@ $formPrincipal.Add_MouseDown({
         ) | Out-Null
     }
 })
-$defaultFont = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Regular)
-$boldFont    = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
-$ColorBgForm      = [System.Drawing.Color]::FromArgb(245, 245, 247)
-$ColorPrimary     = [System.Drawing.Color]::FromArgb(10, 132, 255)
-$ColorPrimaryDark = [System.Drawing.Color]::FromArgb(0, 92, 197)
-$ColorPrimaryLight = [System.Drawing.Color]::FromArgb(142, 209, 255)
-$ColorSurface      = [System.Drawing.Color]::FromArgb(255, 255, 255)
-$ColorPanel        = [System.Drawing.Color]::FromArgb(242, 242, 247)
-$ColorText         = [System.Drawing.Color]::FromArgb(28, 28, 30)
-$ColorSubText      = [System.Drawing.Color]::FromArgb(142, 142, 147)
-$ColorAccent       = [System.Drawing.Color]::FromArgb(52, 199, 89)  # verde tipo iOS
+$defaultFont         = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Regular)
+$boldFont            = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
+$ColorBgForm         = [System.Drawing.Color]::FromArgb(209, 209, 214)
+$ColorPrimary        = [System.Drawing.Color]::FromArgb(10, 132, 255)
+$ColorPrimaryDark    = [System.Drawing.Color]::FromArgb(0, 92, 197)
+$ColorPrimaryLight   = [System.Drawing.Color]::FromArgb(142, 209, 255)
+$ColorSurface        = [System.Drawing.Color]::FromArgb(255, 255, 255)
+$ColorPanel          = [System.Drawing.Color]::FromArgb(242, 242, 247)
+$ColorText           = [System.Drawing.Color]::FromArgb(28, 28, 30)
+$ColorSubText        = [System.Drawing.Color]::FromArgb(142, 142, 147)
+$ColorAccent         = [System.Drawing.Color]::FromArgb(72, 169, 197) # TEAL tipo iOS
 $formPrincipal.BackColor = $ColorBgForm
 Write-Host "`n=============================================" -ForegroundColor DarkCyan
 Write-Host "                   YTDLL                       " -ForegroundColor Green
