@@ -11,7 +11,7 @@ $script:LogFile = "C:\Temp\ytdll_history.txt"
 if (-not (Test-Path -LiteralPath $script:LogFile)) {
     New-Item -ItemType File -Path $script:LogFile -Force | Out-Null
 }
-                                                                                                $version = "beta 251119.1001"
+                                                                                                $version = "beta 251119.1101"
 function Get-HistoryUrls {
     try {
         $content = Get-Content -LiteralPath $script:LogFile -ErrorAction Stop -Raw
@@ -1483,6 +1483,101 @@ function Ensure-ToolHeadless {
     Write-Host ("`t[OK] {0} detectado." -f $FriendlyName) -ForegroundColor Green
     return $true
 }
+function Test-DotNet6DesktopRuntime {
+    <#
+        Devuelve $true si se encuentra algún runtime 6.x:
+        - Microsoft.NETCore.App 6.*
+        - Microsoft.WindowsDesktop.App 6.*
+    #>
+    try {
+        $cmd = Get-Command dotnet -ErrorAction Stop
+    } catch {
+        return $false
+    }
+
+    try {
+        $p = New-Object System.Diagnostics.Process
+        $p.StartInfo = New-Object System.Diagnostics.ProcessStartInfo
+        $p.StartInfo.FileName = $cmd.Source
+        $p.StartInfo.Arguments = "--list-runtimes"
+        $p.StartInfo.RedirectStandardOutput = $true
+        $p.StartInfo.RedirectStandardError  = $true
+        $p.StartInfo.UseShellExecute = $false
+        $p.StartInfo.CreateNoWindow  = $true
+        [void]$p.Start()
+        $stdout = $p.StandardOutput.ReadToEnd()
+        $stderr = $p.StandardError.ReadToEnd()
+        $p.WaitForExit()
+
+        $out = ($stdout + "`n" + $stderr)
+
+        if ($out -match 'Microsoft\.NETCore\.App\s+6\.' -or
+            $out -match 'Microsoft\.WindowsDesktop\.App\s+6\.') {
+            return $true
+        }
+
+        return $false
+    } catch {
+        return $false
+    }
+}
+function Ensure-DotNet6DesktopRuntime {
+    Write-Host "[CHECK] Verificando .NET 6 Desktop Runtime..." -ForegroundColor Cyan
+    if (Test-DotNet6DesktopRuntime) {
+        Write-Host "`t[OK] .NET 6 Desktop Runtime ya está disponible." -ForegroundColor Green
+        return $true
+    }
+    Write-Host "[WARN] .NET 6 Desktop Runtime no detectado." -ForegroundColor Yellow
+    if (-not (Get-Command choco -ErrorAction SilentlyContinue)) {
+        [System.Windows.Forms.MessageBox]::Show(
+            ".NET 6 Desktop Runtime es obligatorio para mpv.net, pero Chocolatey no está disponible." + `
+            "`nInstálalo manualmente desde el sitio de Microsoft o instala Chocolatey.",
+            ".NET 6 requerido",
+            [System.Windows.Forms.MessageBoxButtons]::OK,
+            [System.Windows.Forms.MessageBoxIcon]::Error
+        ) | Out-Null
+        return $false
+    }
+    $resp = [System.Windows.Forms.MessageBox]::Show(
+        "Es necesario instalar Microsoft .NET 6 Desktop Runtime para reproducir videos con mpv.net." + `
+        "`n¿Deseas instalarlo ahora con Chocolatey (dotnet-6.0-desktopruntime)?",
+        ".NET 6 Desktop Runtime requerido",
+        [System.Windows.Forms.MessageBoxButtons]::YesNo,
+        [System.Windows.Forms.MessageBoxIcon]::Question
+    )
+    if ($resp -ne [System.Windows.Forms.DialogResult]::Yes) {
+        Write-Host "[CANCEL] Usuario canceló instalación de .NET 6 Desktop Runtime." -ForegroundColor Yellow
+        return $false
+    }
+    Write-Host "[INSTALL] Instalando .NET 6 Desktop Runtime (choco install dotnet-6.0-desktopruntime -y)..." -ForegroundColor Cyan
+    try {
+        Start-Process -FilePath "choco" `
+            -ArgumentList @("install","dotnet-6.0-desktopruntime","-y") `
+            -NoNewWindow -Wait
+    } catch {
+        Write-Host "[ERROR] Falló instalación de .NET 6 Desktop Runtime: $_" -ForegroundColor Red
+        [System.Windows.Forms.MessageBox]::Show(
+            "No se pudo instalar .NET 6 Desktop Runtime automáticamente. Intenta instalarlo manualmente.",
+            "Error de instalación",
+            [System.Windows.Forms.MessageBoxButtons]::OK,
+            [System.Windows.Forms.MessageBoxIcon]::Error
+        ) | Out-Null
+        return $false
+    }
+    if (Test-DotNet6DesktopRuntime) {
+        Write-Host "`t[OK] .NET 6 Desktop Runtime instalado correctamente." -ForegroundColor Green
+        return $true
+    }
+    [System.Windows.Forms.MessageBox]::Show(
+        ".NET 6 Desktop Runtime se instaló, pero no pudo ser detectado de inmediato." + `
+        "`nReinicia PowerShell y vuelve a ejecutar la aplicación.",
+        "Reinicio requerido",
+        [System.Windows.Forms.MessageBoxButtons]::OK,
+        [System.Windows.Forms.MessageBoxIcon]::Information
+    ) | Out-Null
+    Stop-Process -Id $PID -Force
+    return $false
+}
 function Get-DisplayUrl {
     param([string]$Url)
     if ([string]::IsNullOrWhiteSpace($Url)) { return $Url }
@@ -1526,9 +1621,8 @@ function Initialize-AppHeadless {
     }
     if (-not (Ensure-ToolHeadless -CommandName "yt-dlp" -FriendlyName "yt-dlp" -ChocoPkg "yt-dlp" -VersionArgs "--version")) { return $false }
     if (-not (Ensure-ToolHeadless -CommandName "ffmpeg" -FriendlyName "ffmpeg" -ChocoPkg "ffmpeg" -VersionArgs "-version")) { return $false }
-    if ($script:RequireNode) {
-        if (-not (Ensure-ToolHeadless -CommandName "node" -FriendlyName "Node.js" -ChocoPkg "nodejs-lts" -VersionArgs "--version")) { return $false }
-    }
+    if ($script:RequireNode) {        if (-not (Ensure-ToolHeadless -CommandName "node" -FriendlyName "Node.js" -ChocoPkg "nodejs-lts" -VersionArgs "--version")) { return $false }     }
+    if (-not (Ensure-DotNet6DesktopRuntime)) {        return $false    }
     if (-not (Ensure-ToolHeadless -CommandName "mpvnet" -FriendlyName "mpv.net" -ChocoPkg "mpv.net" -VersionArgs "--version")) { return $false }
     return $true
 }
