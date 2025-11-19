@@ -113,15 +113,15 @@ $formPrincipal.Add_MouseDown({
 })
 $defaultFont = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Regular)
 $boldFont    = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
-$ColorBgForm      = [System.Drawing.Color]::FromArgb(245,245,250)
-$ColorPrimary     = [System.Drawing.Color]::FromArgb(33,150,243)   # azul moderno
-$ColorPrimaryDark = [System.Drawing.Color]::FromArgb(25,118,210)
-$ColorAccent      = [System.Drawing.Color]::FromArgb(255,193,7)    # amarillo acento
-$ColorText        = [System.Drawing.Color]::FromArgb(33,33,33)
-$ColorSubText     = [System.Drawing.Color]::FromArgb(120,120,120)
-$ColorPanel       = [System.Drawing.Color]::FromArgb(250,250,252)
-$ColorPrimaryLight = [System.Drawing.Color]::FromArgb(144, 202, 249)   # azul clarito para hover
-$ColorSurface      = $ColorPanel                                      # surface = color de panel
+$ColorBgForm      = [System.Drawing.Color]::FromArgb(245, 245, 247)
+$ColorPrimary     = [System.Drawing.Color]::FromArgb(10, 132, 255)
+$ColorPrimaryDark = [System.Drawing.Color]::FromArgb(0, 92, 197)
+$ColorPrimaryLight = [System.Drawing.Color]::FromArgb(142, 209, 255)
+$ColorSurface      = [System.Drawing.Color]::FromArgb(255, 255, 255)
+$ColorPanel        = [System.Drawing.Color]::FromArgb(242, 242, 247)
+$ColorText         = [System.Drawing.Color]::FromArgb(28, 28, 30)
+$ColorSubText      = [System.Drawing.Color]::FromArgb(142, 142, 147)
+$ColorAccent       = [System.Drawing.Color]::FromArgb(52, 199, 89)  # verde tipo iOS
 $formPrincipal.BackColor = $ColorBgForm
 Write-Host "`n=============================================" -ForegroundColor DarkCyan
 Write-Host "                   YTDLL                       " -ForegroundColor Green
@@ -1560,17 +1560,17 @@ $script:cookiesPath = $null
 $script:ultimaRutaDescarga = [Environment]::GetFolderPath('Desktop')
 $global:UrlPlaceholder = "Escribe la URL del video"
 $btnPickCookies = Create-IconButton -Text "🍪" `
-    -Location (New-Object System.Drawing.Point(324, 10)) `
+    -Location (New-Object System.Drawing.Point(300, 10)) `
     -ToolTipText "Seleccionar cookies.txt (opcional)"
 $btnInfo = Create-IconButton -Text "?" `
-    -Location (New-Object System.Drawing.Point(354, 10)) `
+    -Location (New-Object System.Drawing.Point(325, 10)) `
     -ToolTipText "Información de la aplicación"
 $btnInfo.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Right
 $btnInfo.Size = New-Object System.Drawing.Size(26, 24)
 $btnInfo.Add_Click({ Show-AppInfo })
 $lblDestino = Create-Label -Text "Carpeta de destino:" `
     -Location (New-Object System.Drawing.Point(20, 15)) `
-    -Size (New-Object System.Drawing.Size(260, 20)) `
+    -Size (New-Object System.Drawing.Size(130, 20)) `
     -IsTitle
 $txtDestino = Create-TextBox `
     -Location (New-Object System.Drawing.Point(20, 38)) `
@@ -1581,20 +1581,18 @@ $btnPickDestino = Create-IconButton -Text "📁" `
     -ToolTipText "Cambiar carpeta de destino"
 $lblVideoFmt = Create-Label -Text "Formato de VIDEO:" `
     -Location (New-Object System.Drawing.Point(20, 70)) `
-    -Size (New-Object System.Drawing.Size(360, 20)) `
+    -Size (New-Object System.Drawing.Size(130, 20)) `
     -IsTitle
 $cmbVideoFmt = Create-ComboBox `
     -Location (New-Object System.Drawing.Point(20, 93)) `
     -Size (New-Object System.Drawing.Size(360, 28))
 $lblAudioFmt = Create-Label -Text "Formato de AUDIO:" `
     -Location (New-Object System.Drawing.Point(20, 125)) `
-    -Size (New-Object System.Drawing.Size(360, 20)) `
+    -Size (New-Object System.Drawing.Size(130, 20)) `
     -IsTitle
 $cmbAudioFmt = Create-ComboBox `
     -Location (New-Object System.Drawing.Point(20, 148)) `
     -Size (New-Object System.Drawing.Size(360, 28))
-
-
 $txtUrl = Create-TextBox `
     -Location (New-Object System.Drawing.Point(20, 180)) `
     -Size (New-Object System.Drawing.Size(360, 40)) `
@@ -1642,13 +1640,13 @@ $lblEstadoConsulta.Font = New-Object System.Drawing.Font("Consolas", 9)
 $btnDescargar = Create-Button -Text "Descargar" `
     -Location (New-Object System.Drawing.Point(20, 250)) `
     -Size (New-Object System.Drawing.Size(360, 50)) `
-    -BackColor $ColorPrimaryDark `
+    -BackColor $ColorPrimary `
     -ForeColor ([System.Drawing.Color]::White) `
     -ToolTipText "Descargar usando bestvideo+bestaudio -> mp4"
     Set-DownloadButtonVisual
 $lblPreview = Create-Label -Text "Vista previa:" `
     -Location (New-Object System.Drawing.Point(20, 300)) `
-    -Size (New-Object System.Drawing.Size(360, 22)) `
+    -Size (New-Object System.Drawing.Size(130, 22)) `
     -IsTitle
 $picPreview = New-Object System.Windows.Forms.PictureBox
     $picPreview.Location   = New-Object System.Drawing.Point(20, 325)
@@ -1658,7 +1656,7 @@ $picPreview = New-Object System.Windows.Forms.PictureBox
     $picPreview.BackColor  = [System.Drawing.Color]::White
 $lblTituloDeps = Create-Label -Text "Dependencias:" `
     -Location (New-Object System.Drawing.Point(20, 590)) `
-    -Size (New-Object System.Drawing.Size(360, 24)) `
+    -Size (New-Object System.Drawing.Size(130, 24)) `
     -IsTitle
 $lblYtDlp      = Create-Label -Text "yt-dlp: verificando..." -Location (New-Object System.Drawing.Point(80, 620)) -Size (New-Object System.Drawing.Size(300, 24)) -Font $defaultFont -BorderStyle ([System.Windows.Forms.BorderStyle]::FixedSingle)
 $lblFfmpeg     = Create-Label -Text "ffmpeg: verificando..." -Location (New-Object System.Drawing.Point(80, 650)) -Size (New-Object System.Drawing.Size(300, 24)) -Font $defaultFont -BorderStyle ([System.Windows.Forms.BorderStyle]::FixedSingle)
