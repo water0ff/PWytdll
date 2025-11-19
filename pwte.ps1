@@ -317,7 +317,7 @@ function Set-DownloadButtonVisual {
     }
     $btnDescargar.Tag = $btnDescargar.BackColor
 }
-$script:RequireNode = $false #Aqui vemos si se les va a pedir Node o No, falta probar que show
+$script:RequireNode = $true #Aqui vemos si se les va a pedir Node o No, falta probar que show
 function Test-CommandExists {
     param([Parameter(Mandatory=$true)][string]$Name)
     try { Get-Command $Name -ErrorAction Stop | Out-Null; return $true } catch { return $false }
