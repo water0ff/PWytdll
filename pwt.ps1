@@ -11,7 +11,7 @@ $script:LogFile = "C:\Temp\ytdll_history.txt"
 if (-not (Test-Path -LiteralPath $script:LogFile)) {
     New-Item -ItemType File -Path $script:LogFile -Force | Out-Null
 }
-                                                                                                $version = "beta 251120.1311"
+                                                                                                $version = "beta 251120.1411"
 function Get-HistoryUrls {
     try {
         $content = Get-Content -LiteralPath $script:LogFile -ErrorAction Stop -Raw
@@ -2749,24 +2749,7 @@ $btnDescargar.Add_Click({
         $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::DarkBlue
         $ok =  Invoke-ConsultaFromUI -Url $currentUrl
         if ($ok) {
-            $lblEstadoConsulta.Text = "Cargando vista previa..."
-            Show-PreviewUniversal -Url $currentUrl -Titulo $script:ultimoTitulo -DirectThumbUrl $script:lastThumbUrl
-            $lblEstadoConsulta.Text = "Obteniendo formatos..."
-            $fmtOk = Fetch-Formats -Url $currentUrl
-            if ($fmtOk) {
-                if ($script:lastFormats) {
-                    Print-FormatsTable -formats $script:lastFormats
-                }
-                Populate-FormatCombos
-            }
             Set-DownloadButtonVisual
-            if ($fmtOk) {
-                $lblEstadoConsulta.Text = "Consulta completada - Listo para descargar"
-                $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::DarkGreen
-            } else {
-                $lblEstadoConsulta.Text = "Consulta completada (sin formatos)"
-                $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::DarkOrange
-            }
             [System.Windows.Forms.MessageBox]::Show(
                 "Consulta lista. Revisa formatos y vuelve a presionar Descargar para iniciar la descarga.",
                 "Consulta completada",
