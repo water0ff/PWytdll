@@ -2264,42 +2264,51 @@ $btnMpvNetUninstall.Add_Click({
         ) | Out-Null
         return
     }
+
     $msg = "Se desinstalarán los siguientes componentes:" +
            [Environment]::NewLine +
            " • mpv.net" + [Environment]::NewLine +
            " • mpvnet.portable" + [Environment]::NewLine +
            " • Microsoft .NET 6 Desktop Runtime" + [Environment]::NewLine + [Environment]::NewLine +
            "¿Deseas continuar?"
+
     $r = [System.Windows.Forms.MessageBox]::Show(
         $msg,
         "Desinstalar mpv.net + dependencias",
         [System.Windows.Forms.MessageBoxButtons]::YesNo,
         [System.Windows.Forms.MessageBoxIcon]::Warning
     )
+
     if ($r -ne [System.Windows.Forms.DialogResult]::Yes) {
         return
     }
+
+    # 1) Desinstalar mpv.net (usa tu helper genérico)
     Uninstall-Dependency -ChocoPkg "mpv.net" `
                          -FriendlyName "mpv.net" `
                          -LabelRef ([ref]$lblMpvNet)
-    $portable = choco list --local-only | Select-String "mpvnet.portable"
-    if ($portable) {
-        Write-Host "[UNINSTALL] Eliminando mpvnet.portable..." -ForegroundColor Cyan
-        try {
-            Start-Process -FilePath "choco" `
-                -ArgumentList @("uninstall","mpvnet.portable","-y") `
-                -NoNewWindow -Wait
-            Write-Host "`t[OK] mpvnet.portable eliminado." -ForegroundColor Green
-        } catch {
-            Write-Host "[ERROR] No se pudo desinstalar mpvnet.portable: $_" -ForegroundColor Red
-        }
+
+    # 2) Desinstalar SIEMPRE mpvnet.portable (si no está, Choco solo dirá 0 paquetes)
+    Write-Host "[UNINSTALL] Intentando desinstalar mpvnet.portable..." -ForegroundColor Cyan
+    try {
+        Start-Process -FilePath "choco" `
+            -ArgumentList @("uninstall","mpvnet.portable","-y") `
+            -NoNewWindow -Wait
+
+        Write-Host "`t[OK] mpvnet.portable desinstalado (o no estaba instalado)." -ForegroundColor Green
+    } catch {
+        Write-Host "[ERROR] No se pudo desinstalar mpvnet.portable: $_" -ForegroundColor Red
     }
+
+    # 3) Desinstalar también .NET 6 Desktop Runtime
     Write-Host "[UNINSTALL] Desinstalando .NET 6 Desktop Runtime..." -ForegroundColor Cyan
     try {
         Start-Process -FilePath "choco" `
             -ArgumentList @("uninstall","dotnet-6.0-desktopruntime","-y") `
             -NoNewWindow -Wait
+
         Write-Host "`t[OK] .NET 6 Desktop Runtime desinstalado." -ForegroundColor Green
+
         [System.Windows.Forms.MessageBox]::Show(
             "Se desinstaló mpv.net, mpvnet.portable y Microsoft .NET 6 Desktop Runtime.",
             "Desinstalación completada",
@@ -2310,7 +2319,7 @@ $btnMpvNetUninstall.Add_Click({
     catch {
         Write-Host "[ERROR] Falló desinstalación de .NET 6 Desktop Runtime: $_" -ForegroundColor Red
         [System.Windows.Forms.MessageBox]::Show(
-            "No se pudo desinstalar .NET 6 Desktop Runtime automáticamente.",
+            "No se pudo desinstalar .NET 6 Desktop Runtime automáticamente. Revisa la consola o desinstálalo manualmente.",
             "Error al desinstalar .NET 6",
             [System.Windows.Forms.MessageBoxButtons]::OK,
             [System.Windows.Forms.MessageBoxIcon]::Error
