@@ -11,7 +11,7 @@ $script:LogFile = "C:\Temp\ytdll_history.txt"
 if (-not (Test-Path -LiteralPath $script:LogFile)) {
     New-Item -ItemType File -Path $script:LogFile -Force | Out-Null
 }
-                                                                                                $version = "beta 251120.1101"
+                                                                                                $version = "beta 251120.1201"
 function Get-HistoryUrls {
     try {
         $content = Get-Content -LiteralPath $script:LogFile -ErrorAction Stop -Raw
@@ -2652,7 +2652,12 @@ $btnDescargar.Add_Click({
         $audioSel = Get-SelectedFormatId -Combo $cmbAudioFmt
         $fSelector = $null
         $mergeExt  = "mp4"
+        $formatInfo = $null
+        if ($videoSel -and $script:formatsIndex.ContainsKey($videoSel)) {
+            $formatInfo = $script:formatsIndex[$videoSel]
+        }
         if (Is-TwitchUrl $script:ultimaURL) {
+            # Twitch: nos olvidamos de combos avanzados, mejor dejar "best"
             if ($videoSel -and $videoSel -notmatch '^best(video)?$') {
                 $fSelector = $videoSel
             } else {
@@ -2660,6 +2665,7 @@ $btnDescargar.Add_Click({
             }
         }
         elseif (Is-ProgressiveOnlySite $script:lastExtractor) {
+            # Sitios sólo progresivos (tiktok, etc.): no hay combinación de streams
             if ($videoSel -match '^best(video)?$') {
                 if ($script:bestProgId) {
                     $fSelector = $script:bestProgId
@@ -2671,15 +2677,33 @@ $btnDescargar.Add_Click({
             }
             $mergeExt = $null
             try { $cmbAudioFmt.Enabled = $false } catch {}
-        }
-        else {
-            if ($videoSel -and $videoSel -ne "best" -and $videoSel -ne "bestvideo") {
-                $fSelector = $videoSel
-            } else {
-                $fSelector = "best"
+            }
+            else {
+            $videoIsBest  = $videoSel -match '^best(video)?$'
+            $audioIsBest  = $audioSel -match '^best(audio)?$'
+            if ($videoSel -and -not $videoIsBest -and $audioSel -and -not $audioIsBest) {
+                $fSelector = "{0}+{1}" -f $videoSel, $audioSel
+            }
+            elseif ($videoSel -and -not $videoIsBest) {
+                if ($formatInfo -and $formatInfo.VideoOnly) {
+                    if ($audioSel -and -not $audioIsBest) {
+                        $fSelector = "{0}+{1}" -f $videoSel, $audioSel
+                    } else {
+                        $fSelector = "{0}+bestaudio/best" -f $videoSel
+                    }
+                } else {
+                    $fSelector = $videoSel
+                }
+            }
+            elseif ($audioSel -and -not $audioIsBest) {
+                $fSelector = $audioSel
+                $mergeExt  = $null  # no hay merge video+audio
+            }
+            else {
+                $fSelector = "bestvideo+bestaudio/best"
             }
         }
-
+        Write-Host "[DEBUG] Selector de formato: $fSelector" -ForegroundColor Yellow
     $prevLbl = $lblEstadoConsulta.Text
     $prevPickDest  = $btnPickDestino.Enabled
     $prevCmbVid    = $cmbVideoFmt.Enabled
