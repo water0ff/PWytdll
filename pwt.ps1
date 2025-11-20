@@ -2248,10 +2248,69 @@ $btnNodeUninstall.Add_Click({
 $btnMpvNetRefresh   = Create-IconButton -Text "↻" -Location (New-Object System.Drawing.Point(20, 710)) -ToolTipText "Buscar/actualizar mpv.net"
 $btnMpvNetUninstall = Create-IconButton -Text "✖" -Location (New-Object System.Drawing.Point(48, 710)) -ToolTipText "Desinstalar mpv.net"
 $btnMpvNetRefresh.Add_Click({
+     if (-not (Ensure-DotNet6DesktopRuntime)) {
+        # Si el usuario cancela o falla, no seguimos con la actualización de mpv.net
+        return
+    }
     Update-Dependency -ChocoPkg "mpv.net" -FriendlyName "mpv.net" -CommandName "mpvnet" -LabelRef ([ref]$lblMpvNet) -VersionArgs "--version" -Parse "FirstLine"
 })
 $btnMpvNetUninstall.Add_Click({
-    Uninstall-Dependency -ChocoPkg "mpv.net" -FriendlyName "mpv.net" -LabelRef ([ref]$lblMpvNet)
+    if (-not (Get-Command choco -ErrorAction SilentlyContinue)) {
+        [System.Windows.Forms.MessageBox]::Show(
+            "Chocolatey no está disponible. No se puede desinstalar mpv.net ni .NET 6 Desktop Runtime.",
+            "Chocolatey requerido",
+            [System.Windows.Forms.MessageBoxButtons]::OK,
+            [System.Windows.Forms.MessageBoxIcon]::Warning
+        ) | Out-Null
+        return
+    }
+
+    $msg = "Se desinstalará mpv.net y también Microsoft .NET 6 Desktop Runtime," + `
+           [Environment]::NewLine + `
+           "ya que mpv.net depende de este componente." + `
+           [Environment]::NewLine + [Environment]::NewLine + `
+           "¿Deseas continuar?"
+
+    $r = [System.Windows.Forms.MessageBox]::Show(
+        $msg,
+        "Desinstalar mpv.net + .NET 6",
+        [System.Windows.Forms.MessageBoxButtons]::YesNo,
+        [System.Windows.Forms.MessageBoxIcon]::Warning
+    )
+
+    if ($r -ne [System.Windows.Forms.DialogResult]::Yes) {
+        return
+    }
+
+    # 1) Desinstalar mpv.net usando la función genérica
+    Uninstall-Dependency -ChocoPkg "mpv.net" `
+                         -FriendlyName "mpv.net" `
+                         -LabelRef ([ref]$lblMpvNet)
+
+    # 2) Desinstalar también .NET 6 Desktop Runtime
+    Write-Host "[UNINSTALL] Desinstalando .NET 6 Desktop Runtime con choco uninstall dotnet-6.0-desktopruntime -y" -ForegroundColor Cyan
+    try {
+        Start-Process -FilePath "choco" `
+            -ArgumentList @("uninstall","dotnet-6.0-desktopruntime","-y") `
+            -NoNewWindow -Wait
+
+        Write-Host "`t[OK] .NET 6 Desktop Runtime desinstalado." -ForegroundColor Green
+
+        [System.Windows.Forms.MessageBox]::Show(
+            "Se desinstaló también Microsoft .NET 6 Desktop Runtime.",
+            ".NET 6 Desktop Runtime desinstalado",
+            [System.Windows.Forms.MessageBoxButtons]::OK,
+            [System.Windows.Forms.MessageBoxIcon]::Information
+        ) | Out-Null
+    } catch {
+        Write-Host "[ERROR] Falló desinstalación de .NET 6 Desktop Runtime: $_" -ForegroundColor Red
+        [System.Windows.Forms.MessageBox]::Show(
+            "No se pudo desinstalar .NET 6 Desktop Runtime automáticamente. Revisa la consola o desinstálalo manualmente.",
+            "Error al desinstalar .NET 6",
+            [System.Windows.Forms.MessageBoxButtons]::OK,
+            [System.Windows.Forms.MessageBoxIcon]::Error
+        ) | Out-Null
+    }
 })
     $formPrincipal.Controls.Add($btnNodeRefresh)
     $formPrincipal.Controls.Add($btnNodeUninstall)
