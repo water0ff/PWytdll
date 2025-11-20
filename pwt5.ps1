@@ -2638,6 +2638,10 @@ function Invoke-YtDlpQuery {
     $stdout = if (Test-Path $outFile) { [IO.File]::ReadAllText($outFile) } else { "" }
     $stderr = if (Test-Path $errFile) { [IO.File]::ReadAllText($errFile) } else { "" }
     try { Remove-Item -Path $outFile, $errFile -ErrorAction SilentlyContinue } catch {}
+    Write-Host "[DEBUG] Proceso terminado. ExitCode: $($proc.ExitCode)" -ForegroundColor Yellow
+    Write-Host "[DEBUG] StdOut length: $($stdout.Length)" -ForegroundColor Yellow
+    Write-Host "[DEBUG] StdErr: $stderr" -ForegroundColor Yellow
+    
     return [pscustomobject]@{ 
         ExitCode = $proc.ExitCode 
         StdOut = $stdout
