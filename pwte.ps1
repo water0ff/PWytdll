@@ -1290,6 +1290,7 @@ function Invoke-ConsultaFromUI {
     $script:ultimaURL       = $Url
     $script:ultimoTitulo    = $title
     $script:lastThumbUrl    = $thumbUrl
+    $script:formatsEnumerated = $true
     $lblEstadoConsulta.Text = "Consulta OK: `"$title`""
     $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::DarkGreen
     return $true
@@ -2541,26 +2542,6 @@ function Is-ProgressiveOnlySite([string]$extractor) {
             return ($extractor -match '(tiktok|douyin|instagram|twitter|x)')
         }
 $btnDescargar.Add_Click({
-        if ($script:videoConsultado -and -not $script:formatsEnumerated) {
-        $ok = Invoke-ConsultaFromUI -Url (Get-CurrentUrl)
-        Set-DownloadButtonVisual
-        if ($ok -and $script:formatsEnumerated) {
-            [System.Windows.Forms.MessageBox]::Show(
-                "Consulta lista. Vuelve a presionar 'Descargar' para iniciar la descarga.",
-                "Consulta completada",
-                [System.Windows.Forms.MessageBoxButtons]::OK,
-                [System.Windows.Forms.MessageBoxIcon]::Information
-            ) | Out-Null
-        } else {
-            [System.Windows.Forms.MessageBox]::Show(
-                "No fue posible extraer formatos. Verifica conexión/URL y vuelve a intentar.",
-                "Falta de formatos",
-                [System.Windows.Forms.MessageBoxButtons]::OK,
-                [System.Windows.Forms.MessageBoxIcon]::Warning
-            ) | Out-Null
-        }
-        return
-    }
     Refresh-GateByDeps
     $currentUrl = Get-CurrentUrl
     $ready = $script:videoConsultado -and
@@ -2629,21 +2610,8 @@ $btnDescargar.Add_Click({
             try { $cmbAudioFmt.Enabled = $false } catch {}
         }
         else {
-            if ($videoSel) {
-                if ($videoSel -eq "best") {
-                    $fSelector = "best"
-                } elseif ($videoSel -eq "bestvideo") {
-                    $fSelector = "bestvideo+" + ($(if ($audioSel) { $audioSel } else { "bestaudio" }))
-                } else {
-                    $klass = $script:formatsIndex[$videoSel]
-                    if ($klass -and $klass.Progressive) {
-                        $fSelector = $videoSel
-                    } elseif ($klass -and $klass.VideoOnly) {
-                        $fSelector = $videoSel + "+" + ($(if ($audioSel) { $audioSel } else { "bestaudio" }))
-                    } else {
-                        $fSelector = $videoSel + "+" + ($(if ($audioSel) { $audioSel } else { "bestaudio" }))
-                    }
-                }
+            if ($videoSel -and $videoSel -ne "best" -and $videoSel -ne "bestvideo") {
+                $fSelector = $videoSel
             } else {
                 $fSelector = "best"
             }
