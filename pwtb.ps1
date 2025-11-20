@@ -1229,15 +1229,45 @@ function Invoke-ConsultaFromUI {
     }
     Write-Host ("[CONSULTA] Consultando URL: {0}" -f $Url) -ForegroundColor Cyan
     $res = Invoke-CaptureResponsive -ExePath $yt.Source `
-           -Args @("--no-playlist","--get-title",$Url) `
-           -WorkingText "Consultando URL…"
+               -Args @(
+                   "--no-playlist",
+                   "--get-title",
+                   "--no-warnings",
+                   "--ignore-config",
+                   $Url
+               ) `
+               -WorkingText "Consultando URL…"
+    Write-Host "[DEBUG] yt-dlp ExitCode: $($res.ExitCode)" -ForegroundColor Yellow
+    if ($res.StdOut) {
+        Write-Host "[DEBUG] STDOUT:" -ForegroundColor DarkCyan
+        Write-Host $res.StdOut
+    }
+    if ($res.StdErr) {
+        Write-Host "[DEBUG] STDERR:" -ForegroundColor DarkRed
+        Write-Host $res.StdErr
+    }
     $titulo = ($res.StdOut + "`n" + $res.StdErr).Trim() -split "`r?`n" |
               Where-Object { $_.Trim() -ne "" } | Select-Object -First 1
     if ($res.ExitCode -ne 0 -or -not $titulo) {
-        $script:videoConsultado = $false; $script:ultimaURL = $null; $script:ultimoTitulo = $null
-        $lblEstadoConsulta.Text = "Error al consultar la URL"; $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::Red
+        $script:videoConsultado = $false
+        $script:ultimaURL       = $null
+        $script:ultimoTitulo    = $null
+        $lblEstadoConsulta.Text = "Error al consultar la URL"
+        $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::Red
         $picPreview.Image = $null
         Write-Host "[ERROR] No se pudo consultar el video." -ForegroundColor Red
+        $msgErr = $res.StdErr
+        if ([string]::IsNullOrWhiteSpace($msgErr)) { $msgErr = $res.StdOut }
+        if (-not [string]::IsNullOrWhiteSpace($msgErr)) {
+            $msgErr = ($msgErr -split "`r?`n" | Select-Object -First 6) -join [Environment]::NewLine
+            [System.Windows.Forms.MessageBox]::Show(
+                "yt-dlp devolvió error al consultar la URL:" + [Environment]::NewLine + [Environment]::NewLine +
+                $msgErr,
+                "Error en consulta",
+                [System.Windows.Forms.MessageBoxButtons]::OK,
+                [System.Windows.Forms.MessageBoxIcon]::Error
+            ) | Out-Null
+        }
         return $false
     }
     $script:videoConsultado = $true
