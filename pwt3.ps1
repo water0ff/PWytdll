@@ -2575,7 +2575,9 @@ function Invoke-YtDlpConsoleProgress {
         try { $srOut.Close(); $fsOut.Close() } catch {}
         Write-Host ""
     }
-    return $proc.ExitCode
+    $code = $proc.ExitCode
+    $script:lastYtDlpExitCode = $code   # lo guardamos por si acaso
+    return $code
 }
 function Is-ProgressiveOnlySite([string]$extractor) {
             return ($extractor -match '(tiktok|douyin|instagram|twitter|x)')
@@ -2779,6 +2781,9 @@ $btnDescargar.Add_Click({
                 )
                 $exit = Invoke-YtDlpConsoleProgress -ExePath $yt.Source -Args $args -UpdateUi
             }
+        }
+        if ($null -eq $exit -and $script:lastYtDlpExitCode -ne $null) {
+            $exit = $script:lastYtDlpExitCode
         }
         Write-Host "------------------------" -ForegroundColor DarkGray
         Write-Host "[DEBUG] ExitCode final de yt-dlp: $exit" -ForegroundColor Yellow
