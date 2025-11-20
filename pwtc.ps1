@@ -465,14 +465,13 @@ function Fetch-Formats {
     try { 
         $yt = Get-Command yt-dlp -ErrorAction Stop 
     } catch {
+        $lblEstadoConsulta.Text = "ERROR: yt-dlp no disponible para listar formatos"
+        $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::Red
         Write-Host "`t[ERROR] yt-dlp no disponible para listar formatos." -ForegroundColor Red
         return $false
     }
-    $prevLabel = $null
-    if ($lblEstadoConsulta) {
-        $prevLabel = $lblEstadoConsulta.Text
-        $lblEstadoConsulta.Text = "Consultando formatos…"
-    }
+    $lblEstadoConsulta.Text = "Obteniendo lista de formatos..."
+    $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::DarkBlue
     $args1 = @(
         "-J","--no-playlist",
         "--ignore-config",        
@@ -481,11 +480,11 @@ function Fetch-Formats {
         $Url
     )
     Write-Host "[FORMATS] Intento 1: yt-dlp -J (ignore-config + extractor-args)" -ForegroundColor Cyan
-    $obj = Invoke-CaptureResponsive -ExePath $yt.Source -Args $args1 -WorkingText "Consultando formatos…"
+    $obj = Invoke-CaptureResponsive -ExePath $yt.Source -Args $args1 -WorkingText "Obteniendo formatos" -TimeoutSec 30
     $exit1 = $obj.ExitCode
     $len1  = if ($obj.StdOut) { $obj.StdOut.Length } else { 0 }
-    
     if ( ( $exit1 -ne $null -and $exit1 -ne 0 ) -or [string]::IsNullOrWhiteSpace($obj.StdOut)) {
+        $lblEstadoConsulta.Text = "Reintentando obtención de formatos..."
         Write-Host ("[FORMATS] Intento 1 sin JSON (ExitCode={0}, StdOutLen={1})" -f $exit1, $len1) -ForegroundColor Yellow
         if ($obj.StdErr) { Write-Host $obj.StdErr }
         $args2 = @(
@@ -494,34 +493,40 @@ function Fetch-Formats {
             "--no-warnings",
             $Url
         )
-            Write-Host "[FORMATS] Intento 2: yt-dlp -J (ignore-config, sin extractor-args)" -ForegroundColor Cyan
-            $obj = Invoke-CaptureResponsive -ExePath $yt.Source -Args $args2 -WorkingText "Consultando formatos (reintento)…"
-            
-            $exit2 = $obj.ExitCode
-            $len2  = if ($obj.StdOut) { $obj.StdOut.Length } else { 0 }
-            
-            if ( ( $exit2 -ne $null -and $exit2 -ne 0 ) -or [string]::IsNullOrWhiteSpace($obj.StdOut)) {
-                Write-Host ("[ERROR] No se pudo obtener JSON de formatos ni en reintento. ExitCode={0}, StdOutLen={1}" -f $exit2, $len2) -ForegroundColor Red
-                if ($obj.StdErr) { Write-Host $obj.StdErr }
-                return $false
-            } else {
-                Write-Host ("[FORMATS] Intento 2 OK: ExitCode={0}, StdOutLen={1}" -f $exit2, $len2) -ForegroundColor Green
-            }
+        Write-Host "[FORMATS] Intento 2: yt-dlp -J (ignore-config, sin extractor-args)" -ForegroundColor Cyan
+        $obj = Invoke-CaptureResponsive -ExePath $yt.Source -Args $args2 -WorkingText "Reintentando formatos" -TimeoutSec 30
+        $exit2 = $obj.ExitCode
+        $len2  = if ($obj.StdOut) { $obj.StdOut.Length } else { 0 }
+        if ( ( $exit2 -ne $null -and $exit2 -ne 0 ) -or [string]::IsNullOrWhiteSpace($obj.StdOut)) {
+            $lblEstadoConsulta.Text = "ERROR: No se pudieron obtener formatos"
+            $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::Red
+            Write-Host ("[ERROR] No se pudo obtener JSON de formatos ni en reintento. ExitCode={0}, StdOutLen={1}" -f $exit2, $len2) -ForegroundColor Red
+            if ($obj.StdErr) { Write-Host $obj.StdErr }
+            return $false
+        } else {
+            Write-Host ("[FORMATS] Intento 2 OK: ExitCode={0}, StdOutLen={1}" -f $exit2, $len2) -ForegroundColor Green
+        }
     }
     try {
+        $lblEstadoConsulta.Text = "Procesando formatos..."
         $json = $obj.StdOut | ConvertFrom-Json
     } catch {
+        $lblEstadoConsulta.Text = "ERROR: Formato JSON inválido"
+        $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::Red
         Write-Host "`t[ERROR] JSON inválido al listar formatos." -ForegroundColor Red
         return $false
     }
     $script:lastThumbUrl = Get-BestThumbnailUrl -Json $json
     if (-not $json.formats -or $json.formats.Count -eq 0) {
+        $lblEstadoConsulta.Text = "ADVERTENCIA: No se encontraron formatos"
+        $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::DarkOrange
         Write-Host "[WARN] El extractor no devolvió lista de formatos." -ForegroundColor Yellow
         return $false
     }
     $script:lastFormats = $json.formats
     $script:bestProgId   = $null
     $script:bestProgRank = -1
+    $lblEstadoConsulta.Text = "Clasificando formatos..."
     foreach ($f in $json.formats) {
         $klass = Classify-Format $f
         if ($klass.Progressive -and $klass.Id -ne 'download') {
@@ -540,6 +545,7 @@ function Fetch-Formats {
         $res   = if ($klass.VRes) { "{0}p" -f $klass.VRes } else { "" }
         $sz    = Human-Size $klass.Filesize
         $tbrStr = if ($klass.Tbr) { "{0}k" -f [math]::Round($klass.Tbr) } else { "" }
+        
         if     ($klass.Progressive) { 
             $script:formatsVideo += (New-FormatDisplay -Id $klass.Id -Label ("{0} {1} {2}/{3} (progresivo) {4} {5}" -f $klass.Ext,$res,$klass.VCodec,$klass.ACodec,$sz,$tbrStr)) 
         }
@@ -559,7 +565,13 @@ function Fetch-Formats {
     $script:formatsAudio = ( @("bestaudio — mejor audio disponible") + $script:formatsAudio ) | Select-Object -Unique
     $script:formatsEnumerated = ($script:formatsVideo.Count -gt 0 -or $script:formatsAudio.Count -gt 0)
     if ($json.extractor) { $script:lastExtractor = $json.extractor }
-    if ($lblEstadoConsulta -and $prevLabel) { $lblEstadoConsulta.Text = $prevLabel }
+    if ($script:formatsEnumerated) {
+        $lblEstadoConsulta.Text = "Formatos obtenidos correctamente"
+        $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::DarkGreen
+    } else {
+        $lblEstadoConsulta.Text = "ADVERTENCIA: No se pudieron enumerar formatos"
+        $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::DarkOrange
+    }
     return $script:formatsEnumerated
 }
 function Populate-FormatCombos {
@@ -1089,26 +1101,40 @@ function Show-PreviewUniversal {
         [string]$DirectThumbUrl = $null
     )
     Write-Host "`t[PREVIEW] Intentando vista previa para: $Url" -ForegroundColor Cyan
+    $lblEstadoConsulta.Text = "Obteniendo miniaturas..."
+    $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::DarkBlue
     Write-Host "`t[PREVIEW] Intentando obtener thumbnails con --list-thumbnails..." -ForegroundColor Yellow
     $thumbList = Get-ThumbnailListFromYtDlp -Url $Url
     if ($thumbList -and $thumbList.Count -gt 0) {
+        $lblEstadoConsulta.Text = "Probando miniaturas..."
         $sortedThumbs = $thumbList | Sort-Object @{Expression = { $_.Width * $_.Height }; Descending = $true } | Select-Object -First 3
+        $thumbIndex = 1
         foreach ($thumb in $sortedThumbs) {
+            $lblEstadoConsulta.Text = "Probando miniatura $thumbIndex de 3..."
             Write-Host "[PREVIEW] Probando miniatura: $($thumb.Url)" -ForegroundColor Cyan
+            
             if (Show-PreviewImage -ImageUrl $thumb.Url -Titulo $Titulo) {
+                $lblEstadoConsulta.Text = "Vista previa cargada"
+                $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::DarkGreen
                 Write-Host "[PREVIEW] Vista previa cargada desde --list-thumbnails" -ForegroundColor Green
                 return $true
             } else {
                 Write-Host "`t[PREVIEW] Falló miniatura, probando siguiente..." -ForegroundColor Yellow
             }
+            $thumbIndex++
         }
         Write-Host "`t[PREVIEW] Todas las miniaturas JPG fallaron" -ForegroundColor Red
     }
+    $lblEstadoConsulta.Text = "Usando método alternativo..."
     Write-Host "[PREVIEW] Usando fallback con miniatura directa..." -ForegroundColor Yellow
     if ($DirectThumbUrl -and (Show-PreviewImage -ImageUrl $DirectThumbUrl -Titulo $Titulo)) {
+        $lblEstadoConsulta.Text = "Vista previa cargada"
+        $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::DarkGreen
         Write-Host "[PREVIEW] Vista previa cargada (directa)" -ForegroundColor Green
         return $true
     }
+    $lblEstadoConsulta.Text = "No se pudo cargar vista previa"
+    $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::DarkOrange
     Write-Host "[PREVIEW] Todos los métodos fallaron, sin vista previa" -ForegroundColor Red
     return $false
 }
@@ -1218,14 +1244,13 @@ function Build-PreviewFromStream {
     return $null
 }
 function Invoke-ConsultaFromUI {
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$Url
-    )
+    param([Parameter(Mandatory = $true)][string]$Url)
     Write-Host ("[CONSULTA] Consultando URL: {0}" -f $Url) -ForegroundColor Cyan
     try {
         $yt = Get-Command yt-dlp -ErrorAction Stop
     } catch {
+        $lblEstadoConsulta.Text = "ERROR: yt-dlp no disponible"
+        $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::Red
         [System.Windows.Forms.MessageBox]::Show(
             "yt-dlp no está disponible en el PATH. Verifícalo en la sección de Dependencias.",
             "yt-dlp no encontrado",
@@ -1239,20 +1264,13 @@ function Invoke-ConsultaFromUI {
         "--no-warnings",
         "--ignore-config",
         "--print", "title",
-        "--print", "thumbnail",
+        "--print", "thumbnail", 
         "--print", "id",
         $Url
     )
-    $res = Invoke-Capture -ExePath $yt.Source -Args $args
-    Write-Host "[DEBUG] yt-dlp ExitCode: $($res.ExitCode)" -ForegroundColor Yellow
-    if ($res.StdOut) {
-        Write-Host "[DEBUG] STDOUT:" -ForegroundColor DarkCyan
-        Write-Host $res.StdOut
-    }
-    if ($res.StdErr) {
-        Write-Host "[DEBUG] STDERR:" -ForegroundColor DarkRed
-        Write-Host $res.StdErr
-    }
+    $lblEstadoConsulta.Text = "Consultando video..."
+    $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::DarkBlue
+    $res = Invoke-CaptureResponsive -ExePath $yt.Source -Args $args -WorkingText "Consultando video" -TimeoutSec 30
     if ($res.ExitCode -ne 0) {
         $msgErr = $res.StdErr
         if ([string]::IsNullOrWhiteSpace($msgErr)) { $msgErr = $res.StdOut }
@@ -2565,6 +2583,8 @@ $btnDescargar.Add_Click({
              ($script:ultimaURL -eq $currentUrl)
     if (-not $ready) {
         if ([string]::IsNullOrWhiteSpace($currentUrl)) {
+            $lblEstadoConsulta.Text = "ERROR: Escribe una URL"
+            $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::Red
             [System.Windows.Forms.MessageBox]::Show(
                 "Escribe una URL de YouTube.",
                 "Falta URL",
@@ -2573,9 +2593,13 @@ $btnDescargar.Add_Click({
             ) | Out-Null
             return
         }
+        $lblEstadoConsulta.Text = "Iniciando consulta..."
+        $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::DarkBlue
         $ok = Invoke-ConsultaFromUI -Url $currentUrl
         if ($ok) {
+            $lblEstadoConsulta.Text = "Cargando vista previa..."
             Show-PreviewUniversal -Url $currentUrl -Titulo $script:ultimoTitulo -DirectThumbUrl $script:lastThumbUrl
+            $lblEstadoConsulta.Text = "Obteniendo formatos..."
             $fmtOk = Fetch-Formats -Url $currentUrl
             if ($fmtOk) {
                 if ($script:lastFormats) {
@@ -2584,6 +2608,13 @@ $btnDescargar.Add_Click({
                 Populate-FormatCombos
             }
             Set-DownloadButtonVisual
+            if ($fmtOk) {
+                $lblEstadoConsulta.Text = "Consulta completada - Listo para descargar"
+                $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::DarkGreen
+            } else {
+                $lblEstadoConsulta.Text = "Consulta completada (sin formatos)"
+                $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::DarkOrange
+            }   
             [System.Windows.Forms.MessageBox]::Show(
                 "Consulta lista. Revisa formatos y vuelve a presionar Descargar para iniciar la descarga.",
                 "Consulta completada",
