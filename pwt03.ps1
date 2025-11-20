@@ -1633,31 +1633,40 @@ if (-not (Initialize-AppHeadless)) {      return  }
 function Show-AppInfo {
     $f = New-Object System.Windows.Forms.Form
     $f.Text = "Información de la aplicación"
-    $f.Size = New-Object System.Drawing.Size(520, 700)
+    $f.Size = New-Object System.Drawing.Size(520, 650)   # un poco más alto para mpv.net
     $f.StartPosition = "CenterParent"
     $f.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::FixedDialog
     $f.MaximizeBox = $false
     $f.MinimizeBox = $false
     $f.BackColor = [System.Drawing.Color]::White
+
+    # Título
     $lblTitulo = Create-Label -Text "YTDLL — Información" `
         -Location (New-Object System.Drawing.Point(20,16)) `
         -Size (New-Object System.Drawing.Size(460,28)) `
         -IsTitle
+
+    # Versión
     $lblVer = Create-Label -Text ("Versión: {0}" -f $version) `
         -Location (New-Object System.Drawing.Point(20,46)) `
         -Size (New-Object System.Drawing.Size(460,22)) `
         -Font $defaultFont
+
+    # Cambios recientes
     $lblCamb = Create-Label -Text "Cambios recientes:" `
         -Location (New-Object System.Drawing.Point(20,76)) `
         -Size (New-Object System.Drawing.Size(460,20)) `
         -IsTitle
+
     $psBlue = [System.Drawing.Color]::FromArgb(1,36,86)      # Azul PS clásico
     $psText = [System.Drawing.Color]::Gainsboro              # Texto claro
     $fontCambios = New-Object System.Drawing.Font("Consolas", 10)
     if ($fontCambios.Name -ne "Consolas") {
         $fontCambios = New-Object System.Drawing.Font("Lucida Console", 10)
     }
+
     $logCambios = $global:defaultInstructions -replace "`r?`n","`r`n"
+
     $txtCamb = New-Object System.Windows.Forms.RichTextBox
     $txtCamb.Location   = New-Object System.Drawing.Point(20, 98)
     $txtCamb.Size       = New-Object System.Drawing.Size(460, 150)
@@ -1671,10 +1680,13 @@ function Show-AppInfo {
     $txtCamb.ScrollBars = [System.Windows.Forms.RichTextBoxScrollBars]::Both
     $txtCamb.DetectUrls = $false
     $txtCamb.Text       = $logCambios
+
+    # Dependencias detectadas (texto dentro del Info)
     $lblDeps = Create-Label -Text "Dependencias detectadas:" `
         -Location (New-Object System.Drawing.Point(20,258)) `
         -Size (New-Object System.Drawing.Size(460,22)) `
         -IsTitle
+
     $txtDeps = Create-TextBox `
         -Location (New-Object System.Drawing.Point(20,282)) `
         -Size (New-Object System.Drawing.Size(460,90)) `
@@ -1683,11 +1695,21 @@ function Show-AppInfo {
         -Font $defaultFont `
         -Multiline $true `
         -ReadOnly $true
+
     function Update-LocalDepsText {
         $ytVer  = (Get-ToolVersion -Command "yt-dlp" -ArgsForVersion "--version" -Parse "FirstLine")
         $ffVer  = (Get-ToolVersion -Command "ffmpeg" -ArgsForVersion "-version"  -Parse "FirstLine")
         $ndVer  = if ($script:RequireNode) { (Get-ToolVersion -Command "node" -ArgsForVersion "--version" -Parse "FirstLine") } else { $null }
         $mpvVer = (Get-ToolVersion -Command "mpvnet" -ArgsForVersion "--version" -Parse "FirstLine")
+
+        # .NET 6 Desktop Runtime
+        $dot6Ok = Test-DotNet6DesktopRuntime
+        if ($dot6Ok) {
+            $dot6Line = ".NET 6 Desktop Runtime: instalado"
+        } else {
+            $dot6Line = ".NET 6 Desktop Runtime: no detectado"
+        }
+
         $list = @()
         if ($ytVer) { 
             $list += "yt-dlp: $ytVer"
@@ -1711,51 +1733,85 @@ function Show-AppInfo {
         } else {
             $list += "mpv.net: no instalado"
         }
+
+        # Agregamos estado de .NET 6
+        $list += $dot6Line
+
         $txtDeps.Text = ($list -join [Environment]::NewLine)
     }
+
+    # Inicializamos texto de dependencias
     Update-LocalDepsText
+
+    # Proyectos + descripciones
     $lblLinks = Create-Label -Text "Proyectos:" `
         -Location (New-Object System.Drawing.Point(20, 378)) `
         -Size (New-Object System.Drawing.Size(460, 22)) `
         -IsTitle
+
+    # PWytdll
     $lnkApp = New-LinkLabel -Text "PWytdll (GitHub)" `
               -Url "https://github.com/water0ff/PWytdll/tree/main" `
               -Location (New-Object System.Drawing.Point(20, 404)) `
               -Size (New-Object System.Drawing.Size(460, 20))
+
     $lblAppDesc = Create-Label -Text "Script principal en PowerShell: interfaz gráfica y lógica de YTDLL." `
         -Location (New-Object System.Drawing.Point(40, 422)) `
         -Size (New-Object System.Drawing.Size(440, 18)) `
         -IsTag
+
+    # yt-dlp
     $lnkYt  = New-LinkLabel -Text "yt-dlp" `
               -Url "https://github.com/yt-dlp/yt-dlp" `
               -Location (New-Object System.Drawing.Point(20, 446)) `
               -Size (New-Object System.Drawing.Size(460, 20))
+
     $lblYtDesc = Create-Label -Text "Extractor/descargador de video/audio usado como motor principal." `
         -Location (New-Object System.Drawing.Point(40, 464)) `
         -Size (New-Object System.Drawing.Size(440, 18)) `
         -IsTag
+
+    # FFmpeg
     $lnkFf  = New-LinkLabel -Text "FFmpeg" `
               -Url "https://ffmpeg.org/" `
               -Location (New-Object System.Drawing.Point(20, 488)) `
               -Size (New-Object System.Drawing.Size(460, 20))
+
     $lblFfDesc = Create-Label -Text "Herramienta para conversión, fusión de streams y capturas de miniaturas." `
         -Location (New-Object System.Drawing.Point(40, 506)) `
         -Size (New-Object System.Drawing.Size(440, 18)) `
         -IsTag
+
+    # Node.js
     $lnkNd  = New-LinkLabel -Text "Node.js" `
               -Url "https://nodejs.org/" `
               -Location (New-Object System.Drawing.Point(20, 530)) `
               -Size (New-Object System.Drawing.Size(460, 20))
+
     $lblNdDesc = Create-Label -Text "Dependencia adicional (Node.js LTS) requerida para ciertas tareas internas." `
         -Location (New-Object System.Drawing.Point(40, 548)) `
         -Size (New-Object System.Drawing.Size(440, 18)) `
         -IsTag
+
+    # mpv.net
+    $lnkMpv  = New-LinkLabel -Text "mpv.net" `
+               -Url "https://github.com/stax76/mpv.net" `
+               -Location (New-Object System.Drawing.Point(20, 572)) `
+               -Size (New-Object System.Drawing.Size(460, 20))
+
+    $lblMpvDesc = Create-Label -Text "Reproductor de video basado en mpv, usado para la vista previa/reproducción." `
+        -Location (New-Object System.Drawing.Point(40, 590)) `
+        -Size (New-Object System.Drawing.Size(440, 18)) `
+        -IsTag
+
+    # Botón ACTUALIZAR TODO
     $btnActualizarTodo = Create-Button -Text "ACTUALIZAR TODO" `
-        -Location (New-Object System.Drawing.Point(20, 572)) `
+        -Location (New-Object System.Drawing.Point(20, 610)) `
         -Size (New-Object System.Drawing.Size(150, 30)) `
         -BackColor $ColorPrimary `
         -ForeColor ([System.Drawing.Color]::White) `
         -ToolTipText "Actualizar/verificar todas las dependencias con Chocolatey"
+
     $btnActualizarTodo.Add_Click({
         if (-not (Check-Chocolatey)) {
             [System.Windows.Forms.MessageBox]::Show(
@@ -1766,17 +1822,31 @@ function Show-AppInfo {
             ) | Out-Null
             return
         }
+
+        # Verificar/instalar .NET 6 Desktop Runtime (requerido para mpv.net)
+        [void](Ensure-DotNet6DesktopRuntime)
+
+        # yt-dlp
         Update-Dependency -ChocoPkg "yt-dlp" -FriendlyName "yt-dlp" -CommandName "yt-dlp" `
             -LabelRef ([ref]$lblYtDlp) -VersionArgs "--version" -Parse "FirstLine"
+
+        # ffmpeg
         Update-Dependency -ChocoPkg "ffmpeg" -FriendlyName "ffmpeg" -CommandName "ffmpeg" `
             -LabelRef ([ref]$lblFfmpeg) -VersionArgs "-version" -Parse "FirstLine"
+
+        # Node.js (si está habilitado en el script)
         if ($script:RequireNode) {
             Update-Dependency -ChocoPkg "nodejs-lts" -FriendlyName "Node.js" -CommandName "node" `
                 -LabelRef ([ref]$lblNode) -VersionArgs "--version" -Parse "FirstLine"
         }
+
+        # mpv.net
         Update-Dependency -ChocoPkg "mpv.net" -FriendlyName "mpv.net" -CommandName "mpvnet" `
             -LabelRef ([ref]$lblMpvNet) -VersionArgs "--version" -Parse "FirstLine"
+
+        # Refrescar resumen dentro de la ventana de info (incluye .NET 6)
         Update-LocalDepsText
+
         [System.Windows.Forms.MessageBox]::Show(
             "Dependencias verificadas/actualizadas.",
             "ACTUALIZAR TODO",
@@ -1784,13 +1854,16 @@ function Show-AppInfo {
             [System.Windows.Forms.MessageBoxIcon]::Information
         ) | Out-Null
     })
+
+    # Botón Cerrar
     $btnCerrar = Create-Button -Text "Cerrar" `
-        -Location (New-Object System.Drawing.Point(380, 572)) `
+        -Location (New-Object System.Drawing.Point(380, 610)) `
         -Size (New-Object System.Drawing.Size(100, 30)) `
         -BackColor ([System.Drawing.Color]::Black) `
         -ForeColor ([System.Drawing.Color]::White) `
         -ToolTipText "Cerrar esta ventana"
     $btnCerrar.Add_Click({ $f.Close() })
+
     $f.Controls.AddRange(@(
         $lblTitulo,$lblVer,$lblCamb,$txtCamb,
         $lblDeps,$txtDeps,
@@ -1799,11 +1872,14 @@ function Show-AppInfo {
         $lnkYt,$lblYtDesc,
         $lnkFf,$lblFfDesc,
         $lnkNd,$lblNdDesc,
+        $lnkMpv,$lblMpvDesc,
         $btnActualizarTodo,
         $btnCerrar
     ))
+
     $f.ShowDialog() | Out-Null
 }
+#-----------------------------------------------------------
 $script:videoConsultado   = $false
 $script:ultimaURL         = $null
 $script:ultimoTitulo      = $null
