@@ -1214,29 +1214,31 @@ function Build-PreviewFromStream {
 }
 function Invoke-ConsultaFromUI {
     param(
-        [Parameter(Mandatory=$true)][string]$Url
+        [Parameter(Mandatory = $true)]
+        [string]$Url
     )
-    Refresh-GateByDeps
-    if ([string]::IsNullOrWhiteSpace($Url)) {
-        [System.Windows.Forms.MessageBox]::Show("Escribe una URL de YouTube.","Falta URL",
-            [System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Warning) | Out-Null
-        return $false
-    }
-    try { $yt = Get-Command yt-dlp -ErrorAction Stop } catch {
-        [System.Windows.Forms.MessageBox]::Show("yt-dlp no está disponible. Valídalo en Dependencias.","yt-dlp no encontrado",
-            [System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Error) | Out-Null
-        return $false
-    }
     Write-Host ("[CONSULTA] Consultando URL: {0}" -f $Url) -ForegroundColor Cyan
-    $res = Invoke-CaptureResponsive -ExePath $yt.Source `
-               -Args @(
-                   "--no-playlist",
-                   "--get-title",
-                   "--no-warnings",
-                   "--ignore-config",
-                   $Url
-               ) `
-               -WorkingText "Consultando URL…"
+    try {
+        $yt = Get-Command yt-dlp -ErrorAction Stop
+    } catch {
+        [System.Windows.Forms.MessageBox]::Show(
+            "yt-dlp no está disponible en el PATH. Verifícalo en la sección de Dependencias.",
+            "yt-dlp no encontrado",
+            [System.Windows.Forms.MessageBoxButtons]::OK,
+            [System.Windows.Forms.MessageBoxIcon]::Error
+        ) | Out-Null
+        return $false
+    }
+    $args = @(
+        "--no-playlist",
+        "--no-warnings",
+        "--ignore-config",
+        "--print", "title",
+        "--print", "thumbnail",
+        "--print", "id",
+        $Url
+    )
+    $res = Invoke-Capture -ExePath $yt.Source -Args $args
     Write-Host "[DEBUG] yt-dlp ExitCode: $($res.ExitCode)" -ForegroundColor Yellow
     if ($res.StdOut) {
         Write-Host "[DEBUG] STDOUT:" -ForegroundColor DarkCyan
@@ -1246,18 +1248,16 @@ function Invoke-ConsultaFromUI {
         Write-Host "[DEBUG] STDERR:" -ForegroundColor DarkRed
         Write-Host $res.StdErr
     }
-    $titulo = ($res.StdOut + "`n" + $res.StdErr).Trim() -split "`r?`n" |
-              Where-Object { $_.Trim() -ne "" } | Select-Object -First 1
-    if ($res.ExitCode -ne 0 -or -not $titulo) {
-        $script:videoConsultado = $false
-        $script:ultimaURL       = $null
-        $script:ultimoTitulo    = $null
-        $lblEstadoConsulta.Text = "Error al consultar la URL"
-        $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::Red
-        $picPreview.Image = $null
-        Write-Host "[ERROR] No se pudo consultar el video." -ForegroundColor Red
+    if ($res.ExitCode -ne 0) {
         $msgErr = $res.StdErr
         if ([string]::IsNullOrWhiteSpace($msgErr)) { $msgErr = $res.StdOut }
+        $script:videoConsultado   = $false
+        $script:ultimaURL         = $null
+        $script:ultimoTitulo      = $null
+        $script:formatsEnumerated = $false
+        $lblEstadoConsulta.Text   = "Error al consultar la URL"
+        $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::Red
+        $picPreview.Image = $null
         if (-not [string]::IsNullOrWhiteSpace($msgErr)) {
             $msgErr = ($msgErr -split "`r?`n" | Select-Object -First 6) -join [Environment]::NewLine
             [System.Windows.Forms.MessageBox]::Show(
@@ -1268,88 +1268,30 @@ function Invoke-ConsultaFromUI {
                 [System.Windows.Forms.MessageBoxIcon]::Error
             ) | Out-Null
         }
+        Write-Host "[ERROR] No se pudo consultar el video." -ForegroundColor Red
         return $false
     }
+    $lines = $res.StdOut -split "`r?`n" | Where-Object { $_.Trim() -ne "" }
+    if ($lines.Count -lt 1) {
+        $script:videoConsultado   = $false
+        $script:ultimaURL         = $null
+        $script:ultimoTitulo      = $null
+        $script:formatsEnumerated = $false
+        $lblEstadoConsulta.Text   = "Sin datos de yt-dlp"
+        $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::Red
+        $picPreview.Image = $null
+        Write-Host "[ERROR] yt-dlp no devolvió datos." -ForegroundColor Red
+        return $false
+    }
+    $title     = $lines[0]
+    $thumbUrl  = if ($lines.Count -ge 2) { $lines[1] } else { $null }
+    $videoId   = if ($lines.Count -ge 3) { $lines[2] } else { $null }
     $script:videoConsultado = $true
     $script:ultimaURL       = $Url
-    $script:ultimoTitulo    = $titulo
-    $lblEstadoConsulta.Text = ("Consultado: {0}" -f $titulo)
-    $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::Black #COLOR AQUI WE
-    Write-Host ("`t[OK] Video consultado: {0}" -f $titulo) -ForegroundColor Green
-    $cmbVideoFmt.Items.Clear()
-        $prevLabelText = $lblEstadoConsulta.Text
-        $lblEstadoConsulta.Text = "Consultando formatos…"
-        $meta = Get-Metadata -Url $Url
-        $script:lastExtractor = $null
-        $script:lastDomain    = $null
-        $script:lastThumbUrl  = $null
-        
-        if ($meta) {
-            $script:lastExtractor = $meta.Extractor
-            $script:lastDomain    = $meta.Domain
-            if ($meta.Thumbnail) { 
-                $script:lastThumbUrl = $meta.Thumbnail 
-            }
-        }
-        if ($meta -and $meta.Thumbnail) { $script:lastThumbUrl = $meta.Thumbnail }
-        try {
-            if (Fetch-Formats -Url $Url) {
-                foreach ($i in $script:formatsVideo) { [void]$cmbVideoFmt.Items.Add($i) }
-                foreach ($i in $script:formatsAudio) { [void]$cmbAudioFmt.Items.Add($i) }
-                if ($cmbVideoFmt.Items.Count -gt 0) {
-                    $progOnly = Is-ProgressiveOnlySite $script:lastExtractor
-                    if ($progOnly -and $script:bestProgId) {
-                        $idx = 0
-                        for ($n=0; $n -lt $cmbVideoFmt.Items.Count; $n++) {
-                            if ($cmbVideoFmt.Items[$n].ToString().StartsWith($script:bestProgId)) { $idx = $n; break }
-                        }
-                        $cmbVideoFmt.SelectedIndex = $idx
-                        try { $cmbAudioFmt.Enabled = $false } catch {}
-                    } else {
-                        $idx = 0
-                        for ($n=0; $n -lt $cmbVideoFmt.Items.Count; $n++) {
-                            $s = $cmbVideoFmt.Items[$n].ToString()
-                            if ($s.StartsWith("bestvideo")) { $idx = $n; break }
-                            if ($s.StartsWith("best"))      { $idx = $n }
-                        }
-                        $cmbVideoFmt.SelectedIndex = $idx
-                        try { $cmbAudioFmt.Enabled = $true } catch {}
-                    }
-                }
-                if ($cmbAudioFmt.Items.Count -gt 0) {
-                    $idx = 0
-                    for ($n=0; $n -lt $cmbAudioFmt.Items.Count; $n++) {
-                        if ($cmbAudioFmt.Items[$n].ToString().StartsWith("bestaudio")) { $idx = $n; break }
-                    }
-                    $cmbAudioFmt.SelectedIndex = $idx
-                }
-            }
-            else {
-                $script:formatsEnumerated = $false
-                $cmbVideoFmt.Items.Clear()
-                $cmbAudioFmt.Items.Clear()
-                Write-Host "[WARN] No se pudieron enumerar formatos. Pide volver a consultar." -ForegroundColor Yellow
-                $lblEstadoConsulta.Text = "No fue posible extraer formatos. Vuelve a consultar."
-                $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::DarkOrange
-                Set-DownloadButtonVisual
-                return $false
-            }
-        }
-        finally {
-            $lblEstadoConsulta.Text = $prevLabelText
-        }
-    $shown = $false
-        $thumbDirect = $script:lastThumbUrl
-        if ($thumbDirect) {
-            $thumbDirect = Normalize-ThumbUrl -Url $thumbDirect -Extractor $script:lastExtractor
-        }
-        $null = Show-PreviewUniversal -Url $Url -Titulo $titulo -DirectThumbUrl $thumbDirect
-    if ($script:formatsEnumerated -and $script:lastFormats) {
-        Print-FormatsTable -formats $script:lastFormats
-    }
-    if ($script:formatsEnumerated) {
-        Add-HistoryUrl -Url $Url
-    }
+    $script:ultimoTitulo    = $title
+    $script:lastThumbUrl    = $thumbUrl
+    $lblEstadoConsulta.Text = "Consulta OK: `"$title`""
+    $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::DarkGreen
     return $true
 }
 function Get-ToolVersion {
@@ -2756,7 +2698,7 @@ $btnDescargar.Add_Click({
     if ($script:cookiesPath) {
             $args += @("--cookies", $script:cookiesPath)
         }
-    $args += "`"$($script:ultimaURL)`""
+    $args += $script:ultimaURL
     if (Is-TwitchUrl $script:ultimaURL) {
             $args += @(
                 "--hls-use-mpegts",
