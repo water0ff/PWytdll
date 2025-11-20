@@ -492,7 +492,7 @@ function Fetch-Formats {
     try { 
         $yt = Get-Command yt-dlp -ErrorAction Stop 
     } catch {
-        Write-Host "[ERROR] yt-dlp no disponible para listar formatos." -ForegroundColor Red
+        Write-Host "`t[ERROR] yt-dlp no disponible para listar formatos." -ForegroundColor Red
         return $false
     }
     $prevLabel = $null
@@ -538,7 +538,7 @@ function Fetch-Formats {
     try {
         $json = $obj.StdOut | ConvertFrom-Json
     } catch {
-        Write-Host "[ERROR] JSON inválido al listar formatos." -ForegroundColor Red
+        Write-Host "`t[ERROR] JSON inválido al listar formatos." -ForegroundColor Red
         return $false
     }
     $script:lastThumbUrl = Get-BestThumbnailUrl -Json $json
@@ -840,7 +840,7 @@ function Check-Chocolatey {
             Stop-Process -Id $PID -Force
             return $false
         } catch {
-            Write-Host "[ERROR] Falló instalación de Chocolatey: $_" -ForegroundColor Red
+            Write-Host "`t[ERROR] Falló instalación de Chocolatey: $_" -ForegroundColor Red
             [System.Windows.Forms.MessageBox]::Show(
                 "Error al instalar Chocolatey. Por favor, inténtelo manualmente.",
                 "Error de instalación",[System.Windows.Forms.MessageBoxButtons]::OK,
@@ -990,7 +990,7 @@ function Fetch-ThumbnailFile {
     try { 
         $yt = Get-Command yt-dlp -ErrorAction Stop 
     } catch { 
-        Write-Host "[ERROR] yt-dlp no disponible para descargar miniatura" -ForegroundColor Red
+        Write-Host "`t[ERROR] yt-dlp no disponible para descargar miniatura" -ForegroundColor Red
         return $null 
     }
     Get-ChildItem -Path (Get-TempThumbPattern) -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
@@ -1081,10 +1081,10 @@ function Show-PreviewUniversal {
         [string]$Titulo = $null,
         [string]$DirectThumbUrl = $null
     )
-    Write-Host "[PREVIEW] Intentando vista previa para: $Url" -ForegroundColor Cyan
+    Write-Host "`t[PREVIEW] Intentando vista previa para: $Url" -ForegroundColor Cyan
     Write-Host "[PREVIEW] Thumbnail URL: $(if ($DirectThumbUrl) { $DirectThumbUrl } else { 'NULO' })" -ForegroundColor Cyan
     Write-Host "[PREVIEW] Extractor: $($script:lastExtractor)" -ForegroundColor Cyan
-    Write-Host "[PREVIEW] Intentando obtener thumbnails con --list-thumbnails..." -ForegroundColor Yellow
+    Write-Host "`t[PREVIEW] Intentando obtener thumbnails con --list-thumbnails..." -ForegroundColor Yellow
     $thumbList = Get-ThumbnailListFromYtDlp -Url $Url
     if ($thumbList -and $thumbList.Count -gt 0) {
         $bestThumb = Select-BestThumbnail -Thumbs $thumbList
@@ -1094,7 +1094,7 @@ function Show-PreviewUniversal {
                 Write-Host "[PREVIEW] Vista previa cargada desde --list-thumbnails" -ForegroundColor Green
                 return $true
             } else {
-                Write-Host "[PREVIEW] Falló carga de URL desde --list-thumbnails" -ForegroundColor Red
+                Write-Host "`t[PREVIEW] Falló carga de URL desde --list-thumbnails" -ForegroundColor Red
             }
         }
     }
@@ -1120,7 +1120,7 @@ function Show-PreviewUniversal {
                 return $true
             }
         }
-        Write-Host "[PREVIEW] Intentando carga directa de imagen..." -ForegroundColor Yellow
+        Write-Host "`t[PREVIEW] Intentando carga directa de imagen..." -ForegroundColor Yellow
         $img1 = Get-ImageFromUrl -Url $DirectThumbUrl
         if ($img1) {
             try { if ($picPreview.Image) { $picPreview.Image.Dispose() } } catch {}
@@ -1129,7 +1129,7 @@ function Show-PreviewUniversal {
             Write-Host "[PREVIEW] Vista previa cargada (directa)" -ForegroundColor Green
             return $true
         }
-        Write-Host "[PREVIEW] Falló carga directa" -ForegroundColor Red
+        Write-Host "`t[PREVIEW] Falló carga directa" -ForegroundColor Red
     }
     Write-Host "[PREVIEW] Usando fallback con yt-dlp (write-thumbnail)..." -ForegroundColor Yellow
     $file = Fetch-ThumbnailFile -Url $Url
@@ -1305,7 +1305,7 @@ function Invoke-ConsultaFromUI {
                 [System.Windows.Forms.MessageBoxIcon]::Error
             ) | Out-Null
         }
-        Write-Host "[ERROR] No se pudo consultar el video." -ForegroundColor Red
+        Write-Host "`t[ERROR] No se pudo consultar el video." -ForegroundColor Red
         return $false
     }
     $lines = $res.StdOut -split "`r?`n" | Where-Object { $_.Trim() -ne "" }
@@ -1317,7 +1317,7 @@ function Invoke-ConsultaFromUI {
         $lblEstadoConsulta.Text   = "Sin datos de yt-dlp"
         $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::Red
         $picPreview.Image = $null
-        Write-Host "[ERROR] yt-dlp no devolvió datos." -ForegroundColor Red
+        Write-Host "`t[ERROR] yt-dlp no devolvió datos." -ForegroundColor Red
         return $false
     }
     $title     = $lines[0]
@@ -1560,7 +1560,7 @@ function Ensure-DotNet6DesktopRuntime {
             -ArgumentList @("install","dotnet-6.0-desktopruntime","-y") `
             -NoNewWindow -Wait
     } catch {
-        Write-Host "[ERROR] Falló instalación de .NET 6 Desktop Runtime: $_" -ForegroundColor Red
+        Write-Host "`t[ERROR] Falló instalación de .NET 6 Desktop Runtime: $_" -ForegroundColor Red
         [System.Windows.Forms.MessageBox]::Show(
             "No se pudo instalar .NET 6 Desktop Runtime automáticamente. Intenta instalarlo manualmente.",
             "Error de instalación",
@@ -2309,7 +2309,7 @@ $btnMpvNetUninstall.Add_Click({
 
         Write-Host "`t[OK] mpvnet.portable desinstalado (o no estaba instalado)." -ForegroundColor Green
     } catch {
-        Write-Host "[ERROR] No se pudo desinstalar mpvnet.portable: $_" -ForegroundColor Red
+        Write-Host "`t[ERROR] No se pudo desinstalar mpvnet.portable: $_" -ForegroundColor Red
     }
 
     # 3) Desinstalar también .NET 6 Desktop Runtime
@@ -2329,7 +2329,7 @@ $btnMpvNetUninstall.Add_Click({
         ) | Out-Null
     }
     catch {
-        Write-Host "[ERROR] Falló desinstalación de .NET 6 Desktop Runtime: $_" -ForegroundColor Red
+        Write-Host "`t[ERROR] Falló desinstalación de .NET 6 Desktop Runtime: $_" -ForegroundColor Red
         [System.Windows.Forms.MessageBox]::Show(
             "No se pudo desinstalar .NET 6 Desktop Runtime automáticamente. Revisa la consola o desinstálalo manualmente.",
             "Error al desinstalar .NET 6",
