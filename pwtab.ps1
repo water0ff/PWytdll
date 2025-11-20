@@ -351,11 +351,11 @@ function Classify-Format {
         AudioOnly     = [bool]$isAudioOnly
         Progressive   = [bool]$isProgressive
         Ext           = $fmt.ext
-        VRes          = $fmt.height
+        VRes          = if ($fmt.height) { [int]$fmt.height } else { 0 }
         VCodec        = $fmt.vcodec
         ACodec        = $fmt.acodec
-        ABr           = $fmt.abr
-        Tbr           = $fmt.tbr
+        ABr           = if ($fmt.abr) { [double]$fmt.abr } else { 0 }
+        Tbr           = if ($fmt.tbr) { [double]$fmt.tbr } else { 0 }
         Filesize      = $fmt.filesize
         FormatNote    = $fmt.format_note
         Id            = $fmt.format_id
@@ -462,6 +462,7 @@ function Fetch-Formats {
     $script:lastFormats = $null
     $script:bestProgId   = $null
     $script:bestProgRank = -1
+    
     try { 
         $yt = Get-Command yt-dlp -ErrorAction Stop 
     } catch {
@@ -470,6 +471,7 @@ function Fetch-Formats {
         Write-Host "`t[ERROR] yt-dlp no disponible para listar formatos." -ForegroundColor Red
         return $false
     }
+    
     $lblEstadoConsulta.Text = "Obteniendo lista de formatos..."
     $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::DarkBlue
     $args1 = @(
@@ -524,49 +526,51 @@ function Fetch-Formats {
         return $false
     }
     $script:lastFormats = $json.formats
-    $script:bestProgId   = $null
-    $script:bestProgRank = -1
-    $lblEstadoConsulta.Text = "Clasificando formatos..."
+    $lblEstadoConsulta.Text = "Clasificando y ordenando formatos..."
+    $videoFormats = @()
+    $audioFormats = @()
     foreach ($f in $json.formats) {
         $klass = Classify-Format $f
-        if ($klass.Progressive -and $klass.Id -ne 'download') {
-            $height = 0
-            if ($klass.VRes) { $height = [int]$klass.VRes }
-            $tbrStr = 0
-            if ($klass.Tbr) { $tbrStr = [int]$klass.Tbr }
-            $rank   = ($height * 100000) + $tbrStr
-            if ($rank -gt $script:bestProgRank) {
-                $script:bestProgRank = $rank
-                $script:bestProgId   = $klass.Id
-            }
-        }
         $script:formatsIndex[$klass.Id] = $klass
-        if ($klass.Progressive -and $script:ExcludedFormatIds -contains $klass.Id) { continue }
         $res   = if ($klass.VRes) { "{0}p" -f $klass.VRes } else { "" }
         $sz    = Human-Size $klass.Filesize
         $tbrStr = if ($klass.Tbr) { "{0}k" -f [math]::Round($klass.Tbr) } else { "" }
-        
-        if     ($klass.Progressive) { 
-            $script:formatsVideo += (New-FormatDisplay -Id $klass.Id -Label ("{0} {1} {2}/{3} (progresivo) {4} {5}" -f $klass.Ext,$res,$klass.VCodec,$klass.ACodec,$sz,$tbrStr)) 
+        if ($klass.Progressive -or $klass.VideoOnly) {
+            $label = if ($klass.Progressive) {
+                "{0} {1} {2}/{3} (progresivo) {4} {5}" -f $klass.Ext, $res, $klass.VCodec, $klass.ACodec, $sz, $tbrStr
+            } else {
+                "{0} {1} {2} (video-only) {3} {4}" -f $klass.Ext, $res, $klass.VCodec, $sz, $tbrStr
+            }
+            $videoFormats += [pscustomobject]@{
+                Display = (New-FormatDisplay -Id $klass.Id -Label $label)
+                Height = $klass.VRes
+                Tbr = $klass.Tbr
+                IsProgressive = $klass.Progressive
+            }
         }
-        elseif ($klass.VideoOnly)   { 
-            $script:formatsVideo += (New-FormatDisplay -Id $klass.Id -Label ("{0} {1} {2} (v-only) {3} {4}" -f $klass.Ext,$res,$klass.VCodec,$sz,$tbrStr)) 
-        }
-        elseif ($klass.AudioOnly)   { 
-            $script:formatsAudio += (New-FormatDisplay -Id $klass.Id -Label ("{0} ~{1} {2} (a-only) {3}" -f $klass.Ext,$klass.ABr,$klass.ACodec,$sz)) 
+        elseif ($klass.AudioOnly) {
+            $label = "{0} ~{1} {2} (audio-only) {3}" -f $klass.Ext, $klass.ABr, $klass.ACodec, $sz
+            $audioFormats += [pscustomobject]@{
+                Display = (New-FormatDisplay -Id $klass.Id -Label $label)
+                ABr = $klass.ABr
+            }
         }
     }
-    $progOnly = Is-ProgressiveOnlySite $script:lastExtractor
-    $headersVideo = @("best — mejor calidad (progresivo si existe; si no, adaptativo)")
-    if (-not $progOnly) {
-        $headersVideo += "bestvideo — mejor video (sin audio; usar con audio)"
+    $sortedVideo = $videoFormats | Sort-Object @{
+        Expression = {
+            $score = 0
+            if ($_.IsProgressive) { $score += 1000000 }
+            $score + ($_.Height * 1000) + ($_.Tbr)
+        }
+        Descending = $true
     }
-    $script:formatsVideo = ( $headersVideo + $script:formatsVideo ) | Select-Object -Unique
-    $script:formatsAudio = ( @("bestaudio — mejor audio disponible") + $script:formatsAudio ) | Select-Object -Unique
+    $sortedAudio = $audioFormats | Sort-Object @{Expression = "ABr"; Descending = $true}
+    $script:formatsVideo = $sortedVideo.Display
+    $script:formatsAudio = $sortedAudio.Display
     $script:formatsEnumerated = ($script:formatsVideo.Count -gt 0 -or $script:formatsAudio.Count -gt 0)
     if ($json.extractor) { $script:lastExtractor = $json.extractor }
     if ($script:formatsEnumerated) {
-        $lblEstadoConsulta.Text = "Formatos obtenidos correctamente"
+        $lblEstadoConsulta.Text = "Formatos obtenidos y ordenados correctamente"
         $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::DarkGreen
     } else {
         $lblEstadoConsulta.Text = "ADVERTENCIA: No se pudieron enumerar formatos"
@@ -579,15 +583,18 @@ function Populate-FormatCombos {
         $cmbVideoFmt.Items.Clear()
         if ($script:formatsVideo -and $script:formatsVideo.Count -gt 0) {
             $cmbVideoFmt.Items.AddRange($script:formatsVideo)
-            $cmbVideoFmt.SelectedIndex = 0
+            if ($cmbVideoFmt.Items.Count -gt 0) {
+                $cmbVideoFmt.SelectedIndex = 0
+            }
         }
     }
-
     if ($cmbAudioFmt) {
         $cmbAudioFmt.Items.Clear()
         if ($script:formatsAudio -and $script:formatsAudio.Count -gt 0) {
             $cmbAudioFmt.Items.AddRange($script:formatsAudio)
-            $cmbAudioFmt.SelectedIndex = 0
+            if ($cmbAudioFmt.Items.Count -gt 0) {
+                $cmbAudioFmt.SelectedIndex = 0
+            }
         }
     }
 }
@@ -647,11 +654,8 @@ function Get-SelectedFormatId {
     param([System.Windows.Forms.ComboBox]$Combo)
     if (-not $Combo) { return $null }
     if (-not $Combo.SelectedItem) { return $null }
-
     $t = [string]$Combo.SelectedItem
     if ([string]::IsNullOrWhiteSpace($t)) { return $null }
-
-    if ($t -like "best*") { return ($t -split '\s')[0] } # best / bestvideo / bestaudio
     return ($t -split '\s')[0]
 }
 function Create-IconButton {
