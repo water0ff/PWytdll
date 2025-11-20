@@ -2569,7 +2569,6 @@ function Invoke-YtDlpQuery {
         [Parameter(Mandatory=$true)][string[]]$Args,
         [switch]$UpdateUi
     )
-    Write-Host "[DEBUG] Ejecutando: $ExePath $Args" -ForegroundColor Yellow
     try { 
         [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 
     } catch {}
@@ -2606,9 +2605,6 @@ function Invoke-YtDlpQuery {
     $stdout = $stdoutTask.GetAwaiter().GetResult()
     $stderr = $stderrTask.GetAwaiter().GetResult()
     $exitCode = $proc.ExitCode
-    Write-Host "[DEBUG] Proceso terminado. ExitCode: $exitCode" -ForegroundColor Yellow
-    Write-Host "[DEBUG] StdOut length: $($stdout.Length)" -ForegroundColor Yellow
-    Write-Host "[DEBUG] StdErr: $stderr" -ForegroundColor Yellow
     $proc.Dispose()
     return [pscustomobject]@{ 
         ExitCode = $exitCode
