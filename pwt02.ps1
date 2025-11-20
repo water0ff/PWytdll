@@ -1751,7 +1751,7 @@ function Show-AppInfo {
         -Size (New-Object System.Drawing.Size(440, 18)) `
         -IsTag
     $btnActualizarTodo = Create-Button -Text "ACTUALIZAR TODO" `
-        -Location (New-Object System.Drawing.Point(20, 506)) `
+        -Location (New-Object System.Drawing.Point(20, 572)) `
         -Size (New-Object System.Drawing.Size(150, 30)) `
         -BackColor $ColorPrimary `
         -ForeColor ([System.Drawing.Color]::White) `
@@ -1785,7 +1785,7 @@ function Show-AppInfo {
         ) | Out-Null
     })
     $btnCerrar = Create-Button -Text "Cerrar" `
-        -Location (New-Object System.Drawing.Point(380, 506)) `
+        -Location (New-Object System.Drawing.Point(380, 572)) `
         -Size (New-Object System.Drawing.Size(100, 30)) `
         -BackColor ([System.Drawing.Color]::Black) `
         -ForeColor ([System.Drawing.Color]::White) `
