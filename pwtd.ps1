@@ -1261,7 +1261,7 @@ function Invoke-ConsultaFromUI {
     }
     $args = @(
         "--no-playlist",
-        "--no-warnings",
+        "--no-warnings", 
         "--ignore-config",
         "--print", "title",
         "--print", "thumbnail", 
@@ -1270,8 +1270,10 @@ function Invoke-ConsultaFromUI {
     )
     $lblEstadoConsulta.Text = "Consultando video..."
     $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::DarkBlue
-    $res = Invoke-CaptureResponsive -ExePath $yt.Source -Args $args -WorkingText "Consultando video" -TimeoutSec 30
-    if ($res.ExitCode -ne 0) {
+    $res = Invoke-Capture -ExePath $yt.Source -Args $args
+    Write-Host "[DEBUG] yt-dlp ExitCode: $($res.ExitCode)" -ForegroundColor Yellow
+    $hasValidOutput = $res.StdOut -and $res.StdOut.Trim() -and ($res.StdOut -split "`r?`n").Count -ge 1
+    if ($res.ExitCode -ne 0 -and -not $hasValidOutput) {
         $msgErr = $res.StdErr
         if ([string]::IsNullOrWhiteSpace($msgErr)) { $msgErr = $res.StdOut }
         $script:videoConsultado   = $false
@@ -1280,7 +1282,7 @@ function Invoke-ConsultaFromUI {
         $script:formatsEnumerated = $false
         $lblEstadoConsulta.Text   = "Error al consultar la URL"
         $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::Red
-        $picPreview.Image = $null
+        $picPreview.Image = $null   
         if (-not [string]::IsNullOrWhiteSpace($msgErr)) {
             $msgErr = ($msgErr -split "`r?`n" | Select-Object -First 6) -join [Environment]::NewLine
             [System.Windows.Forms.MessageBox]::Show(
@@ -1316,6 +1318,9 @@ function Invoke-ConsultaFromUI {
     $script:formatsEnumerated = $false
     $lblEstadoConsulta.Text = "Consulta OK: `"$title`""
     $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::DarkGreen
+    Write-Host "[CONSULTA] Título: $title" -ForegroundColor Green
+    Write-Host "[CONSULTA] Thumbnail: $thumbUrl" -ForegroundColor Green
+    Write-Host "[CONSULTA] Video ID: $videoId" -ForegroundColor Green
     return $true
 }
 function Get-ToolVersion {
@@ -2575,6 +2580,7 @@ function Invoke-YtDlpConsoleProgress {
 function Is-ProgressiveOnlySite([string]$extractor) {
             return ($extractor -match '(tiktok|douyin|instagram|twitter|x)')
         }
+        
 $btnDescargar.Add_Click({
     Refresh-GateByDeps
     $currentUrl = Get-CurrentUrl
@@ -2614,7 +2620,7 @@ $btnDescargar.Add_Click({
             } else {
                 $lblEstadoConsulta.Text = "Consulta completada (sin formatos)"
                 $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::DarkOrange
-            }   
+            }
             [System.Windows.Forms.MessageBox]::Show(
                 "Consulta lista. Revisa formatos y vuelve a presionar Descargar para iniciar la descarga.",
                 "Consulta completada",
