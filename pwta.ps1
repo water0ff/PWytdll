@@ -2726,7 +2726,7 @@ $btnDescargar.Add_Click({
     if ($script:cookiesPath) {
             $args += @("--cookies", $script:cookiesPath)
         }
-    $args += $script:ultimaURL
+    $args += "`"$($script:ultimaURL)`""
     if (Is-TwitchUrl $script:ultimaURL) {
             $args += @(
                 "--hls-use-mpegts",
