@@ -1633,7 +1633,7 @@ if (-not (Initialize-AppHeadless)) {      return  }
 function Show-AppInfo {
     $f = New-Object System.Windows.Forms.Form
     $f.Text = "Información de la aplicación"
-    $f.Size = New-Object System.Drawing.Size(520, 600)
+    $f.Size = New-Object System.Drawing.Size(520, 700)
     $f.StartPosition = "CenterParent"
     $f.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::FixedDialog
     $f.MaximizeBox = $false
