@@ -1245,70 +1245,153 @@ function Build-PreviewFromStream {
 }
 function Invoke-ConsultaFromUI {
     param([Parameter(Mandatory = $true)][string]$Url)
-    Write-Host ("[CONSULTA] Consultando URL: {0}" -f $Url) -ForegroundColor Cyan
-    try {
-        $yt = Get-Command yt-dlp -ErrorAction Stop
-    } catch {
-        $lblEstadoConsulta.Text = "ERROR: yt-dlp no disponible"
-        $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::Red
-        [System.Windows.Forms.MessageBox]::Show(
-            "yt-dlp no está disponible en el PATH. Verifícalo en la sección de Dependencias.",
-            "yt-dlp no encontrado",
-            [System.Windows.Forms.MessageBoxButtons]::OK,
-            [System.Windows.Forms.MessageBoxIcon]::Error
-        ) | Out-Null
-        return $false
+    $scriptBlock = {
+        param($Url, $WorkingText)
+        try {
+            $yt = Get-Command yt-dlp -ErrorAction Stop
+        } catch {
+            return @{ Success = $false; Error = "yt-dlp no disponible" }
+        }
+        $args = @(
+            "--no-playlist",
+            "--no-warnings", 
+            "--ignore-config",
+            "--print", "title",
+            "--print", "thumbnail", 
+            "--print", "id",
+            $Url
+        )
+        Write-Output "Consultando video..."
+        $res = Invoke-Capture -ExePath $yt.Source -Args $args
+        $lines = $res.StdOut -split "`r?`n" | Where-Object { $_.Trim() -ne "" }
+        $hasValidData = $lines.Count -ge 3 -and -not [string]::IsNullOrWhiteSpace($lines[0])
+        if ($res.ExitCode -eq 0 -or $hasValidData) {
+            return @{
+                Success = $true
+                Title = $lines[0]
+                ThumbUrl = if ($lines.Count -ge 2) { $lines[1] } else { $null }
+                VideoId = if ($lines.Count -ge 3) { $lines[2] } else { $null }
+            }
+        } else {
+            return @{ Success = $false; Error = "Error al consultar la URL" }
+        }
     }
-    $args = @(
-        "--no-playlist",
-        "--no-warnings", 
-        "--ignore-config",
-        "--print", "title",
-        "--print", "thumbnail", 
-        "--print", "id",
-        $Url
-    )
-    $lblEstadoConsulta.Text = "Consultando video..."
+    $btnDescargar.Enabled = $false
+    $txtUrl.Enabled = $false
+    $job = Start-Job -ScriptBlock $scriptBlock -ArgumentList $Url, "Consultando video..."
+    $timer = New-Object System.Windows.Forms.Timer
+    $timer.Interval = 100
+    $timer.Add_Tick({
+        if ($job.State -eq 'Completed') {
+            $timer.Stop()
+            $result = Receive-Job -Job $job
+            Remove-Job -Job $job
+            if ($result.Success) {
+                $script:videoConsultado = $true
+                $script:ultimaURL = $Url
+                $script:ultimoTitulo = $result.Title
+                $script:lastThumbUrl = $result.ThumbUrl
+                $script:formatsEnumerated = $false
+                $lblEstadoConsulta.Text = "Consulta OK: `"$($result.Title)`""
+                $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::DarkGreen
+                Start-ThumbnailAndFormatsLoad -Url $Url -Title $result.Title
+            } else {
+                $lblEstadoConsulta.Text = $result.Error
+                $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::Red
+                $btnDescargar.Enabled = $true
+                $txtUrl.Enabled = $true
+            }
+        } elseif ($job.State -eq 'Failed') {
+            $timer.Stop()
+            $lblEstadoConsulta.Text = "Error en la consulta"
+            $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::Red
+            $btnDescargar.Enabled = $true
+            $txtUrl.Enabled = $true
+            Remove-Job -Job $job
+        }
+    })
+    $timer.Start()
+}
+function Start-ThumbnailAndFormatsLoad {
+    param([string]$Url, [string]$Title)
+    $lblEstadoConsulta.Text = "Cargando vista previa..."
     $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::DarkBlue
     [System.Windows.Forms.Application]::DoEvents()
-    $res = Invoke-YtDlpQuery -ExePath $yt.Source -Args $args -UpdateUi
-    Write-Host "[DEBUG] yt-dlp ExitCode: $($res.ExitCode)" -ForegroundColor Yellow
-    $lines = $res.StdOut -split "`r?`n" | Where-Object { $_.Trim() -ne "" }
-    $hasValidData = $lines.Count -ge 3 -and -not [string]::IsNullOrWhiteSpace($lines[0])
-    if ($res.ExitCode -eq 0 -or $hasValidData) {
-        $title     = $lines[0]
-        $thumbUrl  = if ($lines.Count -ge 2) { $lines[1] } else { $null }
-        $videoId   = if ($lines.Count -ge 3) { $lines[2] } else { $null }
-        $script:videoConsultado = $true
-        $script:ultimaURL       = $Url
-        $script:ultimoTitulo    = $title
-        $script:lastThumbUrl    = $thumbUrl
-        $script:formatsEnumerated = $false
-        $lblEstadoConsulta.Text = "Consulta OK: `"$title`""
-        $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::DarkGreen
-        Write-Host "[CONSULTA] Título: $title" -ForegroundColor Green
-        Write-Host "[CONSULTA] Thumbnail: $thumbUrl" -ForegroundColor Green
-        Write-Host "[CONSULTA] Video ID: $videoId" -ForegroundColor Green
-        return $true
-    }
-    else {
-        $script:videoConsultado   = $false
-        $script:ultimaURL         = $null
-        $script:ultimoTitulo      = $null
-        $script:formatsEnumerated = $false
-        $lblEstadoConsulta.Text   = "Error al consultar la URL"
-        $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::Red
-        $picPreview.Image = $null
-        [System.Windows.Forms.MessageBox]::Show(
-            "yt-dlp devolvió error al consultar la URL. Verifica que la URL sea válida.",
-            "Error en consulta",
-            [System.Windows.Forms.MessageBoxButtons]::OK,
-            [System.Windows.Forms.MessageBoxIcon]::Error
-        ) | Out-Null
-        Write-Host "`t[ERROR] No se pudo consultar el video. ExitCode: $($res.ExitCode)" -ForegroundColor Red
-        Write-Host "`t[ERROR] StdErr: $($res.StdErr)" -ForegroundColor Red
-        return $false
-    }
+    $thumbJob = Start-Job -ScriptBlock {
+        param($Url, $Title, $LastThumbUrl)
+        Add-Type -AssemblyName System.Windows.Forms
+        Add-Type -AssemblyName System.Drawing
+        try {
+            $yt = Get-Command yt-dlp -ErrorAction Stop
+            $args = @("-J", "--no-playlist", $Url)
+            $res = & $yt.Source $args 2>$null
+            if ($res) {
+                $json = $res | ConvertFrom-Json
+                $thumbUrl = $json.thumbnail
+                return @{ Success = $true; ThumbUrl = $thumbUrl }
+            }
+        } catch {
+            return @{ Success = $false }
+        }
+    } -ArgumentList $Url, $Title, $script:lastThumbUrl
+    $timer2 = New-Object System.Windows.Forms.Timer
+    $timer2.Interval = 100
+    $timer2.Add_Tick({
+        if ($thumbJob.State -eq 'Completed') {
+            $timer2.Stop()
+            $thumbResult = Receive-Job -Job $thumbJob
+            Remove-Job -Job $thumbJob
+            if ($thumbResult.Success -and $thumbResult.ThumbUrl) {
+                try {
+                    Show-PreviewUniversal -Url $Url -Titulo $Title -DirectThumbUrl $thumbResult.ThumbUrl
+                } catch {
+                }
+            }
+            Start-FormatsLoad -Url $Url
+        }
+    })
+    $timer2.Start()
+}
+function Start-FormatsLoad {
+    param([string]$Url)
+    $lblEstadoConsulta.Text = "Obteniendo formatos..."
+    $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::DarkBlue
+    [System.Windows.Forms.Application]::DoEvents()
+    $formatsJob = Start-Job -ScriptBlock {
+        param($Url)
+        try {
+            $yt = Get-Command yt-dlp -ErrorAction Stop
+            $args = @("-J", "--no-playlist", $Url)
+            $res = & $yt.Source $args 2>$null
+            return @{ Success = $true; HasFormats = ($res -ne $null) }
+        } catch {
+            return @{ Success = $false }
+        }
+    } -ArgumentList $Url
+    $timer3 = New-Object System.Windows.Forms.Timer
+    $timer3.Interval = 100
+    $timer3.Add_Tick({
+        if ($formatsJob.State -eq 'Completed') {
+            $timer3.Stop()
+            $formatsResult = Receive-Job -Job $formatsJob
+            Remove-Job -Job $formatsJob
+            $btnDescargar.Enabled = $true
+            $txtUrl.Enabled = $true
+            if ($formatsResult.Success -and $formatsResult.HasFormats) {
+                $lblEstadoConsulta.Text = "Consulta completada - Listo para descargar"
+                $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::DarkGreen
+                $fmtOk = Fetch-Formats -Url $Url
+                if ($fmtOk) {
+                    Populate-FormatCombos
+                }
+            } else {
+                $lblEstadoConsulta.Text = "Consulta completada (sin formatos)"
+                $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::DarkOrange
+            }
+            Set-DownloadButtonVisual
+        }
+    })
+    $timer3.Start()
 }
 function Get-ToolVersion {
     param(
@@ -2636,7 +2719,7 @@ $btnDescargar.Add_Click({
         }
         $lblEstadoConsulta.Text = "Iniciando consulta..."
         $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::DarkBlue
-        $ok = Invoke-ConsultaFromUI -Url $currentUrl
+        $ok =  Invoke-ConsultaFromUI -Url $currentUrl
         if ($ok) {
             $lblEstadoConsulta.Text = "Cargando vista previa..."
             Show-PreviewUniversal -Url $currentUrl -Titulo $script:ultimoTitulo -DirectThumbUrl $script:lastThumbUrl
