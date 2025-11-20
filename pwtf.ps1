@@ -568,7 +568,23 @@ function Fetch-Formats {
         if ($lblEstadoConsulta -and $prevLabel) { $lblEstadoConsulta.Text = $prevLabel }
     }
 }
+function Populate-FormatCombos {
+    if ($cmbVideoFmt) {
+        $cmbVideoFmt.Items.Clear()
+        if ($script:formatsVideo -and $script:formatsVideo.Count -gt 0) {
+            $cmbVideoFmt.Items.AddRange($script:formatsVideo)
+            $cmbVideoFmt.SelectedIndex = 0
+        }
+    }
 
+    if ($cmbAudioFmt) {
+        $cmbAudioFmt.Items.Clear()
+        if ($script:formatsAudio -and $script:formatsAudio.Count -gt 0) {
+            $cmbAudioFmt.Items.AddRange($script:formatsAudio)
+            $cmbAudioFmt.SelectedIndex = 0
+        }
+    }
+}
 function Get-Metadata {
     param([Parameter(Mandatory=$true)][string]$Url)
 
@@ -1290,7 +1306,7 @@ function Invoke-ConsultaFromUI {
     $script:ultimaURL       = $Url
     $script:ultimoTitulo    = $title
     $script:lastThumbUrl    = $thumbUrl
-    $script:formatsEnumerated = $true
+    $script:formatsEnumerated = $false
     $lblEstadoConsulta.Text = "Consulta OK: `"$title`""
     $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::DarkGreen
     return $true
@@ -1914,21 +1930,30 @@ $btnUrlHistory.Add_Click({
     Show-UrlHistoryMenu -AnchorControl $btnUrlHistory
 })
 $formPrincipal.Controls.Add($btnUrlHistory)
-
-$txtUrl.Add_TextChanged({
-    if ($txtUrl.Text -ne $global:UrlPlaceholder -and -not [string]::IsNullOrWhiteSpace($txtUrl.Text)) {
-        $toolTip.SetToolTip($txtUrl, (Get-DisplayUrl -Url $txtUrl.Text))
-    } else {
-        $toolTip.SetToolTip($txtUrl, "")
-    }
-})
-$txtUrl.Add_LostFocus({
-    if ([string]::IsNullOrWhiteSpace($this.Text)) {
-        $this.Text = $global:UrlPlaceholder
-        $this.ForeColor = [System.Drawing.Color]::Gray
-    }
-    $this.BackColor = [System.Drawing.Color]::FromArgb(255, 255, 220)
-})
+    $txtUrl.Add_TextChanged({
+        if ($txtUrl.Text -ne $global:UrlPlaceholder -and -not [string]::IsNullOrWhiteSpace($txtUrl.Text)) {
+            $toolTip.SetToolTip($txtUrl, (Get-DisplayUrl -Url $txtUrl.Text))
+            $txtUrl.ForeColor = [System.Drawing.Color]::Black
+        } else {
+            $toolTip.SetToolTip($txtUrl, "")
+        }
+    
+        Set-DownloadButtonVisual
+    })
+    $txtUrl.Add_LostFocus({
+        if ([string]::IsNullOrWhiteSpace($this.Text)) {
+            $this.Text = $global:UrlPlaceholder
+            $this.ForeColor = [System.Drawing.Color]::Gray
+        }
+        $this.BackColor = [System.Drawing.Color]::FromArgb(255, 255, 220)
+    })
+    $txtUrl.Add_GotFocus({
+        if ($this.Text -eq $global:UrlPlaceholder) {
+            $this.Text = ""
+            $this.ForeColor = [System.Drawing.Color]::Black
+        }
+        $this.BackColor = [System.Drawing.Color]::White
+    })
 $ctxUrlHistory = New-Object System.Windows.Forms.ContextMenuStrip
 $btnDescargar = Create-Button -Text "Descargar" `
     -Location (New-Object System.Drawing.Point(20, 230)) `
@@ -2084,13 +2109,6 @@ function Show-UrlHistoryMenu {
     $pt = New-Object System.Drawing.Point(0, $AnchorControl.Height)
     $ctxUrlHistory.Show($AnchorControl, $pt)
 }
-$txtUrl.Add_LostFocus({
-    if ([string]::IsNullOrWhiteSpace($this.Text)) {
-        $this.Text = $global:UrlPlaceholder
-        $this.ForeColor = [System.Drawing.Color]::Gray
-    }
-})
-$txtUrl.Add_TextChanged({ Set-DownloadButtonVisual })
 $btnPickCookies.Add_Click({
     $ofd = New-Object System.Windows.Forms.OpenFileDialog
     $ofd.Title = "Selecciona cookies.txt"
@@ -2549,17 +2567,41 @@ $btnDescargar.Add_Click({
              ($script:ultimaURL -eq $currentUrl)
     if (-not $ready) {
         if ([string]::IsNullOrWhiteSpace($currentUrl)) {
-            [System.Windows.Forms.MessageBox]::Show("Escribe una URL de YouTube.","Falta URL",
-                [System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Warning) | Out-Null
+            [System.Windows.Forms.MessageBox]::Show(
+                "Escribe una URL de YouTube.",
+                "Falta URL",
+                [System.Windows.Forms.MessageBoxButtons]::OK,
+                [System.Windows.Forms.MessageBoxIcon]::Warning
+            ) | Out-Null
             return
         }
+
         $ok = Invoke-ConsultaFromUI -Url $currentUrl
-        Set-DownloadButtonVisual
         if ($ok) {
-            [System.Windows.Forms.MessageBox]::Show("Consulta lista. Vuelve a presionar Descargar para iniciar la descarga.",
+            # 1) Enumerar formatos
+            $fmtOk = Fetch-Formats -Url $currentUrl
+            if ($fmtOk) {
+                # Imprimir tabla en consola
+                if ($script:lastFormats) {
+                    Print-FormatsTable -formats $script:lastFormats
+                }
+                # Llenar combos
+                Populate-FormatCombos
+            }
+
+            # 2) Intentar vista previa (ver sección 2)
+            Show-PreviewUniversal -Url $currentUrl -Titulo $script:ultimoTitulo -DirectThumbUrl $script:lastThumbUrl
+
+            Set-DownloadButtonVisual
+
+            [System.Windows.Forms.MessageBox]::Show(
+                "Consulta lista. Revisa formatos y vuelve a presionar Descargar para iniciar la descarga.",
                 "Consulta completada",
                 [System.Windows.Forms.MessageBoxButtons]::OK,
-                [System.Windows.Forms.MessageBoxIcon]::Information) | Out-Null
+                [System.Windows.Forms.MessageBoxIcon]::Information
+            ) | Out-Null
+        } else {
+            Set-DownloadButtonVisual
         }
         return
     }
