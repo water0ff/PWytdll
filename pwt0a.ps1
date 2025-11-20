@@ -1273,7 +1273,25 @@ function Invoke-ConsultaFromUI {
     [System.Windows.Forms.Application]::DoEvents()
     $res = Invoke-YtDlpQuery -ExePath $yt.Source -Args $args -UpdateUi
     Write-Host "[DEBUG] yt-dlp ExitCode: $($res.ExitCode)" -ForegroundColor Yellow
-    if ($res.ExitCode -ne 0) {  # <--- CORREGIDO
+    $lines = $res.StdOut -split "`r?`n" | Where-Object { $_.Trim() -ne "" }
+    $hasValidData = $lines.Count -ge 3 -and -not [string]::IsNullOrWhiteSpace($lines[0])
+    if ($res.ExitCode -eq 0 -or $hasValidData) {
+        $title     = $lines[0]
+        $thumbUrl  = if ($lines.Count -ge 2) { $lines[1] } else { $null }
+        $videoId   = if ($lines.Count -ge 3) { $lines[2] } else { $null }
+        $script:videoConsultado = $true
+        $script:ultimaURL       = $Url
+        $script:ultimoTitulo    = $title
+        $script:lastThumbUrl    = $thumbUrl
+        $script:formatsEnumerated = $false
+        $lblEstadoConsulta.Text = "Consulta OK: `"$title`""
+        $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::DarkGreen
+        Write-Host "[CONSULTA] Título: $title" -ForegroundColor Green
+        Write-Host "[CONSULTA] Thumbnail: $thumbUrl" -ForegroundColor Green
+        Write-Host "[CONSULTA] Video ID: $videoId" -ForegroundColor Green
+        return $true
+    }
+    else {
         $script:videoConsultado   = $false
         $script:ultimaURL         = $null
         $script:ultimoTitulo      = $null
@@ -1288,34 +1306,9 @@ function Invoke-ConsultaFromUI {
             [System.Windows.Forms.MessageBoxIcon]::Error
         ) | Out-Null
         Write-Host "`t[ERROR] No se pudo consultar el video. ExitCode: $($res.ExitCode)" -ForegroundColor Red
+        Write-Host "`t[ERROR] StdErr: $($res.StdErr)" -ForegroundColor Red
         return $false
     }
-    $lines = $res.StdOut -split "`r?`n" | Where-Object { $_.Trim() -ne "" }
-    if ($lines.Count -lt 1) {
-        $script:videoConsultado   = $false
-        $script:ultimaURL         = $null
-        $script:ultimoTitulo      = $null
-        $script:formatsEnumerated = $false
-        $lblEstadoConsulta.Text   = "Sin datos de yt-dlp"
-        $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::Red
-        $picPreview.Image = $null
-        Write-Host "`t[ERROR] yt-dlp no devolvió datos." -ForegroundColor Red
-        return $false
-    }
-    $title     = $lines[0]
-    $thumbUrl  = if ($lines.Count -ge 2) { $lines[1] } else { $null }
-    $videoId   = if ($lines.Count -ge 3) { $lines[2] } else { $null }
-    $script:videoConsultado = $true
-    $script:ultimaURL       = $Url
-    $script:ultimoTitulo    = $title
-    $script:lastThumbUrl    = $thumbUrl
-    $script:formatsEnumerated = $false
-    $lblEstadoConsulta.Text = "Consulta OK: `"$title`""
-    $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::DarkGreen
-    Write-Host "[CONSULTA] Título: $title" -ForegroundColor Green
-    Write-Host "[CONSULTA] Thumbnail: $thumbUrl" -ForegroundColor Green
-    Write-Host "[CONSULTA] Video ID: $videoId" -ForegroundColor Green
-    return $true
 }
 function Get-ToolVersion {
     param(
@@ -2576,74 +2569,49 @@ function Invoke-YtDlpQuery {
         [Parameter(Mandatory=$true)][string[]]$Args,
         [switch]$UpdateUi
     )
-    try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch {}
+    Write-Host "[DEBUG] Ejecutando: $ExePath $Args" -ForegroundColor Yellow
+    try { 
+        [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 
+    } catch {}
     $global:ProgressPreference = 'SilentlyContinue'
-    $tmpDir  = [System.IO.Path]::GetTempPath()
+    $tmpDir = [System.IO.Path]::GetTempPath()
     $errFile = Join-Path $tmpDir ("yt-dlp-stderr_{0}.log" -f ([guid]::NewGuid()))
     $outFile = Join-Path $tmpDir ("yt-dlp-stdout_{0}.log" -f ([guid]::NewGuid()))
-    $argLine = ($Args | ForEach-Object { if ($_ -match '\s') { '"{0}"' -f $_ } else { $_ } }) -join ' '
-    $proc = Start-Process -FilePath $ExePath `
-        -ArgumentList $argLine `
-        -NoNewWindow -PassThru `
-        -RedirectStandardError  $errFile `
-        -RedirectStandardOutput $outFile
-    $fsErr = [System.IO.File]::Open($errFile,[System.IO.FileMode]::OpenOrCreate,[System.IO.FileAccess]::Read,[System.IO.FileShare]::ReadWrite)
-    $srErr = New-Object System.IO.StreamReader($fsErr)
-    $fsOut = [System.IO.File]::Open($outFile,[System.IO.FileMode]::OpenOrCreate,[System.IO.FileAccess]::Read,[System.IO.FileShare]::ReadWrite)
-    $srOut = New-Object System.IO.StreamReader($fsOut)
-    function Set-Ui([string]$txt) {
-        if ($UpdateUi -and $lblEstadoConsulta) { 
-            $lblEstadoConsulta.Text = $txt 
-            [System.Windows.Forms.Application]::DoEvents()
+    $argLine = ($Args | ForEach-Object { 
+        if ($_ -match '\s') { '"{0}"' -f $_ } else { $_ } 
+    }) -join ' '
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = $ExePath
+    $psi.Arguments = $argLine
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError = $true
+    $psi.UseShellExecute = $false
+    $psi.CreateNoWindow = $true
+    $psi.StandardOutputEncoding = [System.Text.Encoding]::UTF8
+    $psi.StandardErrorEncoding = [System.Text.Encoding]::UTF8
+    $proc = New-Object System.Diagnostics.Process
+    $proc.StartInfo = $psi
+    $started = $proc.Start()
+    if (-not $started) {
+        Write-Host "[ERROR] No se pudo iniciar el proceso: $ExePath" -ForegroundColor Red
+        return [pscustomobject]@{ 
+            ExitCode = -1
+            StdOut = ""
+            StdErr = "No se pudo iniciar el proceso"
         }
     }
-    $bufErr = ""; $bufOut = ""
-    try {
-        Set-Ui "Consultando video..."
-        while (-not $proc.HasExited) {
-            $bufOut += $srOut.ReadToEnd()
-            $bufErr += $srErr.ReadToEnd()
-            if ($bufOut -and $UpdateUi) {
-                $lines = $bufOut -split "`r?`n"
-                foreach ($line in $lines) {
-                    $trimmedLine = $line.Trim()
-                    if ($trimmedLine -and -not $trimmedLine.StartsWith("WARNING") -and -not $trimmedLine.StartsWith("ERROR")) {
-                        Set-Ui "Consultando: $trimmedLine"
-                        Write-Host "[CONSULTA] $trimmedLine" -ForegroundColor Cyan
-                    }
-                }
-                $bufOut = $lines[-1]
-            }
-            [System.Windows.Forms.Application]::DoEvents()
-            Start-Sleep -Milliseconds 50
-        }
-        $bufOut += $srOut.ReadToEnd()
-        $bufErr += $srErr.ReadToEnd()
-        if ($bufOut -and $UpdateUi) {
-            $lines = $bufOut -split "`r?`n"
-            foreach ($line in $lines) {
-                $trimmedLine = $line.Trim()
-                if ($trimmedLine -and -not $trimmedLine.StartsWith("WARNING") -and -not $trimmedLine.StartsWith("ERROR")) {
-                    Set-Ui "Consultando: $trimmedLine"
-                    Write-Host "[CONSULTA] $trimmedLine" -ForegroundColor Cyan
-                }
-            }
-        }
-    }
-    finally {
-        try { $srErr.Close(); $fsErr.Close() } catch {}
-        try { $srOut.Close(); $fsOut.Close() } catch {}
-        Write-Host ""
-    }
-    $stdout = if (Test-Path $outFile) { [IO.File]::ReadAllText($outFile) } else { "" }
-    $stderr = if (Test-Path $errFile) { [IO.File]::ReadAllText($errFile) } else { "" }
-    try { Remove-Item -Path $outFile, $errFile -ErrorAction SilentlyContinue } catch {}
-    Write-Host "[DEBUG] Proceso terminado. ExitCode: $($proc.ExitCode)" -ForegroundColor Yellow
+    $stdoutTask = $proc.StandardOutput.ReadToEndAsync()
+    $stderrTask = $proc.StandardError.ReadToEndAsync()
+    $proc.WaitForExit()
+    $stdout = $stdoutTask.GetAwaiter().GetResult()
+    $stderr = $stderrTask.GetAwaiter().GetResult()
+    $exitCode = $proc.ExitCode
+    Write-Host "[DEBUG] Proceso terminado. ExitCode: $exitCode" -ForegroundColor Yellow
     Write-Host "[DEBUG] StdOut length: $($stdout.Length)" -ForegroundColor Yellow
     Write-Host "[DEBUG] StdErr: $stderr" -ForegroundColor Yellow
-    
+    $proc.Dispose()
     return [pscustomobject]@{ 
-        ExitCode = $proc.ExitCode 
+        ExitCode = $exitCode
         StdOut = $stdout
         StdErr = $stderr
     }
