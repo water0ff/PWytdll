@@ -1259,6 +1259,7 @@ function Invoke-ConsultaFromUI {
         ) | Out-Null
         return $false
     }
+    
     $args = @(
         "--no-playlist",
         "--no-warnings", 
@@ -1270,30 +1271,25 @@ function Invoke-ConsultaFromUI {
     )
     $lblEstadoConsulta.Text = "Consultando video..."
     $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::DarkBlue
-    $res = Invoke-Capture -ExePath $yt.Source -Args $args
+    [System.Windows.Forms.Application]::DoEvents()
+    $res = Invoke-YtDlpQuery -ExePath $yt.Source -Args $args -UpdateUi
     Write-Host "[DEBUG] yt-dlp ExitCode: $($res.ExitCode)" -ForegroundColor Yellow
-    $hasValidOutput = $res.StdOut -and $res.StdOut.Trim() -and ($res.StdOut -split "`r?`n").Count -ge 1
-    if ($res.ExitCode -ne 0 -and -not $hasValidOutput) {
-        $msgErr = $res.StdErr
-        if ([string]::IsNullOrWhiteSpace($msgErr)) { $msgErr = $res.StdOut }
+    if ($exitCode -ne 0) {
         $script:videoConsultado   = $false
         $script:ultimaURL         = $null
         $script:ultimoTitulo      = $null
         $script:formatsEnumerated = $false
         $lblEstadoConsulta.Text   = "Error al consultar la URL"
         $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::Red
-        $picPreview.Image = $null   
-        if (-not [string]::IsNullOrWhiteSpace($msgErr)) {
-            $msgErr = ($msgErr -split "`r?`n" | Select-Object -First 6) -join [Environment]::NewLine
-            [System.Windows.Forms.MessageBox]::Show(
-                "yt-dlp devolvió error al consultar la URL:" + [Environment]::NewLine + [Environment]::NewLine +
-                $msgErr,
-                "Error en consulta",
-                [System.Windows.Forms.MessageBoxButtons]::OK,
-                [System.Windows.Forms.MessageBoxIcon]::Error
-            ) | Out-Null
-        }
-        Write-Host "`t[ERROR] No se pudo consultar el video." -ForegroundColor Red
+        $picPreview.Image = $null
+        
+        [System.Windows.Forms.MessageBox]::Show(
+            "yt-dlp devolvió error al consultar la URL. Verifica que la URL sea válida.",
+            "Error en consulta",
+            [System.Windows.Forms.MessageBoxButtons]::OK,
+            [System.Windows.Forms.MessageBoxIcon]::Error
+        ) | Out-Null
+        Write-Host "`t[ERROR] No se pudo consultar el video. ExitCode: $exitCode" -ForegroundColor Red
         return $false
     }
     $lines = $res.StdOut -split "`r?`n" | Where-Object { $_.Trim() -ne "" }
@@ -2560,7 +2556,6 @@ function Invoke-YtDlpConsoleProgress {
             }
             if ($bufOut) { $bufOut = ([regex]::Split($bufOut, "\r\n|\n|\r") | Select-Object -Last 1) } 
             if ($bufErr) { $bufErr = ([regex]::Split($bufErr, "\r\n|\n|\r") | Select-Object -Last 1) }
-
             [System.Windows.Forms.Application]::DoEvents()
             Start-Sleep -Milliseconds 80
         }
@@ -2576,6 +2571,80 @@ function Invoke-YtDlpConsoleProgress {
     $code = $proc.ExitCode
     $script:lastYtDlpExitCode = $code   # lo guardamos por si acaso
     return $code
+}
+function Invoke-YtDlpQuery {
+    param(
+        [Parameter(Mandatory=$true)][string]$ExePath,
+        [Parameter(Mandatory=$true)][string[]]$Args,
+        [switch]$UpdateUi
+    )
+    try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch {}
+    $global:ProgressPreference = 'SilentlyContinue'
+    $tmpDir  = [System.IO.Path]::GetTempPath()
+    $errFile = Join-Path $tmpDir ("yt-dlp-stderr_{0}.log" -f ([guid]::NewGuid()))
+    $outFile = Join-Path $tmpDir ("yt-dlp-stdout_{0}.log" -f ([guid]::NewGuid()))
+    $argLine = ($Args | ForEach-Object { if ($_ -match '\s') { '"{0}"' -f $_ } else { $_ } }) -join ' '
+    $proc = Start-Process -FilePath $ExePath `
+        -ArgumentList $argLine `
+        -NoNewWindow -PassThru `
+        -RedirectStandardError  $errFile `
+        -RedirectStandardOutput $outFile
+    $fsErr = [System.IO.File]::Open($errFile,[System.IO.FileMode]::OpenOrCreate,[System.IO.FileAccess]::Read,[System.IO.FileShare]::ReadWrite)
+    $srErr = New-Object System.IO.StreamReader($fsErr)
+    $fsOut = [System.IO.File]::Open($outFile,[System.IO.FileMode]::OpenOrCreate,[System.IO.FileAccess]::Read,[System.IO.FileShare]::ReadWrite)
+    $srOut = New-Object System.IO.StreamReader($fsOut)
+    function Set-Ui([string]$txt) {
+        if ($UpdateUi -and $lblEstadoConsulta) { 
+            $lblEstadoConsulta.Text = $txt 
+            [System.Windows.Forms.Application]::DoEvents()
+        }
+    }
+    $bufErr = ""; $bufOut = ""
+    try {
+        Set-Ui "Consultando video..."
+        while (-not $proc.HasExited) {
+            $bufOut += $srOut.ReadToEnd()
+            $bufErr += $srErr.ReadToEnd()
+            if ($bufOut -and $UpdateUi) {
+                $lines = $bufOut -split "`r?`n"
+                foreach ($line in $lines) {
+                    $trimmedLine = $line.Trim()
+                    if ($trimmedLine -and -not $trimmedLine.StartsWith("WARNING") -and -not $trimmedLine.StartsWith("ERROR")) {
+                        Set-Ui "Consultando: $trimmedLine"
+                        Write-Host "[CONSULTA] $trimmedLine" -ForegroundColor Cyan
+                    }
+                }
+                $bufOut = $lines[-1]
+            }
+            [System.Windows.Forms.Application]::DoEvents()
+            Start-Sleep -Milliseconds 50
+        }
+        $bufOut += $srOut.ReadToEnd()
+        $bufErr += $srErr.ReadToEnd()
+        if ($bufOut -and $UpdateUi) {
+            $lines = $bufOut -split "`r?`n"
+            foreach ($line in $lines) {
+                $trimmedLine = $line.Trim()
+                if ($trimmedLine -and -not $trimmedLine.StartsWith("WARNING") -and -not $trimmedLine.StartsWith("ERROR")) {
+                    Set-Ui "Consultando: $trimmedLine"
+                    Write-Host "[CONSULTA] $trimmedLine" -ForegroundColor Cyan
+                }
+            }
+        }
+    }
+    finally {
+        try { $srErr.Close(); $fsErr.Close() } catch {}
+        try { $srOut.Close(); $fsOut.Close() } catch {}
+        Write-Host ""
+    }
+    $stdout = if (Test-Path $outFile) { [IO.File]::ReadAllText($outFile) } else { "" }
+    $stderr = if (Test-Path $errFile) { [IO.File]::ReadAllText($errFile) } else { "" }
+    try { Remove-Item -Path $outFile, $errFile -ErrorAction SilentlyContinue } catch {}
+    return [pscustomobject]@{ 
+        ExitCode = $proc.ExitCode 
+        StdOut = $stdout
+        StdErr = $stderr
+    }
 }
 function Is-ProgressiveOnlySite([string]$extractor) {
             return ($extractor -match '(tiktok|douyin|instagram|twitter|x)')
