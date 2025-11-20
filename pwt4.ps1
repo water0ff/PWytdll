@@ -2598,25 +2598,32 @@ $btnDescargar.Add_Click({
             ) | Out-Null
             return
         }
-
+        if ($lblEstadoConsulta) {
+            $lblEstadoConsulta.Text = ("Consultando URL: {0}" -f (Get-DisplayUrl -Url $currentUrl))
+            [System.Windows.Forms.Application]::DoEvents()
+        }
         $ok = Invoke-ConsultaFromUI -Url $currentUrl
         if ($ok) {
-            # 1) Vista previa primero
+            if ($lblEstadoConsulta) {
+                $lblEstadoConsulta.Text = "Generando vista previa…"
+                [System.Windows.Forms.Application]::DoEvents()
+            }
             Show-PreviewUniversal -Url $currentUrl -Titulo $script:ultimoTitulo -DirectThumbUrl $script:lastThumbUrl
-        
-            # 2) Enumerar formatos DESPUÉS de la vista previa
+            if ($lblEstadoConsulta) {
+                $lblEstadoConsulta.Text = "Listando formatos disponibles…"
+                [System.Windows.Forms.Application]::DoEvents()
+            }
             $fmtOk = Fetch-Formats -Url $currentUrl
             if ($fmtOk) {
-                # Imprimir tabla en consola (al final de todo el flujo de consulta)
                 if ($script:lastFormats) {
                     Print-FormatsTable -formats $script:lastFormats
                 }
-                # Llenar combos
                 Populate-FormatCombos
             }
-        
+            if ($lblEstadoConsulta) {
+                $lblEstadoConsulta.Text = "Consulta lista. Elige formatos y vuelve a presionar Descargar."
+            }
             Set-DownloadButtonVisual
-        
             [System.Windows.Forms.MessageBox]::Show(
                 "Consulta lista. Revisa formatos y vuelve a presionar Descargar para iniciar la descarga.",
                 "Consulta completada",
