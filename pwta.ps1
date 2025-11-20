@@ -11,7 +11,7 @@ $script:LogFile = "C:\Temp\ytdll_history.txt"
 if (-not (Test-Path -LiteralPath $script:LogFile)) {
     New-Item -ItemType File -Path $script:LogFile -Force | Out-Null
 }
-                                                                                                $version = "beta 251119.1101"
+                                                                                                $version = "beta 251120.1101"
 function Get-HistoryUrls {
     try {
         $content = Get-Content -LiteralPath $script:LogFile -ErrorAction Stop -Raw
@@ -485,88 +485,100 @@ function Fetch-Formats {
     $script:formatsIndex.Clear()
     $script:formatsVideo = @()
     $script:formatsAudio = @()
-    $script:formatsEnumerated = $false   # <-- reset
-    $script:lastFormats = $null          # <-- NUEVA VARIABLE
-    try { $yt = Get-Command yt-dlp -ErrorAction Stop } catch {
+    $script:formatsEnumerated = $false
+    $script:lastFormats = $null
+    $script:bestProgId   = $null
+    $script:bestProgRank = -1
+    try { 
+        $yt = Get-Command yt-dlp -ErrorAction Stop 
+    } catch {
         Write-Host "[ERROR] yt-dlp no disponible para listar formatos." -ForegroundColor Red
         return $false
     }
-
     $prevLabel = $null
     if ($lblEstadoConsulta) {
         $prevLabel = $lblEstadoConsulta.Text
         $lblEstadoConsulta.Text = "Consultando formatos…"
     }
-    try {
-        $obj = Invoke-CaptureResponsive -ExePath $yt.Source -Args @(
+    $args1 = @(
+        "-J","--no-playlist",
+        "--ignore-config",        
+        "--no-warnings",
+        "--extractor-args","youtube:player_client=default,-web_safari,-web_embedded,-tv",
+        $Url
+    )
+    Write-Host "[FORMATS] Intento 1: yt-dlp -J (ignore-config + extractor-args)" -ForegroundColor Cyan
+    $obj = Invoke-CaptureResponsive -ExePath $yt.Source -Args $args1 -WorkingText "Consultando formatos…"
+    if ($obj.ExitCode -ne 0 -or [string]::IsNullOrWhiteSpace($obj.StdOut)) {
+        Write-Host ("[FORMATS] Intento 1 sin JSON (ExitCode={0}, StdOutLen={1})" -f $obj.ExitCode, ($obj.StdOut.Length)) -ForegroundColor Yellow
+        if ($obj.StdErr) { Write-Host $obj.StdErr }
+        $args2 = @(
             "-J","--no-playlist",
-            "--extractor-args","youtube:player_client=default,-web_safari,-web_embedded,-tv",
+            "--ignore-config",
+            "--no-warnings",
             $Url
-        ) -WorkingText "Consultando formatos…"
+        )
+        Write-Host "[FORMATS] Intento 2: yt-dlp -J (ignore-config, sin extractor-args)" -ForegroundColor Cyan
+        $obj = Invoke-CaptureResponsive -ExePath $yt.Source -Args $args2 -WorkingText "Consultando formatos (reintento)…"
         if ($obj.ExitCode -ne 0 -or [string]::IsNullOrWhiteSpace($obj.StdOut)) {
-            Write-Host "[ERROR] No se pudo obtener JSON de formatos." -ForegroundColor Red
-            Write-Host $obj.StdErr
+            Write-Host ("[ERROR] No se pudo obtener JSON de formatos ni en reintento. ExitCode={0}, StdOutLen={1}" -f $obj.ExitCode, ($obj.StdOut.Length)) -ForegroundColor Red
+            if ($obj.StdErr) { Write-Host $obj.StdErr }
             return $false
         }
-
-        try { $json = $obj.StdOut | ConvertFrom-Json } catch {
-            Write-Host "[ERROR] JSON inválido al listar formatos." -ForegroundColor Red
-            return $false
-        }
-        $script:lastThumbUrl = Get-BestThumbnailUrl -Json $json
-        if (-not $json.formats -or $json.formats.Count -eq 0) {
-            Write-Host "[WARN] El extractor no devolvió lista de formatos." -ForegroundColor Yellow
-            return $false
-        }
-        $script:lastFormats = $json.formats
-        $script:bestProgId   = $null
-        $script:bestProgRank = -1
-
-        foreach ($f in $json.formats) {
-            $klass = Classify-Format $f
-            # Evitar el pseudo-formato "download" (marcado como watermarked)
-            if ($klass.Progressive -and $klass.Id -ne 'download') {
-                # ranking sencillo: mayor altura + mayor tbr
-                $height = 0
-                if ($klass.VRes) { $height = [int]$klass.VRes }
-                $tbrStr = 0
-                if ($klass.Tbr) { $tbrStr = [int]$klass.Tbr }
-                $rank   = ($height * 100000) + $tbrStr  # peso alto a la resolución
-            
-                if ($rank -gt $script:bestProgRank) {
-                    $script:bestProgRank = $rank
-                    $script:bestProgId   = $klass.Id
-                }
-            }
-
-            $script:formatsIndex[$klass.Id] = $klass
-            if ($klass.Progressive -and $script:ExcludedFormatIds -contains $klass.Id) { continue }
-
-            $res = ""
-            if ($klass.VRes) { $res = "{0}p" -f $klass.VRes }
-            $sz  = Human-Size $klass.Filesize
-            $tbrStr = ""
-            if ($klass.Tbr) { $tbrStr = "{0}k" -f [math]::Round($klass.Tbr) }
-            if     ($klass.Progressive) { $script:formatsVideo += (New-FormatDisplay -Id $klass.Id -Label ("{0} {1} {2}/{3} (progresivo) {4} {5}" -f $klass.Ext,$res,$klass.VCodec,$klass.ACodec,$sz,$tbrStr)) }
-            elseif ($klass.VideoOnly)   { $script:formatsVideo += (New-FormatDisplay -Id $klass.Id -Label ("{0} {1} {2} (v-only) {3} {4}" -f $klass.Ext,$res,$klass.VCodec,$sz,$tbrStr)) }
-            elseif ($klass.AudioOnly)   { $script:formatsAudio += (New-FormatDisplay -Id $klass.Id -Label ("{0} ~{1} {2} (a-only) {3}" -f $klass.Ext,$klass.ABr,$klass.ACodec,$sz)) }
-        }
-            # Headers “best*” (único lugar donde se agregan)
-            $progOnly = Is-ProgressiveOnlySite $script:lastExtractor
-            
-            $headersVideo = @("best — mejor calidad (progresivo si existe; si no, adaptativo)")
-            if (-not $progOnly) {
-                $headersVideo += "bestvideo — mejor video (sin audio; usar con audio)"
-            }
-            $script:formatsVideo = ( $headersVideo + $script:formatsVideo ) | Select-Object -Unique
-            $script:formatsAudio = ( @("bestaudio — mejor audio disponible") + $script:formatsAudio ) | Select-Object -Unique
-            $script:formatsEnumerated = ($script:formatsVideo.Count -gt 0 -or $script:formatsAudio.Count -gt 0)
-            if ($json.extractor) { $script:lastExtractor = $json.extractor }
-            return $script:formatsEnumerated
     }
-    finally {
-        if ($lblEstadoConsulta -and $prevLabel) { $lblEstadoConsulta.Text = $prevLabel }
+    try {
+        $json = $obj.StdOut | ConvertFrom-Json
+    } catch {
+        Write-Host "[ERROR] JSON inválido al listar formatos." -ForegroundColor Red
+        return $false
     }
+    $script:lastThumbUrl = Get-BestThumbnailUrl -Json $json
+    if (-not $json.formats -or $json.formats.Count -eq 0) {
+        Write-Host "[WARN] El extractor no devolvió lista de formatos." -ForegroundColor Yellow
+        return $false
+    }
+    $script:lastFormats = $json.formats
+    $script:bestProgId   = $null
+    $script:bestProgRank = -1
+    foreach ($f in $json.formats) {
+        $klass = Classify-Format $f
+        if ($klass.Progressive -and $klass.Id -ne 'download') {
+            $height = 0
+            if ($klass.VRes) { $height = [int]$klass.VRes }
+            $tbrStr = 0
+            if ($klass.Tbr) { $tbrStr = [int]$klass.Tbr }
+            $rank   = ($height * 100000) + $tbrStr
+            if ($rank -gt $script:bestProgRank) {
+                $script:bestProgRank = $rank
+                $script:bestProgId   = $klass.Id
+            }
+        }
+        $script:formatsIndex[$klass.Id] = $klass
+        if ($klass.Progressive -and $script:ExcludedFormatIds -contains $klass.Id) { continue }
+        $res   = if ($klass.VRes) { "{0}p" -f $klass.VRes } else { "" }
+        $sz    = Human-Size $klass.Filesize
+        $tbrStr = if ($klass.Tbr) { "{0}k" -f [math]::Round($klass.Tbr) } else { "" }
+        if     ($klass.Progressive) { 
+            $script:formatsVideo += (New-FormatDisplay -Id $klass.Id -Label ("{0} {1} {2}/{3} (progresivo) {4} {5}" -f $klass.Ext,$res,$klass.VCodec,$klass.ACodec,$sz,$tbrStr)) 
+        }
+        elseif ($klass.VideoOnly)   { 
+            $script:formatsVideo += (New-FormatDisplay -Id $klass.Id -Label ("{0} {1} {2} (v-only) {3} {4}" -f $klass.Ext,$res,$klass.VCodec,$sz,$tbrStr)) 
+        }
+        elseif ($klass.AudioOnly)   { 
+            $script:formatsAudio += (New-FormatDisplay -Id $klass.Id -Label ("{0} ~{1} {2} (a-only) {3}" -f $klass.Ext,$klass.ABr,$klass.ACodec,$sz)) 
+        }
+    }
+    $progOnly = Is-ProgressiveOnlySite $script:lastExtractor
+    $headersVideo = @("best — mejor calidad (progresivo si existe; si no, adaptativo)")
+    if (-not $progOnly) {
+        $headersVideo += "bestvideo — mejor video (sin audio; usar con audio)"
+    }
+    $script:formatsVideo = ( $headersVideo + $script:formatsVideo ) | Select-Object -Unique
+    $script:formatsAudio = ( @("bestaudio — mejor audio disponible") + $script:formatsAudio ) | Select-Object -Unique
+    $script:formatsEnumerated = ($script:formatsVideo.Count -gt 0 -or $script:formatsAudio.Count -gt 0)
+    if ($json.extractor) { $script:lastExtractor = $json.extractor }
+    if ($lblEstadoConsulta -and $prevLabel) { $lblEstadoConsulta.Text = $prevLabel }
+    return $script:formatsEnumerated
 }
 function Populate-FormatCombos {
     if ($cmbVideoFmt) {
