@@ -1084,6 +1084,20 @@ function Show-PreviewUniversal {
     Write-Host "[PREVIEW] Intentando vista previa para: $Url" -ForegroundColor Cyan
     Write-Host "[PREVIEW] Thumbnail URL: $(if ($DirectThumbUrl) { $DirectThumbUrl } else { 'NULO' })" -ForegroundColor Cyan
     Write-Host "[PREVIEW] Extractor: $($script:lastExtractor)" -ForegroundColor Cyan
+    Write-Host "[PREVIEW] Intentando obtener thumbnails con --list-thumbnails..." -ForegroundColor Yellow
+    $thumbList = Get-ThumbnailListFromYtDlp -Url $Url
+    if ($thumbList -and $thumbList.Count -gt 0) {
+        $bestThumb = Select-BestThumbnail -Thumbs $thumbList
+        if ($bestThumb -and $bestThumb.Url) {
+            Write-Host "[PREVIEW] Miniatura elegida desde lista: $($bestThumb.Url)" -ForegroundColor Green
+            if (Show-PreviewImage -ImageUrl $bestThumb.Url -Titulo $Titulo) {
+                Write-Host "[PREVIEW] Vista previa cargada desde --list-thumbnails" -ForegroundColor Green
+                return $true
+            } else {
+                Write-Host "[PREVIEW] Falló carga de URL desde --list-thumbnails" -ForegroundColor Red
+            }
+        }
+    }
     if (-not $DirectThumbUrl -and $script:lastExtractor -match 'twitch') {
         Write-Host "[TWITCH] No hay miniatura directa, intentando construir URL alternativa..." -ForegroundColor Yellow
         $vodId = $script:ultimaURL -replace '.*videos/(\d+).*', '$1'
@@ -1117,20 +1131,6 @@ function Show-PreviewUniversal {
         }
         Write-Host "[PREVIEW] Falló carga directa" -ForegroundColor Red
     }
-    Write-Host "[PREVIEW] Intentando obtener thumbnails con --list-thumbnails..." -ForegroundColor Yellow
-    $thumbList = Get-ThumbnailListFromYtDlp -Url $Url
-    if ($thumbList -and $thumbList.Count -gt 0) {
-        $bestThumb = Select-BestThumbnail -Thumbs $thumbList
-        if ($bestThumb -and $bestThumb.Url) {
-            Write-Host "[PREVIEW] Miniatura elegida desde lista: $($bestThumb.Url)" -ForegroundColor Green
-            if (Show-PreviewImage -ImageUrl $bestThumb.Url -Titulo $Titulo) {
-                Write-Host "[PREVIEW] Vista previa cargada desde --list-thumbnails" -ForegroundColor Green
-                return $true
-            } else {
-                Write-Host "[PREVIEW] Falló carga de URL desde --list-thumbnails" -ForegroundColor Red
-            }
-        }
-    }
     Write-Host "[PREVIEW] Usando fallback con yt-dlp (write-thumbnail)..." -ForegroundColor Yellow
     $file = Fetch-ThumbnailFile -Url $Url
     if ($file -and (Test-Path -LiteralPath $file)) {
@@ -1146,7 +1146,7 @@ function Show-PreviewUniversal {
             return $false
         }
     }
-    Write-Host "[PREVIEW] No se pudo cargar vista previa" -ForegroundColor Red
+    Write-Host "[PREVIEW] No se pudo cargar miniatura con write-thumbnail" -ForegroundColor Red
     Write-Host "[PREVIEW] Probando fallback por fotograma (ffmpeg)..." -ForegroundColor Yellow
     $stream = Get-BestStreamUrl -Url $Url
     if ($stream) {
@@ -2599,22 +2599,22 @@ $btnDescargar.Add_Click({
 
         $ok = Invoke-ConsultaFromUI -Url $currentUrl
         if ($ok) {
-            # 1) Enumerar formatos
+            # 1) Vista previa primero
+            Show-PreviewUniversal -Url $currentUrl -Titulo $script:ultimoTitulo -DirectThumbUrl $script:lastThumbUrl
+        
+            # 2) Enumerar formatos DESPUÉS de la vista previa
             $fmtOk = Fetch-Formats -Url $currentUrl
             if ($fmtOk) {
-                # Imprimir tabla en consola
+                # Imprimir tabla en consola (al final de todo el flujo de consulta)
                 if ($script:lastFormats) {
                     Print-FormatsTable -formats $script:lastFormats
                 }
                 # Llenar combos
                 Populate-FormatCombos
             }
-
-            # 2) Intentar vista previa (ver sección 2)
-            Show-PreviewUniversal -Url $currentUrl -Titulo $script:ultimoTitulo -DirectThumbUrl $script:lastThumbUrl
-
+        
             Set-DownloadButtonVisual
-
+        
             [System.Windows.Forms.MessageBox]::Show(
                 "Consulta lista. Revisa formatos y vuelve a presionar Descargar para iniciar la descarga.",
                 "Consulta completada",
