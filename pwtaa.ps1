@@ -894,25 +894,32 @@ function Get-ImageFromUrl {
     }
     try {
         Write-Host "[IMAGE] Descargando: $cleanUrl" -ForegroundColor Cyan
-        $webClient = New-Object System.Net.WebClient
-        $webClient.Headers.Add('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) PowerShell-YTDLL')
-        $bytes = $webClient.DownloadData($cleanUrl)
-        if ($bytes -and $bytes.Length -gt 0) {
-            Write-Host "[IMAGE] Descargados $($bytes.Length) bytes" -ForegroundColor Green
-            $ms = New-Object System.IO.MemoryStream(,$bytes)
-            $image = [System.Drawing.Image]::FromStream($ms)
-            $webClient.Dispose()
+        Add-Type -AssemblyName System.Net.Http
+        $handler = New-Object System.Net.Http.HttpClientHandler
+        $httpClient = New-Object System.Net.Http.HttpClient($handler)
+        $httpClient.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
+        $httpClient.DefaultRequestHeaders.Add("Accept", "image/webp,image/apng,image/*,*/*;q=0.8")
+        $httpClient.DefaultRequestHeaders.Add("Referer", "https://www.tiktok.com/")
+        $httpClient.DefaultRequestHeaders.Add("Sec-Fetch-Dest", "image")
+        $httpClient.DefaultRequestHeaders.Add("Sec-Fetch-Mode", "no-cors")
+        $httpClient.DefaultRequestHeaders.Add("Sec-Fetch-Site", "cross-site")
+        $httpClient.Timeout = [System.TimeSpan]::FromSeconds(10)
+        $response = $httpClient.GetAsync($cleanUrl).Result
+        if ($response.IsSuccessStatusCode) {
+            $stream = $response.Content.ReadAsStreamAsync().Result
+            $image = [System.Drawing.Image]::FromStream($stream)
+            $httpClient.Dispose()
+            Write-Host "[IMAGE] Descarga exitosa: $($image.Width)x$($image.Height)" -ForegroundColor Green
             return $image
         } else {
-            Write-Host "[IMAGE] No se recibieron datos, intentando fallback..." -ForegroundColor Yellow
-            $webClient.Dispose()
-            return Get-ImageFromUrlFallback -Url $cleanUrl
+            Write-Host "[IMAGE] Error HTTP: $($response.StatusCode) - $($response.ReasonPhrase)" -ForegroundColor Red
+            $httpClient.Dispose()
+            return $null
         }
     } catch {
-        Write-Host "[IMAGE] Error con WebClient: $($_.Exception.Message)" -ForegroundColor Red
-        try { $webClient.Dispose() } catch {}
-        Write-Host "[IMAGE] Intentando con método fallback..." -ForegroundColor Yellow
-        return Get-ImageFromUrlFallback -Url $cleanUrl
+        Write-Host "[IMAGE] Error con HttpClient: $($_.Exception.Message)" -ForegroundColor Red
+        try { $httpClient.Dispose() } catch {}
+        return $null
     }
 }
 function Get-TempThumbPattern {
@@ -1003,9 +1010,7 @@ function Select-BestThumbnail {
     return $best.Thumb
 }
 function Fetch-ThumbnailFile {
-    param(
-        [Parameter(Mandatory=$true)][string]$Url
-    )
+    param([Parameter(Mandatory=$true)][string]$Url)
     try { 
         $yt = Get-Command yt-dlp -ErrorAction Stop 
     } catch { 
@@ -1022,35 +1027,13 @@ function Fetch-ThumbnailFile {
         "--convert-thumbnails", "jpg",
         "-o", $outTmpl
     )
-    if ($Url -match 'twitch\.tv') {
-        Write-Host "[TWITCH] Usando estrategia múltiple para miniaturas..." -ForegroundColor Yellow
-        $storyboardArgs = @(
-            "--skip-download",
-            "--quiet",
-            "--no-warnings", 
-            "--write-thumbnail",
-            "--convert-thumbnails", "jpg",
-            "--thumbs", "1",  # Solo la primera miniatura del storyboard
-            "-o", $outTmpl,
-            $Url
-        )
-        Write-Host "[TWITCH] Intentando descargar storyboard..." -ForegroundColor Cyan
-        $res = Invoke-Capture -ExePath $yt.Source -Args $storyboardArgs
-        if ($res.ExitCode -eq 0) {
-            $thumb = Get-ChildItem -Path (Get-TempThumbPattern) -ErrorAction SilentlyContinue |
-                     Sort-Object LastWriteTime -Descending |
-                     Select-Object -First 1
-            if ($thumb) {
-                Write-Host "[TWITCH] Storyboard descargado: $($thumb.FullName)" -ForegroundColor Green
-                return $thumb.FullName
-            }
-        }
-        Write-Host "[TWITCH] Falló storyboard, intentando con más fuerza..." -ForegroundColor Yellow
+    if ($Url -match 'tiktok\.com') {
+        Write-Host "[TIKTOK] Usando configuración específica para TikTok..." -ForegroundColor Yellow
         $args += @(
             "--force-ipv4",
-            "--retries", "5", 
+            "--retries", "3",
             "--socket-timeout", "15",
-            "--extractor-args", "twitch:force_source"
+            "--extractor-args", "tiktok:headers=User-Agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
         )
     }
     if ($script:cookiesPath) { 
@@ -1067,32 +1050,15 @@ function Fetch-ThumbnailFile {
              Select-Object -First 1
     if ($thumb) {
         Write-Host "[THUMB] Miniatura descargada: $($thumb.FullName)" -ForegroundColor Green
-        if ($thumb.Extension -eq '.webp') {
-            Write-Host "[THUMB] Convirtiendo WEBP a PNG..." -ForegroundColor Yellow
-            $png = [IO.Path]::ChangeExtension($thumb.FullName, ".png")
-            try {
-                $ff = Get-Command ffmpeg -ErrorAction Stop | Select-Object -ExpandProperty Source
-                $proc = Start-Process -FilePath $ff -ArgumentList @("-y", "-hide_banner", "-loglevel", "error", "-i", $thumb.FullName, $png) `
-                                      -NoNewWindow -PassThru -Wait
-                if ($proc.ExitCode -eq 0 -and (Test-Path $png)) {
-                    Remove-Item $thumb.FullName -Force -ErrorAction SilentlyContinue
-                    return $png
-                }
-            } catch {
-                Write-Host "[THUMB] Error convirtiendo WEBP: $_" -ForegroundColor Red
-            }
-        }
-        
         return $thumb.FullName
     } else {
         Write-Host "[THUMB] No se pudo descargar miniatura con yt-dlp" -ForegroundColor Red
-        if ($Url -match 'twitch\.tv') {
-            Write-Host "[TWITCH] Usando placeholder para Twitch..." -ForegroundColor Yellow
-            return $null
-        }
-        
         return $null
     }
+}
+function Get-TempThumbPattern {
+    $tmp = [System.IO.Path]::GetTempPath()
+    return (Join-Path $tmp "ytdll_thumb_*")
 }
 function Show-PreviewUniversal {
     param(
@@ -1103,6 +1069,28 @@ function Show-PreviewUniversal {
     Write-Host "`t[PREVIEW] Intentando vista previa para: $Url" -ForegroundColor Cyan
     $lblEstadoConsulta.Text = "Obteniendo miniaturas..."
     $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::DarkBlue
+    Write-Host "`t[PREVIEW] Intentando descargar miniatura con yt-dlp..." -ForegroundColor Yellow
+    $thumbFile = Fetch-ThumbnailFile -Url $Url
+    if ($thumbFile -and (Test-Path $thumbFile)) {
+        try {
+            if ($picPreview.Image) { $picPreview.Image.Dispose() }
+            $imgW = [System.Drawing.Image]::FromFile($thumbFile)
+            $picPreview.Image = $imgW
+            if ($Titulo) { $toolTip.SetToolTip($picPreview, $Titulo) }
+            $lblEstadoConsulta.Text = "Vista previa cargada"
+            $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::DarkGreen
+            Write-Host "[PREVIEW] Vista previa cargada desde yt-dlp" -ForegroundColor Green
+            Start-Job -ScriptBlock {
+                param($file)
+                Start-Sleep -Seconds 5
+                try { Remove-Item $file -Force -ErrorAction SilentlyContinue } catch {}
+            } -ArgumentList $thumbFile | Out-Null
+            
+            return $true
+        } catch {
+            Write-Host "[PREVIEW] Error al cargar miniatura descargada: $($_.Exception.Message)" -ForegroundColor Red
+        }
+    }
     Write-Host "`t[PREVIEW] Intentando obtener thumbnails con --list-thumbnails..." -ForegroundColor Yellow
     $thumbList = Get-ThumbnailListFromYtDlp -Url $Url
     if ($thumbList -and $thumbList.Count -gt 0) {
@@ -1112,7 +1100,6 @@ function Show-PreviewUniversal {
         foreach ($thumb in $sortedThumbs) {
             $lblEstadoConsulta.Text = "Probando miniatura $thumbIndex de 3..."
             Write-Host "[PREVIEW] Probando miniatura: $($thumb.Url)" -ForegroundColor Cyan
-            
             if (Show-PreviewImage -ImageUrl $thumb.Url -Titulo $Titulo) {
                 $lblEstadoConsulta.Text = "Vista previa cargada"
                 $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::DarkGreen
