@@ -1259,7 +1259,6 @@ function Invoke-ConsultaFromUI {
         ) | Out-Null
         return $false
     }
-    
     $args = @(
         "--no-playlist",
         "--no-warnings", 
@@ -1274,7 +1273,7 @@ function Invoke-ConsultaFromUI {
     [System.Windows.Forms.Application]::DoEvents()
     $res = Invoke-YtDlpQuery -ExePath $yt.Source -Args $args -UpdateUi
     Write-Host "[DEBUG] yt-dlp ExitCode: $($res.ExitCode)" -ForegroundColor Yellow
-    if ($exitCode -ne 0) {
+    if ($res.ExitCode -ne 0) {  # <--- CORREGIDO
         $script:videoConsultado   = $false
         $script:ultimaURL         = $null
         $script:ultimoTitulo      = $null
@@ -1282,14 +1281,13 @@ function Invoke-ConsultaFromUI {
         $lblEstadoConsulta.Text   = "Error al consultar la URL"
         $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::Red
         $picPreview.Image = $null
-        
         [System.Windows.Forms.MessageBox]::Show(
             "yt-dlp devolvió error al consultar la URL. Verifica que la URL sea válida.",
             "Error en consulta",
             [System.Windows.Forms.MessageBoxButtons]::OK,
             [System.Windows.Forms.MessageBoxIcon]::Error
         ) | Out-Null
-        Write-Host "`t[ERROR] No se pudo consultar el video. ExitCode: $exitCode" -ForegroundColor Red
+        Write-Host "`t[ERROR] No se pudo consultar el video. ExitCode: $($res.ExitCode)" -ForegroundColor Red
         return $false
     }
     $lines = $res.StdOut -split "`r?`n" | Where-Object { $_.Trim() -ne "" }
