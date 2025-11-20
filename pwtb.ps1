@@ -509,8 +509,11 @@ function Fetch-Formats {
     )
     Write-Host "[FORMATS] Intento 1: yt-dlp -J (ignore-config + extractor-args)" -ForegroundColor Cyan
     $obj = Invoke-CaptureResponsive -ExePath $yt.Source -Args $args1 -WorkingText "Consultando formatos…"
-    if ($obj.ExitCode -ne 0 -or [string]::IsNullOrWhiteSpace($obj.StdOut)) {
-        Write-Host ("[FORMATS] Intento 1 sin JSON (ExitCode={0}, StdOutLen={1})" -f $obj.ExitCode, ($obj.StdOut.Length)) -ForegroundColor Yellow
+    $exit1 = $obj.ExitCode
+    $len1  = if ($obj.StdOut) { $obj.StdOut.Length } else { 0 }
+    
+    if ( ( $exit1 -ne $null -and $exit1 -ne 0 ) -or [string]::IsNullOrWhiteSpace($obj.StdOut)) {
+        Write-Host ("[FORMATS] Intento 1 sin JSON (ExitCode={0}, StdOutLen={1})" -f $exit1, $len1) -ForegroundColor Yellow
         if ($obj.StdErr) { Write-Host $obj.StdErr }
         $args2 = @(
             "-J","--no-playlist",
@@ -518,13 +521,19 @@ function Fetch-Formats {
             "--no-warnings",
             $Url
         )
-        Write-Host "[FORMATS] Intento 2: yt-dlp -J (ignore-config, sin extractor-args)" -ForegroundColor Cyan
-        $obj = Invoke-CaptureResponsive -ExePath $yt.Source -Args $args2 -WorkingText "Consultando formatos (reintento)…"
-        if ($obj.ExitCode -ne 0 -or [string]::IsNullOrWhiteSpace($obj.StdOut)) {
-            Write-Host ("[ERROR] No se pudo obtener JSON de formatos ni en reintento. ExitCode={0}, StdOutLen={1}" -f $obj.ExitCode, ($obj.StdOut.Length)) -ForegroundColor Red
-            if ($obj.StdErr) { Write-Host $obj.StdErr }
-            return $false
-        }
+            Write-Host "[FORMATS] Intento 2: yt-dlp -J (ignore-config, sin extractor-args)" -ForegroundColor Cyan
+            $obj = Invoke-CaptureResponsive -ExePath $yt.Source -Args $args2 -WorkingText "Consultando formatos (reintento)…"
+            
+            $exit2 = $obj.ExitCode
+            $len2  = if ($obj.StdOut) { $obj.StdOut.Length } else { 0 }
+            
+            if ( ( $exit2 -ne $null -and $exit2 -ne 0 ) -or [string]::IsNullOrWhiteSpace($obj.StdOut)) {
+                Write-Host ("[ERROR] No se pudo obtener JSON de formatos ni en reintento. ExitCode={0}, StdOutLen={1}" -f $exit2, $len2) -ForegroundColor Red
+                if ($obj.StdErr) { Write-Host $obj.StdErr }
+                return $false
+            } else {
+                Write-Host ("[FORMATS] Intento 2 OK: ExitCode={0}, StdOutLen={1}" -f $exit2, $len2) -ForegroundColor Green
+            }
     }
     try {
         $json = $obj.StdOut | ConvertFrom-Json
