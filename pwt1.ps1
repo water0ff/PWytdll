@@ -2762,7 +2762,7 @@ $btnDescargar.Add_Click({
             )
             $args += (Get-DownloadExtras -Extractor $script:lastExtractor -Domain $script:lastDomain)
     }
-    $oldCursor = [System.Windows.Forms.Cursor]::Current
+        $oldCursor = [System.Windows.Forms.Cursor]::Current
     [System.Windows.Forms.Cursor]::Current = [System.Windows.Forms.Cursors]::WaitCursor
     try {
         $exit = Invoke-YtDlpConsoleProgress -ExePath $yt.Source -Args $args -UpdateUi
@@ -2770,25 +2770,48 @@ $btnDescargar.Add_Click({
             $lastErr = $lblEstadoConsulta.Text + " "  # opcional, no siempre contiene stderr
             if (Is-ProgressiveOnlySite $script:lastExtractor -and $videoSel -match '^best(video)?$' -and $script:bestProgId) {
                 Write-Host "[RETRY] Alias falló; reintento con ID concreto: $($script:bestProgId)" -ForegroundColor Yellow
-                $args = @("--encoding","utf-8","--progress","--no-color","--newline",
-                          "-f", $script:bestProgId,
-                          "-o", $targetPath,
-                          "--progress-template","download:%(progress._percent_str)s ETA:%(progress._eta_str)s SPEED:%(progress._speed_str)s",
-                          "--extractor-args","youtube:player_client=default,-web_safari,-web_embedded,-tv")
+                $args = @(
+                    "--encoding","utf-8","--progress","--no-color","--newline",
+                    "-f", $script:bestProgId,
+                    "-o", $targetPath,
+                    "--progress-template","download:%(progress._percent_str)s ETA:%(progress._eta_str)s SPEED:%(progress._speed_str)s",
+                    "--extractor-args","youtube:player_client=default,-web_safari,-web_embedded,-tv"
+                )
                 $exit = Invoke-YtDlpConsoleProgress -ExePath $yt.Source -Args $args -UpdateUi
             }
         }
-        if ($exit -eq 0) {
+        Write-Host "------------------------" -ForegroundColor DarkGray
+        Write-Host "[DEBUG] ExitCode final de yt-dlp: $exit" -ForegroundColor Yellow
+        $archivoExiste = Test-Path -LiteralPath $targetPath
+        Write-Host "[DEBUG] ¿Archivo final existe?: $archivoExiste" -ForegroundColor Yellow
+        Write-Host "[DEBUG] Ruta objetivo: $targetPath" -ForegroundColor DarkCyan
+        Write-Host "------------------------" -ForegroundColor DarkGray
+        if ($exit -eq 0 -or $archivoExiste) {
+            if ($exit -ne 0 -and $archivoExiste) {
+                Write-Host "[WARN] ExitCode=$exit pero el archivo final existe. Se considera éxito." -ForegroundColor Yellow
+            }
             Add-HistoryUrl -Url $script:ultimaURL
             $lblEstadoConsulta.Text = ("Completado: {0}" -f $script:ultimoTitulo)
-            [System.Windows.Forms.MessageBox]::Show(("Descarga finalizada:`n{0}" -f $script:ultimoTitulo),
-                "Completado",[System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Information) | Out-Null
-        } else {
-            $lblEstadoConsulta.Text = "Error durante la descarga"
-            [System.Windows.Forms.MessageBox]::Show("Falló la descarga. Revisa conexión/URL/DRM.","Error de descarga",
-                [System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Error) | Out-Null
+            [System.Windows.Forms.MessageBox]::Show(
+                ("Descarga finalizada:`n{0}" -f $script:ultimoTitulo),
+                "Completado",
+                [System.Windows.Forms.MessageBoxButtons]::OK,
+                [System.Windows.Forms.MessageBoxIcon]::Information
+            ) | Out-Null
         }
-    } finally {
+        else {
+            $lblEstadoConsulta.Text = "Error durante la descarga"
+            [System.Windows.Forms.MessageBox]::Show(
+                "Falló la descarga. Revisa conexión/URL/DRM.",
+                "Error de descarga",
+                [System.Windows.Forms.MessageBoxButtons]::OK,
+                [System.Windows.Forms.MessageBoxIcon]::Error
+            ) | Out-Null
+            Write-Host "[ERROR] La descarga falló realmente. ExitCode=$exit" -ForegroundColor Red
+            Write-Host "[ERROR] No se generó el archivo final: $targetPath" -ForegroundColor Red
+        }
+    }
+    finally {
         [System.Windows.Forms.Cursor]::Current = $oldCursor
         $btnPickDestino.Enabled = $prevPickDest
         $cmbVideoFmt.Enabled    = $prevCmbVid
