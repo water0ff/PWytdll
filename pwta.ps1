@@ -872,12 +872,7 @@ function Get-CurrentUrl {
     return $t
 }
 function New-HttpClient {
-    $hc = [System.Net.Http.HttpClient]::new()
-    try {
-        $hc.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) PowerShell-YTDLL")
-        $hc.DefaultRequestHeaders.Accept.ParseAdd("image/*")
-    } catch {}
-    return $hc
+    return $null
 }
 function Get-ImageFromUrl {
     param([Parameter(Mandatory=$true)][string]$Url)
@@ -885,25 +880,27 @@ function Get-ImageFromUrl {
     if ($cleanUrl -ne $Url) {
         Write-Host "[IMAGE] URL limpiada: $cleanUrl" -ForegroundColor Yellow
     }
-    $hc = $null
     try {
-        $hc = New-HttpClient
-        $hc.Timeout = [System.TimeSpan]::FromSeconds(10)
         Write-Host "[IMAGE] Descargando: $cleanUrl" -ForegroundColor Cyan
-        $bytes = $hc.GetByteArrayAsync($cleanUrl).Result
+        $webClient = New-Object System.Net.WebClient
+        $webClient.Headers.Add('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) PowerShell-YTDLL')
+        $bytes = $webClient.DownloadData($cleanUrl)
         if ($bytes -and $bytes.Length -gt 0) {
             Write-Host "[IMAGE] Descargados $($bytes.Length) bytes" -ForegroundColor Green
             $ms = New-Object System.IO.MemoryStream(,$bytes)
-            return [System.Drawing.Image]::FromStream($ms)
+            $image = [System.Drawing.Image]::FromStream($ms)
+            $webClient.Dispose()
+            return $image
         } else {
-            Write-Host "[IMAGE] No se recibieron datos" -ForegroundColor Red
-            return $null
+            Write-Host "[IMAGE] No se recibieron datos, intentando fallback..." -ForegroundColor Yellow
+            $webClient.Dispose()
+            return Get-ImageFromUrlFallback -Url $cleanUrl
         }
     } catch {
-        Write-Host "[IMAGE] Error descargando imagen: $_" -ForegroundColor Red
-        return $null
-    } finally {
-        if ($hc) { $hc.Dispose() }
+        Write-Host "[IMAGE] Error con WebClient: $($_.Exception.Message)" -ForegroundColor Red
+        try { $webClient.Dispose() } catch {}
+        Write-Host "[IMAGE] Intentando con método fallback..." -ForegroundColor Yellow
+        return Get-ImageFromUrlFallback -Url $cleanUrl
     }
 }
 function Get-TempThumbPattern {
@@ -1122,27 +1119,51 @@ function Show-PreviewImage {
     )
     try {
         if ($ImageUrl -match '\.webp($|\?)') {
+            Write-Host "[PREVIEW] Detectado WEBP, intentando conversión..." -ForegroundColor Yellow
             $png = Convert-WebpUrlToPng -Url $ImageUrl
             if ($png -and (Test-Path $png)) {
-                try { if ($picPreview.Image) { $picPreview.Image.Dispose() } } catch {}
+                try { 
+                    if ($picPreview.Image) { $picPreview.Image.Dispose() } 
+                } catch {}
                 $imgW = [System.Drawing.Image]::FromFile($png)
                 $picPreview.Image = $imgW
                 if ($Titulo) { $toolTip.SetToolTip($picPreview, $Titulo) }
+                Start-Sleep -Seconds 2
+                try { Remove-Item $png -Force -ErrorAction SilentlyContinue } catch {}       
                 return $true
             }
             return $false
         }
-
         $img = Get-ImageFromUrl -Url $ImageUrl
         if ($img) {
-            try { if ($picPreview.Image) { $picPreview.Image.Dispose() } } catch {}
+            try { 
+                if ($picPreview.Image) { $picPreview.Image.Dispose() } 
+            } catch {}
             $picPreview.Image = $img
             if ($Titulo) { $toolTip.SetToolTip($picPreview, $Titulo) }
             return $true
         }
         return $false
     } catch {
+        Write-Host "[PREVIEW] Error en Show-PreviewImage: $($_.Exception.Message)" -ForegroundColor Red
         return $false
+    }
+}
+function Get-ImageFromUrlFallback {
+    param([Parameter(Mandatory=$true)][string]$Url)
+    try {
+        Write-Host "[IMAGE-FALLBACK] Intentando con Invoke-WebRequest: $Url" -ForegroundColor Cyan
+        $response = Invoke-WebRequest -Uri $Url -UseBasicParsing -TimeoutSec 10
+        $bytes = $response.Content       
+        if ($bytes -and $bytes.Length -gt 0) {
+            Write-Host "[IMAGE-FALLBACK] Descargados $($bytes.Length) bytes" -ForegroundColor Green
+            $ms = New-Object System.IO.MemoryStream(,$bytes)
+            return [System.Drawing.Image]::FromStream($ms)
+        }
+        return $null
+    } catch {
+        Write-Host "[IMAGE-FALLBACK] Error: $($_.Exception.Message)" -ForegroundColor Red
+        return $null
     }
 }
 function Get-BestThumbnailUrl {
@@ -2407,21 +2428,28 @@ function Convert-WebpUrlToPng {
     param([Parameter(Mandatory=$true)][string]$Url)
     try {
         $ff = Get-Command ffmpeg -ErrorAction Stop | Select-Object -ExpandProperty Source
-    } catch { return $null }  # sin ffmpeg no podemos convertir
-    $hc = $null
+    } catch { return $null }
+    $webClient = $null
     try {
-        $hc = New-HttpClient
-        $bytes = $hc.GetByteArrayAsync($Url).Result
+        $webClient = New-Object System.Net.WebClient
+        $webClient.Headers.Add('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) PowerShell-YTDLL')
+        $bytes = $webClient.DownloadData($Url)
         $tmpIn  = Join-Path ([IO.Path]::GetTempPath()) ("ytdll_webp_{0}.webp" -f ([guid]::NewGuid()))
         $tmpOut = [IO.Path]::ChangeExtension($tmpIn, ".png")
-        Save-Bytes -Bytes $bytes -Path $tmpIn | Out-Null
+        [IO.File]::WriteAllBytes($tmpIn, $bytes)
         $p = Start-Process -FilePath $ff -ArgumentList @("-y","-hide_banner","-loglevel","error","-i", $tmpIn, $tmpOut) `
                            -NoNewWindow -PassThru
         $p.WaitForExit()
         if ($p.ExitCode -eq 0 -and (Test-Path $tmpOut)) { return $tmpOut }
         return $null
-    } catch { return $null }
-    finally { if ($hc) { $hc.Dispose() } }
+    } catch { 
+        Write-Host "[WEBP-CONVERT] Error: $($_.Exception.Message)" -ForegroundColor Red
+        return $null 
+    }
+    finally { 
+        if ($webClient) { $webClient.Dispose() }
+        try { if (Test-Path $tmpIn) { Remove-Item $tmpIn -Force } } catch {}
+    }
 }
 function Invoke-YtDlpConsoleProgress {
     param(
