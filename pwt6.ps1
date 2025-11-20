@@ -322,33 +322,6 @@ function Test-CommandExists {
     param([Parameter(Mandatory=$true)][string]$Name)
     try { Get-Command $Name -ErrorAction Stop | Out-Null; return $true } catch { return $false }
 }
-function Normalize-ThumbUrl {
-    param(
-        [Parameter(Mandatory=$true)][string]$Url,
-        [string]$Extractor = $null
-    )
-    if ([string]::IsNullOrWhiteSpace($Url)) { return $Url }
-    $u = $Url.Trim()
-    if ($Extractor -match '^twitch' -or $u -match 'twitch\.tv|static-cdn\.jtvnw\.net') {
-        Write-Host "[TWITCH] Normalizando miniatura: $u" -ForegroundColor Yellow
-        $u = $u -replace '%\{width\}x%\{height\}', '1280x720'
-        $u = $u -replace '\{width\}x\{height\}', '1280x720'
-        $u = $u -replace '%\{width\}', '1280'
-        $u = $u -replace '%\{height\}', '720'
-        $u = $u -replace '\{width\}', '1280'
-        $u = $u -replace '\{height\}', '720'
-        $u = $u -replace '%\{\s*width\s*\}', '1280'
-        $u = $u -replace '%\{\s*height\s*\}', '720'
-        if ($u -match 'thumb0-\{width\}x\{height\}') {
-            $u = $u -replace 'thumb0-\{width\}x\{height\}', 'thumb0-1280x720'
-        }
-        if ($u -match '(thumb0?|preview)-(\d+)x(\d+)') {
-            $u = $u -replace '(thumb0?|preview)-(\d+)x(\d+)', '${1}-1280x720'
-        }
-        Write-Host "[TWITCH] Miniatura normalizada: $u" -ForegroundColor Green
-    }
-    return $u
-}
 function Refresh-GateByDeps {
     $haveYt   = Test-CommandExists -Name "yt-dlp"
     $haveFfm  = Test-CommandExists -Name "ffmpeg"
@@ -605,6 +578,33 @@ function Populate-FormatCombos {
             $cmbAudioFmt.SelectedIndex = 0
         }
     }
+}
+function Normalize-ThumbUrl {
+    param(
+        [Parameter(Mandatory=$true)][string]$Url,
+        [string]$Extractor = $null
+    )
+    if ([string]::IsNullOrWhiteSpace($Url)) { return $Url }
+    $u = $Url.Trim()
+    if ($Extractor -match '^twitch' -or $u -match 'twitch\.tv|static-cdn\.jtvnw\.net') {
+        Write-Host "[TWITCH] Normalizando miniatura: $u" -ForegroundColor Yellow
+        $u = $u -replace '%\{width\}x%\{height\}', '1280x720'
+        $u = $u -replace '\{width\}x\{height\}', '1280x720'
+        $u = $u -replace '%\{width\}', '1280'
+        $u = $u -replace '%\{height\}', '720'
+        $u = $u -replace '\{width\}', '1280'
+        $u = $u -replace '\{height\}', '720'
+        $u = $u -replace '%\{\s*width\s*\}', '1280'
+        $u = $u -replace '%\{\s*height\s*\}', '720'
+        if ($u -match 'thumb0-\{width\}x\{height\}') {
+            $u = $u -replace 'thumb0-\{width\}x\{height\}', 'thumb0-1280x720'
+        }
+        if ($u -match '(thumb0?|preview)-(\d+)x(\d+)') {
+            $u = $u -replace '(thumb0?|preview)-(\d+)x(\d+)', '${1}-1280x720'
+        }
+        Write-Host "[TWITCH] Miniatura normalizada: $u" -ForegroundColor Green
+    }
+    return $u
 }
 function Get-Metadata {
     param([Parameter(Mandatory=$true)][string]$Url)
@@ -964,8 +964,8 @@ function Select-BestThumbnail {
     )
     if (-not $Thumbs -or $Thumbs.Count -eq 0) { return $null }
     $ranked = $Thumbs | ForEach-Object {
-        $isWebp = 0
-        if ($_.Url -match '\.webp($|\?)') { $isWebp = 1 }
+        $isWebp = if ($_.Url -match '\.webp($|\?)|vi_webp') { 2 } else { 0 }  # WEBP = 2 puntos de penalización
+        $isJpg = if ($_.Url -match '\.jpg($|\?)') { 1 } else { 0 }           # JPG = 1 punto de bonificación
         $w = if ($_.Width  -gt 0) { $_.Width }  else { 0 }
         $h = if ($_.Height -gt 0) { $_.Height } else { 0 }
         $area = [math]::Max($w * $h, 1)
@@ -973,13 +973,14 @@ function Select-BestThumbnail {
         [void][int]::TryParse($_.Id, [ref]$idNum)
         [pscustomobject]@{
             Thumb   = $_
-            IsWebp  = $isWebp
+            Score   = (-$isWebp + $isJpg)  # WEBP negativo, JPG positivo
             Area    = $area
             IdNum   = $idNum
         }
     }
     $best = $ranked |
-        Sort-Object IsWebp, @{Expression = "Area"; Descending = $true}, @{Expression = "IdNum"; Descending = $true} |
+        Sort-Object Score -Descending |  # Primero por score (evitar WEBP)
+        Sort-Object @{Expression = "Area"; Descending = $true}, @{Expression = "IdNum"; Descending = $true} |
         Select-Object -First 1
     return $best.Thumb
 }
