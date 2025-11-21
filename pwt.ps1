@@ -14,7 +14,7 @@ $script:ConfigFile = "C:\Temp\ytdll\config.ini"
 if (-not (Test-Path -LiteralPath $script:LogFile)) {
     New-Item -ItemType File -Path $script:LogFile -Force | Out-Null
 }
-                                                                                                $version = "beta 251121.1434"
+                                                                                                $version = "beta 251121.1544"
 function Get-IniValue {
     param([string]$Section, [string]$Key, [string]$DefaultValue = $null)
     
@@ -117,20 +117,42 @@ function Add-HistoryUrl {
         "Video" 
     }
     $historyEntry = "{0} | {1}" -f $title, $cleanUrl
-    $list = Get-HistoryUrls
+    try {
+        $content = Get-Content -LiteralPath $script:LogFile -ErrorAction Stop -Raw
+        $currentEntries = $content -split "`r?`n" | 
+            ForEach-Object { $_.Trim() } | 
+            Where-Object { $_ -and ($_ -notmatch '^\s*$') }
+    } catch {
+        $currentEntries = @()
+    }
     $exists = $false
-    foreach ($item in $list) {
-        if ($item -eq $cleanUrl -or $item -match "\|\s*$([regex]::Escape($cleanUrl))$") {
-            $exists = $true
-            break
+    foreach ($entry in $currentEntries) {
+        if ($entry -match '\|\s*(.+)$') {
+            $existingUrl = $matches[1].Trim()
+            if ($existingUrl -eq $cleanUrl) {
+                $exists = $true
+                break
+            }
+        } else {
+            if ($entry -eq $cleanUrl) {
+                $exists = $true
+                break
+            }
         }
     }
     if (-not $exists) {
-        $newList = @($historyEntry) + $list
-        if ($newList.Count -gt 200) { $newList = $newList[0..199] }
+        $newList = @($historyEntry) + $currentEntries
+        if ($newList.Count -gt 200) { 
+            $newList = $newList[0..199] 
+        }
         try {
-            Set-Content -LiteralPath $script:LogFile -Value $newList -Encoding UTF8
-        } catch {}
+            Set-Content -LiteralPath $script:LogFile -Value ($newList -join "`r`n") -Encoding UTF8
+            Write-Host "[HISTORIAL] Guardado: $historyEntry" -ForegroundColor Green
+        } catch {
+            Write-Host "[ERROR] No se pudo guardar en el historial: $($_.Exception.Message)" -ForegroundColor Red
+        }
+    } else {
+        Write-Host "[HISTORIAL] URL ya existe: $cleanUrl" -ForegroundColor Yellow
     }
 }
 function Get-CleanUrl {
