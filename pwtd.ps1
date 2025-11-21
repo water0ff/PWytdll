@@ -696,7 +696,7 @@ function Normalize-ThumbUrl {
     if ([string]::IsNullOrWhiteSpace($Url)) { return $Url }
     $u = $Url.Trim()
     if ($Extractor -match '^twitch' -or $u -match 'twitch\.tv|static-cdn\.jtvnw\.net') {
-        Write-Host "[TWITCH] Normalizando miniatura: $u" -ForegroundColor Yellow
+        Write-Host "`t[TWITCH] Normalizando miniatura: $u" -ForegroundColor Yellow
         $u = $u -replace '%\{width\}x%\{height\}', '1280x720'
         $u = $u -replace '\{width\}x\{height\}', '1280x720'
         $u = $u -replace '%\{width\}', '1280'
@@ -711,7 +711,7 @@ function Normalize-ThumbUrl {
         if ($u -match '(thumb0?|preview)-(\d+)x(\d+)') {
             $u = $u -replace '(thumb0?|preview)-(\d+)x(\d+)', '${1}-1280x720'
         }
-        Write-Host "[TWITCH] Miniatura normalizada: $u" -ForegroundColor Green
+        Write-Host "`t[TWITCH] Miniatura normalizada: $u" -ForegroundColor Green
     }
     return $u
 }
