@@ -806,7 +806,10 @@ function Get-SelectedFormatId {
 }
 function Test-YouTubePlaylist {
     param([Parameter(Mandatory=$true)][string]$Url)
-    return ($Url -match 'list=' -and $Url -match 'youtube\.com')
+    return ($Url -match 'list=' -and $Url -match 'youtube\.com') -or
+           ($Url -match '^https?://(www\.)?youtube\.com/playlist') -or
+           ($Url -match '^https?://(www\.)?youtube\.com/watch.*list=') -or
+           ($Url -match 'start_radio=1')
 }
 function Extract-VideoFromPlaylist {
     param([Parameter(Mandatory=$true)][string]$Url)
@@ -816,13 +819,18 @@ function Extract-VideoFromPlaylist {
             "--flat-playlist",
             "--print", "url",
             "--no-warnings",
+            "--playlist-items", "1",  # Solo el primer item
             $Url
         )
         $res = Invoke-Capture -ExePath $yt.Source -Args $args
         if ($res.ExitCode -eq 0 -and -not [string]::IsNullOrWhiteSpace($res.StdOut)) {
             $firstVideo = ($res.StdOut -split "`r?`n" | Where-Object { $_ -match 'watch\?v=' } | Select-Object -First 1)
             if ($firstVideo) {
-                return "https://www.youtube.com/$firstVideo"
+                if ($firstVideo -match '^https?://') {
+                    return $firstVideo.Trim()
+                } else {
+                    return "https://www.youtube.com/watch?v=$firstVideo"
+                }
             }
         }
     } catch {
@@ -1401,7 +1409,9 @@ function Build-PreviewFromStream {
 }
 function Invoke-ConsultaFromUI {
     param([Parameter(Mandatory = $true)][string]$Url)
-    if (Test-YouTubePlaylist -Url $Url) {
+    $script:originalUrl = $Url
+    $script:isPlaylist = Test-YouTubePlaylist -Url $Url
+    if ($script:isPlaylist) {
         Write-Host "[CONSULTA] Detectada playlist de YouTube, extrayendo primer video..." -ForegroundColor Yellow
         $lblEstadoConsulta.Text = "Playlist detectada, extrayendo primer video..."
         $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::DarkOrange
@@ -1409,16 +1419,16 @@ function Invoke-ConsultaFromUI {
         
         $singleVideoUrl = Extract-VideoFromPlaylist -Url $Url
         if ($singleVideoUrl) {
-            Write-Host "[CONSULTA] Usando video individual: $singleVideoUrl" -ForegroundColor Green
+            Write-Host "[CONSULTA] Usando video individual para previsualización: $singleVideoUrl" -ForegroundColor Green
             $Url = $singleVideoUrl
             $txtUrl.Text = $singleVideoUrl
             $txtUrl.ForeColor = [System.Drawing.Color]::Black
         } else {
-            $lblEstadoConsulta.Text = "ERROR: No se pudo extraer video de la playlist"
-            $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::Red
+            $lblEstadoConsulta.Text = "ADVERTENCIA: No se pudo extraer video individual"
+            $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::DarkOrange
             [System.Windows.Forms.MessageBox]::Show(
-                "Las playlists/radios de YouTube no son totalmente compatables. Se extraerá el primer video para previsualización, pero la descarga puede fallar.",
-                "Playlist detectada",
+                "No se pudo extraer un video individual de la playlist. Se intentará con la URL completa pero puede descargar toda la playlist.",
+                "Advertencia de playlist",
                 [System.Windows.Forms.MessageBoxButtons]::OK,
                 [System.Windows.Forms.MessageBoxIcon]::Warning
             ) | Out-Null
@@ -2938,6 +2948,11 @@ function Invoke-YtDlpQuery {
 $btnDescargar.Add_Click({
     Refresh-GateByDeps
     $currentUrl = Get-CurrentUrl
+    $noPlaylistArg = @()
+    if ($script:isPlaylist -or (Test-YouTubePlaylist -Url $currentUrl)) {
+        $noPlaylistArg = @("--no-playlist")
+        Write-Host "[DESCARGA] Forzando --no-playlist para evitar descarga de playlist completa" -ForegroundColor Yellow
+    }
     $ready = $script:videoConsultado -and
              -not [string]::IsNullOrWhiteSpace($script:ultimaURL) -and
              ($script:ultimaURL -eq $currentUrl)
@@ -3061,26 +3076,30 @@ $btnDescargar.Add_Click({
     }
     Write-Host ("[OUTPUT] Archivo destino: {0}" -f $targetPath) -ForegroundColor Cyan
         $args = @("--encoding","utf-8","--progress","--no-color","--newline",
-                  "-f", $fSelector,
-                  "-o", $targetPath,
-                  "--progress-template","download:%(progress._percent_str)s ETA:%(progress._eta_str)s SPEED:%(progress._speed_str)s",
-                  "--extractor-args","youtube:player_client=default,-web_safari,-web_embedded,-tv")
-        
-        if ($mergeExt) {
-            $args = @("--encoding","utf-8","--progress","--no-color","--newline",
-                      "-f", $fSelector,
-                      "--merge-output-format", $mergeExt,
-                      "-o", $targetPath,
-                      "--progress-template","download:%(progress._percent_str)s ETA:%(progress._eta_str)s SPEED:%(progress._speed_str)s",
-                      "--extractor-args","youtube:player_client=default,-web_safari,-web_embedded,-tv")
-        }
-        $args += @(
-            "--no-part",               # Evita .part corruptos
-            "--ignore-config"          # Ignora errores de configuración externa
+        "-f", $fSelector
+    ) + $noPlaylistArg + @(
+        "-o", $targetPath,
+        "--progress-template","download:%(progress._percent_str)s ETA:%(progress._eta_str)s SPEED:%(progress._speed_str)s",
+        "--extractor-args","youtube:player_client=default,-web_safari,-web_embedded,-tv"
+    )
+    if ($mergeExt) {
+        $args = @(
+            "--encoding","utf-8","--progress","--no-color","--newline",
+            "-f", $fSelector
+        ) + $noPlaylistArg + @(
+            "--merge-output-format", $mergeExt,
+            "-o", $targetPath,
+            "--progress-template","download:%(progress._percent_str)s ETA:%(progress._eta_str)s SPEED:%(progress._speed_str)s",
+            "--extractor-args","youtube:player_client=default,-web_safari,-web_embedded,-tv"
         )
+    }
+    $args += @(
+        "--no-part",
+        "--ignore-config"
+    ) + $noPlaylistArg  # Agregar nuevamente por si acaso
     if ($script:cookiesPath) {
-            $args += @("--cookies", $script:cookiesPath)
-        }
+        $args += @("--cookies", $script:cookiesPath)
+    }
     $args += $script:ultimaURL
     $args += @(
         "--retries", "5",
