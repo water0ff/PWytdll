@@ -106,54 +106,88 @@ function Get-HistoryUrls {
 }
 function Add-HistoryUrl {
     param([Parameter(Mandatory=$true)][string]$Url)
+    Write-Host "[DEBUG] Add-HistoryUrl iniciada con URL: '$Url'" -ForegroundColor Cyan
+    Write-Host "[DEBUG] script:ultimoTitulo: '$($script:ultimoTitulo)'" -ForegroundColor Cyan
     $u = $Url.Trim()
-    if ([string]::IsNullOrWhiteSpace($u)) { return }
-    if ($u -eq $global:UrlPlaceholder) { return }
-    if ($u -notmatch '^(https?://|www\.)') { return }
+    if ([string]::IsNullOrWhiteSpace($u)) { 
+        Write-Host "[DEBUG] URL vacía, saliendo" -ForegroundColor Yellow
+        return 
+    }
+    if ($u -eq $global:UrlPlaceholder) { 
+        Write-Host "[DEBUG] URL es placeholder, saliendo" -ForegroundColor Yellow
+        return 
+    }
+    if ($u -notmatch '^(https?://|www\.)') { 
+        Write-Host "[DEBUG] URL no válida (no empieza con http/https/www): '$u'" -ForegroundColor Yellow
+        return 
+    }
     $cleanUrl = Get-CleanUrl -Url $u
+    Write-Host "[DEBUG] URL limpia: '$cleanUrl'" -ForegroundColor Cyan
     $title = if ($script:ultimoTitulo) { 
         Get-SafeFileName -Name $script:ultimoTitulo 
     } else { 
         "Video" 
     }
     $historyEntry = "{0} | {1}" -f $title, $cleanUrl
+    Write-Host "[DEBUG] Entrada de historial a guardar: '$historyEntry'" -ForegroundColor Cyan
+    Write-Host "[DEBUG] Leyendo historial desde: $script:LogFile" -ForegroundColor Cyan
     try {
         $content = Get-Content -LiteralPath $script:LogFile -ErrorAction Stop -Raw
+        Write-Host "[DEBUG] Contenido actual del archivo (raw): '$content'" -ForegroundColor Gray
         $currentEntries = $content -split "`r?`n" | 
             ForEach-Object { $_.Trim() } | 
             Where-Object { $_ -and ($_ -notmatch '^\s*$') }
+        Write-Host "[DEBUG] Entradas actuales procesadas: $($currentEntries.Count)" -ForegroundColor Cyan
+        Write-Host "[DEBUG] Entradas: $($currentEntries -join ' | ')" -ForegroundColor Gray
     } catch {
+        Write-Host "[DEBUG] Error al leer historial: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host "[DEBUG] Inicializando lista vacía" -ForegroundColor Yellow
         $currentEntries = @()
     }
     $exists = $false
+    Write-Host "[DEBUG] Verificando si '$cleanUrl' ya existe en el historial..." -ForegroundColor Cyan
     foreach ($entry in $currentEntries) {
+        Write-Host "[DEBUG] Comparando con entrada: '$entry'" -ForegroundColor Gray
         if ($entry -match '\|\s*(.+)$') {
             $existingUrl = $matches[1].Trim()
+            Write-Host "[DEBUG] Extraída URL existente: '$existingUrl'" -ForegroundColor Gray
             if ($existingUrl -eq $cleanUrl) {
+                Write-Host "[DEBUG] ¡URL ya existe en el historial!" -ForegroundColor Yellow
                 $exists = $true
                 break
             }
         } else {
+            Write-Host "[DEBUG] Entrada sin formato 'Título | URL': '$entry'" -ForegroundColor Gray
             if ($entry -eq $cleanUrl) {
+                Write-Host "[DEBUG] ¡URL ya existe (formato antiguo)!" -ForegroundColor Yellow
                 $exists = $true
                 break
             }
         }
     }
     if (-not $exists) {
+        Write-Host "[DEBUG] URL no existe en historial, procediendo a guardar..." -ForegroundColor Green
         $newList = @($historyEntry) + $currentEntries
+        Write-Host "[DEBUG] Nueva lista tendrá $($newList.Count) elementos" -ForegroundColor Cyan
+        
         if ($newList.Count -gt 200) { 
+            Write-Host "[DEBUG] Recortando lista a 200 elementos" -ForegroundColor Yellow
             $newList = $newList[0..199] 
         }
         try {
-            Set-Content -LiteralPath $script:LogFile -Value ($newList -join "`r`n") -Encoding UTF8
-            Write-Host "[HISTORIAL] Guardado: $historyEntry" -ForegroundColor Green
+            Write-Host "[DEBUG] Intentando escribir en: $script:LogFile" -ForegroundColor Cyan
+            $contentToWrite = $newList -join "`r`n"
+            Write-Host "[DEBUG] Contenido a escribir (primeros 500 chars): '$($contentToWrite.Substring(0, [Math]::Min(500, $contentToWrite.Length)))'" -ForegroundColor Gray
+            Set-Content -LiteralPath $script:LogFile -Value $contentToWrite -Encoding UTF8
+            Write-Host "[HISTORIAL] ¡Guardado exitosamente: $historyEntry" -ForegroundColor Green
         } catch {
             Write-Host "[ERROR] No se pudo guardar en el historial: $($_.Exception.Message)" -ForegroundColor Red
+            Write-Host "[ERROR] Tipo de error: $($_.Exception.GetType().Name)" -ForegroundColor Red
         }
     } else {
-        Write-Host "[HISTORIAL] URL ya existe: $cleanUrl" -ForegroundColor Yellow
+        Write-Host "[HISTORIAL] URL ya existe en historial: $cleanUrl" -ForegroundColor Yellow
     }
+    Write-Host "[DEBUG] Add-HistoryUrl finalizada" -ForegroundColor Cyan
 }
 function Get-CleanUrl {
     param([Parameter(Mandatory=$true)][string]$Url)
