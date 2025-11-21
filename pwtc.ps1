@@ -86,25 +86,6 @@ function Set-IniValue {
         Write-Host "[CONFIG] Error guardando configuración: $($_.Exception.Message)" -ForegroundColor Red
     }
 }
-function Get-HistoryUrls {
-    try {
-        $items = Get-Content -LiteralPath $script:LogFile -Encoding UTF8 -ErrorAction Stop |
-            ForEach-Object { $_.Trim() } |
-            Where-Object { $_ -and ($_ -notmatch '^\s*$') } |
-            Select-Object -Unique
-        $urls = @()
-        foreach ($item in $items) {
-            if ($item -match '\|\s*(.+)$') {
-                $urls += $matches[1].Trim()
-            } else {
-                $urls += $item
-            }
-        }
-        return $urls
-    } catch { 
-        return @() 
-    }
-}
 function Add-HistoryUrl {
     param([Parameter(Mandatory=$true)][string]$Url)
     Write-Host "[DEBUG] Add-HistoryUrl iniciada con URL: '$Url'" -ForegroundColor Cyan
@@ -2487,19 +2468,43 @@ function Show-UrlHistoryMenu {
         [System.Windows.Forms.Control]$AnchorControl
     )
     $ctxUrlHistory.Items.Clear()
+    
+    # Forzar una pausa para asegurar que el archivo no esté bloqueado
+    Start-Sleep -Milliseconds 100
+    [System.Windows.Forms.Application]::DoEvents()
+    
     try {
-        # Usar Get-Content con encoding explícito en lugar de ReadAllLines
+        # Método robusto para leer el archivo
         if (Test-Path -LiteralPath $script:LogFile) {
-            $items = Get-Content -LiteralPath $script:LogFile -Encoding UTF8 | 
-                ForEach-Object { $_.Trim() } | 
-                Where-Object { $_ -and ($_ -notmatch '^\s*$') } | 
+            $content = [System.IO.File]::ReadAllText($script:LogFile, [System.Text.Encoding]::UTF8)
+            Write-Host "[DEBUG-HISTORY] Contenido completo del archivo: '$content'" -ForegroundColor Magenta
+            
+            $items = $content -split "`r?`n" | 
+                ForEach-Object { 
+                    $line = $_.Trim()
+                    Write-Host "[DEBUG-HISTORY] Procesando línea: '$line'" -ForegroundColor Gray
+                    $line
+                } | 
+                Where-Object { 
+                    $isValid = $_ -and ($_ -notmatch '^\s*$')
+                    Write-Host "[DEBUG-HISTORY] Línea válida? '$isValid' para: '$_'" -ForegroundColor Gray
+                    $isValid
+                } | 
                 Select-Object -Unique
         } else {
             $items = @()
         }
     } catch { 
         Write-Host "[DEBUG-HISTORY] Error al leer historial: $($_.Exception.Message)" -ForegroundColor Red
-        $items = @()
+        try {
+            # Fallback: usar Get-Content
+            $items = Get-Content -LiteralPath $script:LogFile -ErrorAction Stop | 
+                ForEach-Object { $_.Trim() } | 
+                Where-Object { $_ -and ($_ -notmatch '^\s*$') } | 
+                Select-Object -Unique
+        } catch {
+            $items = @()
+        }
     }
     
     Write-Host "[DEBUG-HISTORY] Items encontrados: $($items.Count)" -ForegroundColor Yellow
@@ -2516,20 +2521,21 @@ function Show-UrlHistoryMenu {
     } else {
         $top = [Math]::Min(12, $items.Count)
         Write-Host "[DEBUG-HISTORY] Mostrando $top items" -ForegroundColor Yellow
-        for ($i=0; $i -lt $top; $i++) {
-            $urlItem = New-Object System.Windows.Forms.ToolStripMenuItem
+        
+        for ($i = 0; $i -lt $top; $i++) {
             $displayText = [string]$items[$i]
             if ([string]::IsNullOrWhiteSpace($displayText)) {
                 Write-Host "[DEBUG-HISTORY] Item $i está vacío, saltando" -ForegroundColor Red
                 continue
             }
             
-            # DEBUG adicional para ver qué está pasando
             Write-Host "[DEBUG-HISTORY] Procesando item $i : '$displayText'" -ForegroundColor Cyan
             Write-Host "[DEBUG-HISTORY] Longitud del item $i : $($displayText.Length)" -ForegroundColor Cyan
             
+            $urlItem = New-Object System.Windows.Forms.ToolStripMenuItem
             $urlItem.Text = $displayText
             $urlItem.ToolTipText = $displayText
+            
             $urlItem.add_Click({
                 param($sender, $e)
                 $fullText = [string]($sender -as [System.Windows.Forms.ToolStripMenuItem]).Text
@@ -2540,12 +2546,14 @@ function Show-UrlHistoryMenu {
                 } else {
                     $urlToSet = $fullText
                 }
+                
                 Write-Host "[DEBUG-HISTORY] URL a establecer: '$urlToSet'" -ForegroundColor Cyan
                 $txtUrl.Text = $urlToSet
                 $txtUrl.ForeColor = [System.Drawing.Color]::Black
                 $txtUrl.SelectionStart = $txtUrl.Text.Length
                 $txtUrl.SelectionLength = 0
             })
+            
             [void]$ctxUrlHistory.Items.Add($urlItem)
             Write-Host "[DEBUG-HISTORY] Item agregado al menú: '$displayText'" -ForegroundColor Green
         }
@@ -2553,13 +2561,15 @@ function Show-UrlHistoryMenu {
     
     if ($ctxUrlHistory.Items.Count -gt 0) {
         [void]$ctxUrlHistory.Items.Add((New-Object System.Windows.Forms.ToolStripSeparator))
+        
         $miClear = New-Object System.Windows.Forms.ToolStripMenuItem
         $miClear.Text = "Borrar historial"
         $miClear.ForeColor = [System.Drawing.Color]::Crimson
         $miClear.add_Click({
             $r = [System.Windows.Forms.MessageBox]::Show(
                 "¿Seguro que deseas borrar el historial de URLs?",
-                "Confirmar", [System.Windows.Forms.MessageBoxButtons]::YesNo,
+                "Confirmar", 
+                [System.Windows.Forms.MessageBoxButtons]::YesNo,
                 [System.Windows.Forms.MessageBoxIcon]::Question
             )
             if ($r -eq [System.Windows.Forms.DialogResult]::Yes) {
@@ -2571,6 +2581,147 @@ function Show-UrlHistoryMenu {
     
     $pt = New-Object System.Drawing.Point(0, $AnchorControl.Height)
     $ctxUrlHistory.Show($AnchorControl, $pt)
+}
+
+function Add-HistoryUrl {
+    param([Parameter(Mandatory=$true)][string]$Url)
+    Write-Host "[DEBUG] Add-HistoryUrl iniciada con URL: '$Url'" -ForegroundColor Cyan
+    Write-Host "[DEBUG] script:ultimoTitulo: '$($script:ultimoTitulo)'" -ForegroundColor Cyan
+    
+    $u = $Url.Trim()
+    if ([string]::IsNullOrWhiteSpace($u)) { 
+        Write-Host "[DEBUG] URL vacía, saliendo" -ForegroundColor Yellow
+        return 
+    }
+    if ($u -eq $global:UrlPlaceholder) { 
+        Write-Host "[DEBUG] URL es placeholder, saliendo" -ForegroundColor Yellow
+        return 
+    }
+    if ($u -notmatch '^(\w+://|www\.|\w+\.\w+)') { 
+        Write-Host "[DEBUG] URL no válida: '$u'" -ForegroundColor Yellow
+        return 
+    }
+    
+    $cleanUrl = Get-CleanUrl -Url $u
+    Write-Host "[DEBUG] URL limpia: '$cleanUrl'" -ForegroundColor Cyan
+    
+    $title = if ($script:ultimoTitulo) { 
+        $safeTitle = Get-SafeFileName -Name $script:ultimoTitulo
+        if ($safeTitle.Length -gt 20) {
+            $safeTitle.Substring(0, 20) + "..."
+        } else {
+            $safeTitle
+        }
+    } else { 
+        "Video" 
+    }
+    
+    $historyEntry = "{0} | {1}" -f $title, $cleanUrl
+    Write-Host "[DEBUG] Entrada de historial a guardar: '$historyEntry'" -ForegroundColor Cyan
+    
+    # Forzar una pausa antes de leer
+    Start-Sleep -Milliseconds 50
+    [System.Windows.Forms.Application]::DoEvents()
+    
+    Write-Host "[DEBUG] Leyendo historial desde: $script:LogFile" -ForegroundColor Cyan
+    
+    $currentEntries = @()
+    try {
+        if (Test-Path -LiteralPath $script:LogFile) {
+            $content = [System.IO.File]::ReadAllText($script:LogFile, [System.Text.Encoding]::UTF8)
+            Write-Host "[DEBUG] Contenido actual del archivo (raw): '$content'" -ForegroundColor Gray
+            
+            $currentEntries = $content -split "`r?`n" | 
+                ForEach-Object { $_.Trim() } | 
+                Where-Object { $_ -and ($_ -notmatch '^\s*$') }
+        }
+    } catch {
+        Write-Host "[DEBUG] Error al leer historial: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host "[DEBUG] Inicializando lista vacía" -ForegroundColor Yellow
+        $currentEntries = @()
+    }
+    
+    Write-Host "[DEBUG] Entradas actuales procesadas: $($currentEntries.Count)" -ForegroundColor Cyan
+    Write-Host "[DEBUG] Entradas: $($currentEntries -join ' | ')" -ForegroundColor Gray
+    
+    $exists = $false
+    Write-Host "[DEBUG] Verificando si '$cleanUrl' ya existe en el historial..." -ForegroundColor Cyan
+    
+    foreach ($entry in $currentEntries) {
+        Write-Host "[DEBUG] Comparando con entrada: '$entry'" -ForegroundColor Gray
+        if ($entry -match '\|\s*(.+)$') {
+            $existingUrl = $matches[1].Trim()
+            Write-Host "[DEBUG] Extraída URL existente: '$existingUrl'" -ForegroundColor Gray
+            if ($existingUrl -eq $cleanUrl) {
+                Write-Host "[DEBUG] ¡URL ya existe en el historial!" -ForegroundColor Yellow
+                $exists = $true
+                break
+            }
+        } else {
+            Write-Host "[DEBUG] Entrada sin formato 'Título | URL': '$entry'" -ForegroundColor Gray
+            if ($entry -eq $cleanUrl) {
+                Write-Host "[DEBUG] ¡URL ya existe (formato antiguo)!" -ForegroundColor Yellow
+                $exists = $true
+                break
+            }
+        }
+    }
+    
+    if (-not $exists) {
+        Write-Host "[DEBUG] URL no existe en historial, procediendo a guardar..." -ForegroundColor Green
+        $newList = @($historyEntry) + $currentEntries
+        Write-Host "[DEBUG] Nueva lista tendrá $($newList.Count) elementos" -ForegroundColor Cyan
+        
+        if ($newList.Count -gt 200) { 
+            Write-Host "[DEBUG] Recortando lista a 200 elementos" -ForegroundColor Yellow
+            $newList = $newList[0..199] 
+        }
+        
+        try {
+            Write-Host "[DEBUG] Intentando escribir en: $script:LogFile" -ForegroundColor Cyan
+            $contentToWrite = ($newList -join "`r`n") + "`r`n"
+            Write-Host "[DEBUG] Contenido a escribir (primeros 500 chars): '$($contentToWrite.Substring(0, [Math]::Min(500, $contentToWrite.Length)))'" -ForegroundColor Gray
+            
+            # Usar StreamWriter para mayor control sobre el encoding
+            $stream = [System.IO.StreamWriter]::new($script:LogFile, $false, [System.Text.Encoding]::UTF8)
+            $stream.Write($contentToWrite)
+            $stream.Close()
+            
+            Write-Host "[HISTORIAL] ¡Guardado exitosamente: $historyEntry" -ForegroundColor Green
+        } catch {
+            Write-Host "[ERROR] No se pudo guardar en el historial: $($_.Exception.Message)" -ForegroundColor Red
+            Write-Host "[ERROR] Tipo de error: $($_.Exception.GetType().Name)" -ForegroundColor Red
+        }
+    } else {
+        Write-Host "[HISTORIAL] URL ya existe en historial: $cleanUrl" -ForegroundColor Yellow
+    }
+    
+    Write-Host "[DEBUG] Add-HistoryUrl finalizada" -ForegroundColor Cyan
+}
+function Get-HistoryUrls {
+    try {
+        if (Test-Path -LiteralPath $script:LogFile) {
+            $content = [System.IO.File]::ReadAllText($script:LogFile, [System.Text.Encoding]::UTF8)
+            $lines = $content -split "`r?`n" |
+                ForEach-Object { $_.Trim() } |
+                Where-Object { $_ -and ($_ -notmatch '^\s*$') } |
+                Select-Object -Unique
+        } else {
+            $lines = @()
+        }
+        
+        $urls = @()
+        foreach ($line in $lines) {
+            if ($line -match '\|\s*(.+)$') {
+                $urls += $matches[1].Trim()
+            } else {
+                $urls += $line
+            }
+        }
+        return $urls
+    } catch { 
+        return @() 
+    }
 }
 $btnPickCookies.Add_Click({
     $ofd = New-Object System.Windows.Forms.OpenFileDialog
