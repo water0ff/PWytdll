@@ -124,7 +124,12 @@ function Add-HistoryUrl {
     $cleanUrl = Get-CleanUrl -Url $u
     Write-Host "[DEBUG] URL limpia: '$cleanUrl'" -ForegroundColor Cyan
     $title = if ($script:ultimoTitulo) { 
-        Get-SafeFileName -Name $script:ultimoTitulo 
+        $safeTitle = Get-SafeFileName -Name $script:ultimoTitulo
+        if ($safeTitle.Length -gt 20) {
+            $safeTitle.Substring(0, 20) + "..."
+        } else {
+            $safeTitle
+        }
     } else { 
         "Video" 
     }
@@ -1982,6 +1987,8 @@ function Get-DisplayUrl {
     $u = $u -replace '^www\.', ''
     return $u
 }
+$mpvnetInstalled = Test-CommandExists -Name "mpvnet"
+if ($mpvnetInstalled) {     $mpvnetVersion = Get-ToolVersion -Command "mpvnet" -ArgsForVersion "--version" -Parse "FirstLine" } 
 function Initialize-AppHeadless {
     Add-Type -AssemblyName System.Windows.Forms
     Add-Type -AssemblyName System.Drawing
@@ -2020,9 +2027,9 @@ function Initialize-AppHeadless {
     }
     Write-Host "[CHECK] (headless) Verificando mpvnet: " -NoNewline
     if ($mpvnetInstalled) {
-        Write-Host "`t[OK] INSTALADO (opcional)" -ForegroundColor Green
+        Write-Host "`n`t[OK] INSTALADO (opcional)" -ForegroundColor Green
     } else {
-        Write-Host "`t[NO] NO INSTALADO (opcional)" -ForegroundColor Yellow
+        Write-Host "`n`t[NO] NO INSTALADO (opcional)" -ForegroundColor Yellow
     }
     return $true
 }
@@ -2497,7 +2504,7 @@ function Show-UrlHistoryMenu {
         $top = [Math]::Min(12, $items.Count)
         for ($i=0; $i -lt $top; $i++) {
             $urlItem = New-Object System.Windows.Forms.ToolStripMenuItem
-            $displayText = $items[$i]
+            $displayText = [string]$items[$i]
             $urlItem.Text = $displayText
             $urlItem.ToolTipText = $displayText
             $urlItem.add_Click({
