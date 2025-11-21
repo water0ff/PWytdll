@@ -11,7 +11,7 @@ $script:LogFile = "C:\Temp\ytdll_history.txt"
 if (-not (Test-Path -LiteralPath $script:LogFile)) {
     New-Item -ItemType File -Path $script:LogFile -Force | Out-Null
 }
-                                                                                                $version = "beta 251120.1621"
+                                                                                                $version = "beta 251120.1731"
 function Get-HistoryUrls {
     try {
         $content = Get-Content -LiteralPath $script:LogFile -ErrorAction Stop -Raw
@@ -658,20 +658,86 @@ $lblEstadoConsulta.Text = "Clasificando y ordenando formatos..."
 function Populate-FormatCombos {
     if ($cmbVideoFmt) {
         $cmbVideoFmt.Items.Clear()
-        if ($script:formatsVideo -and $script:formatsVideo.Count -gt 0) {
-            $cmbVideoFmt.Items.AddRange($script:formatsVideo)
-            if ($cmbVideoFmt.Items.Count -gt 0) {
-                $cmbVideoFmt.SelectedIndex = 0
+        $allVideoFormats = @()
+        foreach ($fmt in $script:lastFormats) {
+            $klass = Classify-Format $fmt
+            if ($klass.Progressive) {
+                $res = if ($klass.VRes) { "{0}p" -f $klass.VRes } else { "" }
+                $sz = Human-Size $klass.Filesize
+                $tbrStr = if ($klass.Tbr) { "{0}k" -f [math]::Round($klass.Tbr) } else { "" }
+                $label = "{0} {1} {2} {3}/{4} {5} (progresivo)" -f $res, $sz, $klass.Ext, $klass.VCodec, $klass.ACodec, $tbrStr
+                $display = (New-FormatDisplay -Id $klass.Id -Label $label)
+                $allVideoFormats += [pscustomobject]@{
+                    Display = $display
+                    Height = $klass.VRes
+                    Tbr = $klass.Tbr
+                    IsProgressive = $true
+                    Id = $klass.Id
+                }
             }
+        }
+        foreach ($fmt in $script:lastFormats) {
+            $klass = Classify-Format $fmt
+            if ($klass.VideoOnly -and -not $klass.Progressive) {
+                $res = if ($klass.VRes) { "{0}p" -f $klass.VRes } else { "" }
+                $sz = Human-Size $klass.Filesize
+                $tbrStr = if ($klass.Tbr) { "{0}k" -f [math]::Round($klass.Tbr) } else { "" }
+                $label = "{0} {1} {2} {3} {4} (video-only)" -f $res, $sz, $klass.Ext, $klass.VCodec, $tbrStr
+                $display = (New-FormatDisplay -Id $klass.Id -Label $label)
+                $allVideoFormats += [pscustomobject]@{
+                    Display = $display
+                    Height = $klass.VRes
+                    Tbr = $klass.Tbr
+                    IsProgressive = $false
+                    Id = $klass.Id
+                }
+            }
+        }
+        $sortedAllVideo = $allVideoFormats | Sort-Object @{
+            Expression = {
+                $heightScore = if ($_.Height) { $_.Height } else { 0 }
+                $tbrScore = if ($_.Tbr) { $_.Tbr } else { 0 }
+                ($heightScore * 100000) + $tbrScore
+            }
+            Descending = $true
+        }
+        foreach ($item in $sortedAllVideo) {
+            $cmbVideoFmt.Items.Add($item.Display) | Out-Null
+        }
+        if ($cmbVideoFmt.Items.Count -gt 0) {
+            $cmbVideoFmt.SelectedIndex = 0
         }
     }
     if ($cmbAudioFmt) {
         $cmbAudioFmt.Items.Clear()
-        if ($script:formatsAudio -and $script:formatsAudio.Count -gt 0) {
-            $cmbAudioFmt.Items.AddRange($script:formatsAudio)
-            if ($cmbAudioFmt.Items.Count -gt 0) {
-                $cmbAudioFmt.SelectedIndex = 0
+        $allAudioFormats = @()
+        foreach ($fmt in $script:lastFormats) {
+            $klass = Classify-Format $fmt
+            if ($klass.AudioOnly) {
+                $sz = Human-Size $klass.Filesize
+                $label = "{0} {1} {2} ~{3}k (audio-only)" -f $sz, $klass.Ext, $klass.ACodec, [math]::Round($klass.ABr)
+                $display = (New-FormatDisplay -Id $klass.Id -Label $label)
+                $allAudioFormats += [pscustomobject]@{
+                    Display = $display
+                    ABr = $klass.ABr
+                    Filesize = $klass.Filesize
+                    Id = $klass.Id
+                }
             }
+        }
+        $sortedAllAudio = $allAudioFormats | Sort-Object @{
+            Expression = {
+                $abrScore = if ($_.ABr) { $_.ABr } else { 0 }
+                $sizeScore = if ($_.Filesize) { $_.Filesize } else { 0 }
+                ($abrScore * 1000) + ($sizeScore / 1MB)
+            }
+            Descending = $true
+        }
+        foreach ($item in $sortedAllAudio) {
+            $cmbAudioFmt.Items.Add($item.Display) | Out-Null
+        }
+        if ($cmbAudioFmt.Items.Count -gt 0) {
+            $cmbAudioFmt.SelectedIndex = 0
         }
     }
 }
