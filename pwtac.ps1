@@ -2778,61 +2778,41 @@ $btnDescargar.Add_Click({
         $audioSel = Get-SelectedFormatId -Combo $cmbAudioFmt
         $hayFormatosAudio = ($script:formatsAudio -and $script:formatsAudio.Count -gt 0)
         
-        $fSelector = $null
-        $mergeExt  = "mp4"
-        $formatInfo = $null
-        if ($videoSel -and $script:formatsIndex.ContainsKey($videoSel)) {
-            $formatInfo = $script:formatsIndex[$videoSel]
+        # Lógica SIMPLE y DIRECTA
+        if ($videoSel -and $audioSel) {
+            # SI hay selección de audio, FORZAR combinación
+            $fSelector = "{0}+{1}" -f $videoSel, $audioSel
+            $mergeExt = "mp4"
+            Write-Host "[DEBUG] Combinando video ($videoSel) + audio ($audioSel)" -ForegroundColor Green
         }
-        if (Is-TwitchUrl $script:ultimaURL) {
-            if ($videoSel -and $videoSel -notmatch '^best(video)?$') {
-                $fSelector = $videoSel
-            } else {
-                $fSelector = "best"
-            }
+        elseif ($videoSel -and $hayFormatosAudio) {
+            # SI hay video y formatos de audio disponibles, usar bestaudio
+            $fSelector = "{0}+bestaudio" -f $videoSel
+            $mergeExt = "mp4"
+            Write-Host "[DEBUG] Combinando video ($videoSel) + bestaudio" -ForegroundColor Green
         }
-        elseif (Is-ProgressiveOnlySite $script:lastExtractor) {
-            if ($videoSel -match '^best(video)?$') {
-                if ($script:bestProgId) {
-                    $fSelector = $script:bestProgId
-                } else {
-                    $fSelector = "best"
-                }
-            } else {
-                $fSelector = $videoSel
-            }
+        elseif ($videoSel) {
+            # Solo video, sin audio disponible
+            $fSelector = $videoSel
             $mergeExt = $null
+            Write-Host "[DEBUG] Solo video: $videoSel" -ForegroundColor Yellow
+        }
+        elseif ($audioSel) {
+            # Solo audio
+            $fSelector = $audioSel
+            $mergeExt = $null
+            Write-Host "[DEBUG] Solo audio: $audioSel" -ForegroundColor Yellow
         }
         else {
-            $videoIsBest  = $videoSel -match '^best(video)?$'
-            $audioIsBest  = $audioSel -match '^best(audio)?$'
-            if ($videoSel -and -not $videoIsBest -and $audioSel -and -not $audioIsBest -and $hayFormatosAudio) {
-                $fSelector = "{0}+{1}" -f $videoSel, $audioSel
+            # Por defecto
+            if ($hayFormatosAudio) {
+                $fSelector = "bestvideo+bestaudio/best"
+                $mergeExt = "mp4"
+            } else {
+                $fSelector = "best"
+                $mergeExt = $null
             }
-            elseif ($videoSel -and -not $videoIsBest) {
-                if ($formatInfo -and $formatInfo.VideoOnly -and $hayFormatosAudio) {
-                    if ($audioSel -and -not $audioIsBest) {
-                        $fSelector = "{0}+{1}" -f $videoSel, $audioSel
-                    } else {
-                        $fSelector = "{0}+bestaudio/best" -f $videoSel
-                    }
-                } else {
-                    $fSelector = $videoSel
-                    $mergeExt = $null
-                }
-            }
-            elseif ($audioSel -and -not $audioIsBest -and $hayFormatosAudio) {
-                $fSelector = $audioSel
-                $mergeExt  = $null
-            }
-            else {
-                if ($hayFormatosAudio) {
-                    $fSelector = "bestvideo+bestaudio/best"
-                } else {
-                    $fSelector = "best"
-                    $mergeExt = $null
-                }
-            }
+            Write-Host "[DEBUG] Selector por defecto: $fSelector" -ForegroundColor Cyan
         }
         Write-Host "[DEBUG] Selector de formato: $fSelector" -ForegroundColor Yellow
         Write-Host "[DEBUG] Merge extension: $mergeExt" -ForegroundColor Yellow
