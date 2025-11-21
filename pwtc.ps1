@@ -11,7 +11,7 @@ $script:LogFile = "C:\Temp\ytdll_history.txt"
 if (-not (Test-Path -LiteralPath $script:LogFile)) {
     New-Item -ItemType File -Path $script:LogFile -Force | Out-Null
 }
-                                                                                                $version = "beta 251121.1042"
+                                                                                                $version = "beta 251121.1053"
 function Get-HistoryUrls {
     try {
         $content = Get-Content -LiteralPath $script:LogFile -ErrorAction Stop -Raw
@@ -984,10 +984,10 @@ function Get-ImageFromUrl {
     param([Parameter(Mandatory=$true)][string]$Url)
     $cleanUrl = $Url -replace '\?.*$', ''
     if ($cleanUrl -ne $Url) {
-        Write-Host "[IMAGE] URL limpiada: $cleanUrl" -ForegroundColor Yellow
+        Write-Host "`t[IMAGE] URL limpiada: $cleanUrl" -ForegroundColor Yellow
     }
     try {
-        Write-Host "[IMAGE] Descargando: $cleanUrl" -ForegroundColor Cyan
+        Write-Host "`t[IMAGE] Descargando: $cleanUrl" -ForegroundColor Cyan
         Add-Type -AssemblyName System.Net.Http
         $handler = New-Object System.Net.Http.HttpClientHandler
         $httpClient = New-Object System.Net.Http.HttpClient($handler)
@@ -1003,15 +1003,15 @@ function Get-ImageFromUrl {
             $stream = $response.Content.ReadAsStreamAsync().Result
             $image = [System.Drawing.Image]::FromStream($stream)
             $httpClient.Dispose()
-            Write-Host "[IMAGE] Descarga exitosa: $($image.Width)x$($image.Height)" -ForegroundColor Green
+            Write-Host "`t[IMAGE] Descarga exitosa: $($image.Width)x$($image.Height)" -ForegroundColor Green
             return $image
         } else {
-            Write-Host "[IMAGE] Error HTTP: $($response.StatusCode) - $($response.ReasonPhrase)" -ForegroundColor Red
+            Write-Host "`t[IMAGE] Error HTTP: $($response.StatusCode) - $($response.ReasonPhrase)" -ForegroundColor Red
             $httpClient.Dispose()
             return $null
         }
     } catch {
-        Write-Host "[IMAGE] Error con HttpClient: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host "`t[IMAGE] Error con HttpClient: $($_.Exception.Message)" -ForegroundColor Red
         try { $httpClient.Dispose() } catch {}
         return $null
     }
@@ -1025,12 +1025,12 @@ function Get-ThumbnailListFromYtDlp {
     try {
         $yt = Get-Command yt-dlp -ErrorAction Stop
     } catch {
-        Write-Host "[THUMB] yt-dlp no disponible para listar thumbnails." -ForegroundColor Red
+        Write-Host "`t[THUMB] yt-dlp no disponible para listar thumbnails." -ForegroundColor Red
         return @()
     }
     $res = Invoke-Capture -ExePath $yt.Source -Args @("--list-thumbnails", $Url)
     if ($res.ExitCode -ne 0 -or [string]::IsNullOrWhiteSpace($res.StdOut)) {
-        Write-Host "[THUMB] --list-thumbnails devolvió error o salida vacía." -ForegroundColor Yellow
+        Write-Host "`t[THUMB] --list-thumbnails devolvió error o salida vacía." -ForegroundColor Yellow
         return @()
     }
     $lines = $res.StdOut -split "`r?`n"
@@ -1042,7 +1042,7 @@ function Get-ThumbnailListFromYtDlp {
         }
     }
     if ($startIndex -lt 0) {
-        Write-Host "[THUMB] No se encontró encabezado de tabla de thumbnails." -ForegroundColor Yellow
+        Write-Host "`t[THUMB] No se encontró encabezado de tabla de thumbnails." -ForegroundColor Yellow
         return @()
     }
     $thumbs = @()
@@ -1071,10 +1071,10 @@ function Get-ThumbnailListFromYtDlp {
             Url    = $url
         }
     }
-    Write-Host "[THUMB] Encontradas $($thumbs.Count) miniaturas JPG" -ForegroundColor Cyan
+    Write-Host "`t[THUMB] Encontradas $($thumbs.Count) miniaturas JPG" -ForegroundColor Cyan
     
     if (-not $thumbs -or $thumbs.Count -eq 0) {
-        Write-Host "[THUMB] No se encontraron miniaturas JPG." -ForegroundColor Yellow
+        Write-Host "`t[THUMB] No se encontraron miniaturas JPG." -ForegroundColor Yellow
         return @()
     }   
     return $thumbs
@@ -1100,7 +1100,7 @@ function Select-BestThumbnail {
     $best = $ranked |
         Sort-Object @{Expression = "Area"; Descending = $true}, @{Expression = "IdNum"; Descending = $true} |
         Select-Object -First 1
-    Write-Host "[THUMB] Mejor miniatura seleccionada: $($best.Thumb.Url)" -ForegroundColor Green
+    Write-Host "`t[THUMB] Mejor miniatura seleccionada: $($best.Thumb.Url)" -ForegroundColor Green
     return $best.Thumb
 }
 function Fetch-ThumbnailFile {
@@ -1173,7 +1173,7 @@ function Show-PreviewUniversal {
             if ($Titulo) { $toolTip.SetToolTip($picPreview, $Titulo) }
             $lblEstadoConsulta.Text = "Vista previa cargada"
             $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::DarkGreen
-            Write-Host "[PREVIEW] Vista previa cargada desde yt-dlp" -ForegroundColor Green
+            Write-Host "`t[PREVIEW] Vista previa cargada desde yt-dlp" -ForegroundColor Green
             Start-Job -ScriptBlock {
                 param($file)
                 Start-Sleep -Seconds 5
@@ -1182,7 +1182,7 @@ function Show-PreviewUniversal {
             
             return $true
         } catch {
-            Write-Host "[PREVIEW] Error al cargar miniatura descargada: $($_.Exception.Message)" -ForegroundColor Red
+            Write-Host "`t[PREVIEW] Error al cargar miniatura descargada: $($_.Exception.Message)" -ForegroundColor Red
         }
     }
     Write-Host "`t[PREVIEW] Intentando obtener thumbnails con --list-thumbnails..." -ForegroundColor Yellow
@@ -1193,11 +1193,11 @@ function Show-PreviewUniversal {
         $thumbIndex = 1
         foreach ($thumb in $sortedThumbs) {
             $lblEstadoConsulta.Text = "Probando miniatura $thumbIndex de 3..."
-            Write-Host "[PREVIEW] Probando miniatura: $($thumb.Url)" -ForegroundColor Cyan
+            Write-Host "`t[PREVIEW] Probando miniatura: $($thumb.Url)" -ForegroundColor Cyan
             if (Show-PreviewImage -ImageUrl $thumb.Url -Titulo $Titulo) {
                 $lblEstadoConsulta.Text = "Vista previa cargada"
                 $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::DarkGreen
-                Write-Host "[PREVIEW] Vista previa cargada desde --list-thumbnails" -ForegroundColor Green
+                Write-Host "`t[PREVIEW] Vista previa cargada desde --list-thumbnails" -ForegroundColor Green
                 return $true
             } else {
                 Write-Host "`t[PREVIEW] Falló miniatura, probando siguiente..." -ForegroundColor Yellow
@@ -1207,16 +1207,16 @@ function Show-PreviewUniversal {
         Write-Host "`t[PREVIEW] Todas las miniaturas JPG fallaron" -ForegroundColor Red
     }
     $lblEstadoConsulta.Text = "Usando método alternativo..."
-    Write-Host "[PREVIEW] Usando fallback con miniatura directa..." -ForegroundColor Yellow
+    Write-Host "`t[PREVIEW] Usando fallback con miniatura directa..." -ForegroundColor Yellow
     if ($DirectThumbUrl -and (Show-PreviewImage -ImageUrl $DirectThumbUrl -Titulo $Titulo)) {
         $lblEstadoConsulta.Text = "Vista previa cargada"
         $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::DarkGreen
-        Write-Host "[PREVIEW] Vista previa cargada (directa)" -ForegroundColor Green
+        Write-Host "`t[PREVIEW] Vista previa cargada (directa)" -ForegroundColor Green
         return $true
     }
     $lblEstadoConsulta.Text = "No se pudo cargar vista previa"
     $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::DarkOrange
-    Write-Host "[PREVIEW] Todos los métodos fallaron, sin vista previa" -ForegroundColor Red
+    Write-Host "`t[PREVIEW] Todos los métodos fallaron, sin vista previa" -ForegroundColor Red
     return $false
 }
 function Show-PreviewImage {
@@ -1226,7 +1226,7 @@ function Show-PreviewImage {
     )
     try {
         if ($ImageUrl -match '\.webp($|\?)') {
-            Write-Host "[PREVIEW] Detectado WEBP, intentando conversión..." -ForegroundColor Yellow
+            Write-Host "`t[PREVIEW] Detectado WEBP, intentando conversión..." -ForegroundColor Yellow
             $png = Convert-WebpUrlToPng -Url $ImageUrl
             if ($png -and (Test-Path $png)) {
                 try { 
@@ -1252,18 +1252,18 @@ function Show-PreviewImage {
         }
         return $false
     } catch {
-        Write-Host "[PREVIEW] Error en Show-PreviewImage: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host "`t[PREVIEW] Error en Show-PreviewImage: $($_.Exception.Message)" -ForegroundColor Red
         return $false
     }
 }
 function Get-ImageFromUrlFallback {
     param([Parameter(Mandatory=$true)][string]$Url)
     try {
-        Write-Host "[IMAGE-FALLBACK] Intentando con Invoke-WebRequest: $Url" -ForegroundColor Cyan
+        Write-Host `t"[IMAGE-FALLBACK] Intentando con Invoke-WebRequest: $Url" -ForegroundColor Cyan
         $response = Invoke-WebRequest -Uri $Url -UseBasicParsing -TimeoutSec 10
         $bytes = $response.Content       
         if ($bytes -and $bytes.Length -gt 0) {
-            Write-Host "[IMAGE-FALLBACK] Descargados $($bytes.Length) bytes" -ForegroundColor Green
+            Write-Host "`t[IMAGE-FALLBACK] Descargados $($bytes.Length) bytes" -ForegroundColor Green
             $ms = New-Object System.IO.MemoryStream(,$bytes)
             return [System.Drawing.Image]::FromStream($ms)
         }
