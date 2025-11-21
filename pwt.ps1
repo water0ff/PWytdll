@@ -14,7 +14,7 @@ $script:ConfigFile = "C:\Temp\ytdll\config.ini"
 if (-not (Test-Path -LiteralPath $script:LogFile)) {
     New-Item -ItemType File -Path $script:LogFile -Force | Out-Null
 }
-                                                                                                $version = "beta 251121.1104"
+                                                                                                $version = "beta 251121.1214"
 function Get-IniValue {
     param([string]$Section, [string]$Key, [string]$DefaultValue = $null)
     
@@ -204,7 +204,6 @@ Write-Host "                   YTDLL                       " -ForegroundColor Gr
 Write-Host ("              Versión: v{0}" -f $version) -ForegroundColor Green
 Write-Host "=============================================" -ForegroundColor DarkCyan
 $toolTip = New-Object System.Windows.Forms.ToolTip
-# Requiere System.Drawing (ya lo estás usando)
 function Set-RoundedRegion {
     param(
         [Parameter(Mandatory = $true)]
@@ -1930,6 +1929,12 @@ function Initialize-AppHeadless {
         if (-not (Ensure-ToolHeadless -CommandName "node" -FriendlyName "Node.js" -ChocoPkg "nodejs-lts" -VersionArgs "--version")) { 
             return $false 
         }
+    }
+    Write-Host "  mpvnet: " -NoNewline
+    if ($mpvnetInstalled) {
+        Write-Host "INSTALADO (opcional)" -ForegroundColor Green
+    } else {
+        Write-Host "NO INSTALADO (opcional)" -ForegroundColor Yellow
     }
     return $true
 }
