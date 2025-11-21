@@ -11,7 +11,7 @@ $script:LogFile = "C:\Temp\ytdll_history.txt"
 if (-not (Test-Path -LiteralPath $script:LogFile)) {
     New-Item -ItemType File -Path $script:LogFile -Force | Out-Null
 }
-                                                                                                $version = "beta 251120.1411"
+                                                                                                $version = "beta 251120.1521"
 function Get-HistoryUrls {
     try {
         $content = Get-Content -LiteralPath $script:LogFile -ErrorAction Stop -Raw
@@ -1266,16 +1266,25 @@ function Invoke-ConsultaFromUI {
     [System.Windows.Forms.Application]::DoEvents()
     $res = Invoke-CaptureResponsive -ExePath $yt.Source -Args $args -WorkingText "Consultando video" -TimeoutSec 30
     Write-Host "[DEBUG] yt-dlp ExitCode: $($res.ExitCode)" -ForegroundColor Yellow
-    $lines = $res.StdOut -split "`r?`n" | Where-Object { $_.Trim() -ne "" }
-    $hasValidData = $lines.Count -ge 3 -and -not [string]::IsNullOrWhiteSpace($lines[0])
+    if ([string]::IsNullOrWhiteSpace($res.StdOut)) {
+        Write-Host "[DEBUG] StdOut está vacío o nulo" -ForegroundColor Red
+        if (-not [string]::IsNullOrWhiteSpace($res.StdErr)) {
+            Write-Host "[DEBUG] StdErr: $($res.StdErr)" -ForegroundColor Red
+        }
+    }
+    $lines = @()
+    if (-not [string]::IsNullOrWhiteSpace($res.StdOut)) {
+        $lines = $res.StdOut -split "`r?`n" | Where-Object { $_.Trim() -ne "" }
+    }
+    $hasValidData = ($lines.Count -ge 3) -and (-not [string]::IsNullOrWhiteSpace($lines[0]))
     if ($res.ExitCode -eq 0 -or $hasValidData) {
-        $title     = $lines[0]
-        $thumbUrl  = if ($lines.Count -ge 2) { $lines[1] } else { $null }
-        $videoId   = if ($lines.Count -ge 3) { $lines[2] } else { $null }
+        $title = if ($lines.Count -gt 0) { $lines[0] } else { "Título no disponible" }
+        $thumbUrl = if ($lines.Count -gt 1) { $lines[1] } else { $null }
+        $videoId = if ($lines.Count -gt 2) { $lines[2] } else { $null }
         $script:videoConsultado = $true
-        $script:ultimaURL       = $Url
-        $script:ultimoTitulo    = $title
-        $script:lastThumbUrl    = $thumbUrl
+        $script:ultimaURL = $Url
+        $script:ultimoTitulo = $title
+        $script:lastThumbUrl = $thumbUrl
         $script:formatsEnumerated = $false
         $lblEstadoConsulta.Text = "Consulta OK: `"$title`""
         $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::DarkGreen
@@ -1290,10 +1299,8 @@ function Invoke-ConsultaFromUI {
         $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::DarkBlue
         [System.Windows.Forms.Application]::DoEvents()
         $fmtOk = Fetch-Formats -Url $Url
-        if ($fmtOk) {
-            if ($script:lastFormats) {
-                Print-FormatsTable -formats $script:lastFormats
-            }
+        if ($fmtOk -and $script:lastFormats) {
+            Print-FormatsTable -formats $script:lastFormats
             Populate-FormatCombos
         }
         $btnDescargar.Enabled = $true
@@ -1309,23 +1316,30 @@ function Invoke-ConsultaFromUI {
         return $true
     }
     else {
-        $script:videoConsultado   = $false
-        $script:ultimaURL         = $null
-        $script:ultimoTitulo      = $null
+        $script:videoConsultado = $false
+        $script:ultimaURL = $null
+        $script:ultimoTitulo = $null
         $script:formatsEnumerated = $false
-        $lblEstadoConsulta.Text   = "Error al consultar la URL"
+        $lblEstadoConsulta.Text = "Error al consultar la URL"
         $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::Red
         $picPreview.Image = $null
         $btnDescargar.Enabled = $true
         $txtUrl.Enabled = $true
+        $errorMsg = "yt-dlp devolvió error al consultar la URL. Verifica que la URL sea válida."
+        if (-not [string]::IsNullOrWhiteSpace($res.StdErr)) {
+            $errorMsg += "`n`nError: $($res.StdErr)"
+        }
         [System.Windows.Forms.MessageBox]::Show(
-            "yt-dlp devolvió error al consultar la URL. Verifica que la URL sea válida.",
+            $errorMsg,
             "Error en consulta",
             [System.Windows.Forms.MessageBoxButtons]::OK,
             [System.Windows.Forms.MessageBoxIcon]::Error
         ) | Out-Null
+        
         Write-Host "`t[ERROR] No se pudo consultar el video. ExitCode: $($res.ExitCode)" -ForegroundColor Red
-        Write-Host "`t[ERROR] StdErr: $($res.StdErr)" -ForegroundColor Red
+        if (-not [string]::IsNullOrWhiteSpace($res.StdErr)) {
+            Write-Host "`t[ERROR] StdErr: $($res.StdErr)" -ForegroundColor Red
+        }
         Set-DownloadButtonVisual
         return $false
     }
