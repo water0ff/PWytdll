@@ -14,7 +14,7 @@ $script:ConfigFile = "C:\Temp\ytdll\config.ini"
 if (-not (Test-Path -LiteralPath $script:LogFile)) {
     New-Item -ItemType File -Path $script:LogFile -Force | Out-Null
 }
-                                                                                                $version = "beta 251121.1324"
+                                                                                                $version = "beta 251121.1434"
 function Get-IniValue {
     param([string]$Section, [string]$Key, [string]$DefaultValue = $null)
     
@@ -2423,7 +2423,15 @@ function Show-UrlHistoryMenu {
         [System.Windows.Forms.Control]$AnchorControl
     )
     $ctxUrlHistory.Items.Clear()
-    $items = @(Get-HistoryUrls)
+    try {
+        $content = Get-Content -LiteralPath $script:LogFile -ErrorAction Stop -Raw
+        $items = $content -split "`r?`n" |
+            ForEach-Object { $_.Trim() } |
+            Where-Object { $_ -and ($_ -notmatch '^\s*$') } |
+            Select-Object -Unique
+    } catch { 
+        $items = @()
+    }
     if (-not $items -or $items.Count -eq 0) {
         $miEmpty = New-Object System.Windows.Forms.ToolStripMenuItem
         $miEmpty.Text = "(Sin historial)"
