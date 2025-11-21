@@ -2495,6 +2495,10 @@ function Show-UrlHistoryMenu {
     } catch { 
         $items = @()
     }
+    Write-Host "[DEBUG-HISTORY] Items encontrados: $($items.Count)" -ForegroundColor Yellow
+    if ($items.Count -gt 0) {
+        Write-Host "[DEBUG-HISTORY] Primer item: '$($items[0])'" -ForegroundColor Yellow
+    }
     if (-not $items -or $items.Count -eq 0) {
         $miEmpty = New-Object System.Windows.Forms.ToolStripMenuItem
         $miEmpty.Text = "(Sin historial)"
@@ -2502,44 +2506,53 @@ function Show-UrlHistoryMenu {
         [void]$ctxUrlHistory.Items.Add($miEmpty)
     } else {
         $top = [Math]::Min(12, $items.Count)
+        Write-Host "[DEBUG-HISTORY] Mostrando $top items" -ForegroundColor Yellow
         for ($i=0; $i -lt $top; $i++) {
             $urlItem = New-Object System.Windows.Forms.ToolStripMenuItem
             $displayText = [string]$items[$i]
+            if ([string]::IsNullOrWhiteSpace($displayText)) {
+                Write-Host "[DEBUG-HISTORY] Item $i está vacío, saltando" -ForegroundColor Red
+                continue
+            }
             $urlItem.Text = $displayText
             $urlItem.ToolTipText = $displayText
             $urlItem.add_Click({
                 param($sender, $e)
                 $fullText = [string]($sender -as [System.Windows.Forms.ToolStripMenuItem]).Text
+                Write-Host "[DEBUG-HISTORY] Click en: '$fullText'" -ForegroundColor Green
+                
                 if ($fullText -match '\|\s*(.+)$') {
                     $urlToSet = $matches[1].Trim()
                 } else {
                     $urlToSet = $fullText
                 }
+                Write-Host "[DEBUG-HISTORY] URL a establecer: '$urlToSet'" -ForegroundColor Cyan
                 $txtUrl.Text = $urlToSet
                 $txtUrl.ForeColor = [System.Drawing.Color]::Black
                 $txtUrl.SelectionStart = $txtUrl.Text.Length
                 $txtUrl.SelectionLength = 0
             })
             [void]$ctxUrlHistory.Items.Add($urlItem)
+            Write-Host "[DEBUG-HISTORY] Item agregado: '$displayText'" -ForegroundColor Gray
         }
     }
     if ($ctxUrlHistory.Items.Count -gt 0) {
         [void]$ctxUrlHistory.Items.Add((New-Object System.Windows.Forms.ToolStripSeparator))
+        $miClear = New-Object System.Windows.Forms.ToolStripMenuItem
+        $miClear.Text = "Borrar historial"
+        $miClear.ForeColor = [System.Drawing.Color]::Crimson
+        $miClear.add_Click({
+            $r = [System.Windows.Forms.MessageBox]::Show(
+                "¿Seguro que deseas borrar el historial de URLs?",
+                "Confirmar", [System.Windows.Forms.MessageBoxButtons]::YesNo,
+                [System.Windows.Forms.MessageBoxIcon]::Question
+            )
+            if ($r -eq [System.Windows.Forms.DialogResult]::Yes) {
+                Clear-History
+            }
+        })
+        [void]$ctxUrlHistory.Items.Add($miClear)
     }
-    $miClear = New-Object System.Windows.Forms.ToolStripMenuItem
-    $miClear.Text = "Borrar historial"
-    $miClear.ForeColor = [System.Drawing.Color]::Crimson
-    $miClear.add_Click({
-        $r = [System.Windows.Forms.MessageBox]::Show(
-            "¿Seguro que deseas borrar el historial de URLs?",
-            "Confirmar", [System.Windows.Forms.MessageBoxButtons]::YesNo,
-            [System.Windows.Forms.MessageBoxIcon]::Question
-        )
-        if ($r -eq [System.Windows.Forms.DialogResult]::Yes) {
-            Clear-History
-        }
-    })
-    [void]$ctxUrlHistory.Items.Add($miClear)
     $pt = New-Object System.Drawing.Point(0, $AnchorControl.Height)
     $ctxUrlHistory.Show($AnchorControl, $pt)
 }
