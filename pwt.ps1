@@ -14,7 +14,7 @@ $script:ConfigFile = "C:\Temp\ytdll\config.ini"
 if (-not (Test-Path -LiteralPath $script:LogFile)) {
     New-Item -ItemType File -Path $script:LogFile -Force | Out-Null
 }
-                                                                                                $version = "beta 251121.1555"
+                                                                                                $version = "beta 251121.1605"
 function Get-IniValue {
     param([string]$Section, [string]$Key, [string]$DefaultValue = $null)
     
@@ -739,11 +739,11 @@ function Populate-FormatCombos {
     }
     if ($cmbVideoFmt.Items.Count -gt 0) { 
         $cmbVideoFmt.SelectedIndex = 0 
-        #Write-Host "[DEBUG] Video combo items: $($cmbVideoFmt.Items.Count)" -ForegroundColor Yellow
+        Write-Host "[DEBUG] Video combo items: $($cmbVideoFmt.Items.Count)" -ForegroundColor Yellow
     }
     if ($cmbAudioFmt.Items.Count -gt 0) { 
         $cmbAudioFmt.SelectedIndex = 0 
-        #Write-Host "[DEBUG] Audio combo items: $($cmbAudioFmt.Items.Count)" -ForegroundColor Yellow
+        Write-Host "[DEBUG] Audio combo items: $($cmbAudioFmt.Items.Count)" -ForegroundColor Yellow
     }
 }
 function Normalize-ThumbUrl {
@@ -1451,7 +1451,7 @@ function Invoke-ConsultaFromUI {
     $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::DarkBlue
     [System.Windows.Forms.Application]::DoEvents()
     $res = Invoke-CaptureResponsive -ExePath $yt.Source -Args $args -WorkingText "Consultando video" -TimeoutSec 30
-##De momento no me interesa    Write-Host "[DEBUG] yt-dlp ExitCode: $($res.ExitCode)" -ForegroundColor Yellow
+    Write-Host "[DEBUG] yt-dlp ExitCode: $($res.ExitCode)" -ForegroundColor Yellow
     if ([string]::IsNullOrWhiteSpace($res.StdOut)) {
         Write-Host "[DEBUG] StdOut está vacío o nulo" -ForegroundColor Red
         if (-not [string]::IsNullOrWhiteSpace($res.StdErr)) {
