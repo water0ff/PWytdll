@@ -439,12 +439,12 @@ function Format-ExtractorsInline {
 function Print-FormatsTable {
     param([array]$formats)  # array del JSON .formats
     Write-Host "`n[FORMATOS] Disponibles (similar a yt-dlp -F):" -ForegroundColor Cyan
-    Write-Host ("{0,-10} {1,-10} {2,-5} {3,-7} {4,-9} {5,-8} {6}" -f "res", "tamaño", "ext", "vcodec", "acodec", "tbr", "format_id") -ForegroundColor DarkGray
+    Write-Host ("{0,-8} {1,-12} {2,-6} {3,-15} {4,-15} {5,-8} {6}" -f "res", "tamaño", "ext", "vcodec", "acodec", "tbr", "format_id") -ForegroundColor DarkGray
     foreach ($f in $formats) {
         $res = if ($f.height) { "{0}p" -f $f.height } else { "" }
         $sz = Human-Size $f.filesize
         $tbrStr = if ($f.tbr) { "{0}k" -f [math]::Round($f.tbr) } else { "" }
-        Write-Host ("{0,-10} {1,-10} {2,-5} {3,-7} {4,-9} {5,-8} {6}" -f $res, $sz, $f.ext, $f.vcodec, $f.acodec, $tbrStr, $f.format_id)
+        Write-Host ("{0,-8} {1,-12} {2,-6} {3,-15} {4,-15} {5,-8} {6}" -f $res, $sz, $f.ext, $f.vcodec, $f.acodec, $tbrStr, $f.format_id)
     }
 }
 $script:bestProgId   = $null
@@ -458,7 +458,6 @@ function Fetch-Formats {
     $script:lastFormats = $null
     $script:bestProgId   = $null
     $script:bestProgRank = -1
-    
     try { 
         $yt = Get-Command yt-dlp -ErrorAction Stop 
     } catch {
@@ -467,7 +466,6 @@ function Fetch-Formats {
         Write-Host "`t[ERROR] yt-dlp no disponible para listar formatos." -ForegroundColor Red
         return $false
     }
-    
     $lblEstadoConsulta.Text = "Obteniendo lista de formatos..."
     $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::DarkBlue
     $args1 = @(
@@ -542,25 +540,34 @@ function Fetch-Formats {
                 Height = $klass.VRes
                 Tbr = $klass.Tbr
                 IsProgressive = $klass.Progressive
+                Filesize = $klass.Filesize
             }
         }
         elseif ($klass.AudioOnly) {
-            $label = "{0} {1} {2} ~{3} (audio-only)" -f $sz, $klass.Ext, $klass.ACodec, $klass.ABr
+            $label = "{0} {1} {2} ~{3}k (audio-only)" -f $sz, $klass.Ext, $klass.ACodec, [math]::Round($klass.ABr)
             $audioFormats += [pscustomobject]@{
                 Display = (New-FormatDisplay -Id $klass.Id -Label $label)
                 ABr = $klass.ABr
+                Filesize = $klass.Filesize
             }
         }
     }
     $sortedVideo = $videoFormats | Sort-Object @{
         Expression = {
-            $score = 0
-            if ($_.IsProgressive) { $score += 1000000 }
-            $score + ($_.Height * 1000) + ($_.Tbr)
+            $heightScore = if ($_.Height) { $_.Height } else { 0 }
+            $tbrScore = if ($_.Tbr) { $_.Tbr } else { 0 }
+            ($heightScore * 10000) + $tbrScore
         }
         Descending = $true
     }
-    $sortedAudio = $audioFormats | Sort-Object @{Expression = "ABr"; Descending = $true}
+    $sortedAudio = $audioFormats | Sort-Object @{
+        Expression = {
+            $abrScore = if ($_.ABr) { $_.ABr } else { 0 }
+            $sizeScore = if ($_.Filesize) { $_.Filesize } else { 0 }
+            ($abrScore * 1000) + ($sizeScore / 1MB)
+        }
+        Descending = $true
+    }
     $script:formatsVideo = $sortedVideo.Display
     $script:formatsAudio = $sortedAudio.Display
     $script:formatsEnumerated = ($script:formatsVideo.Count -gt 0 -or $script:formatsAudio.Count -gt 0)
