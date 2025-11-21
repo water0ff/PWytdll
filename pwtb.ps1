@@ -11,7 +11,7 @@ $script:LogFile = "C:\Temp\ytdll_history.txt"
 if (-not (Test-Path -LiteralPath $script:LogFile)) {
     New-Item -ItemType File -Path $script:LogFile -Force | Out-Null
 }
-                                                                                                $version = "beta 251121.1021"
+                                                                                                $version = "beta 251121.1042"
 function Get-HistoryUrls {
     try {
         $content = Get-Content -LiteralPath $script:LogFile -ErrorAction Stop -Raw
@@ -681,19 +681,11 @@ function Populate-FormatCombos {
     }
     if ($cmbVideoFmt.Items.Count -gt 0) { 
         $cmbVideoFmt.SelectedIndex = 0 
-        Write-Host "[DEBUG] Video combo items: $($cmbVideoFmt.Items.Count)" -ForegroundColor Yellow
+        #Write-Host "[DEBUG] Video combo items: $($cmbVideoFmt.Items.Count)" -ForegroundColor Yellow
     }
     if ($cmbAudioFmt.Items.Count -gt 0) { 
         $cmbAudioFmt.SelectedIndex = 0 
-        Write-Host "[DEBUG] Audio combo items: $($cmbAudioFmt.Items.Count)" -ForegroundColor Yellow
-    }
-    Write-Host "`n[COMBO ORDER - VIDEO]:" -ForegroundColor Cyan
-    for ($i = 0; $i -lt [Math]::Min(3, $cmbVideoFmt.Items.Count); $i++) {
-        Write-Host ("  {0}: {1}" -f $i, $cmbVideoFmt.Items[$i]) -ForegroundColor White
-    }
-    Write-Host "`n[COMBO ORDER - AUDIO]:" -ForegroundColor Cyan
-    for ($i = 0; $i -lt [Math]::Min(3, $cmbAudioFmt.Items.Count); $i++) {
-        Write-Host ("  {0}: {1}" -f $i, $cmbAudioFmt.Items[$i]) -ForegroundColor White
+        #Write-Host "[DEBUG] Audio combo items: $($cmbAudioFmt.Items.Count)" -ForegroundColor Yellow
     }
 }
 function Normalize-ThumbUrl {
@@ -1142,19 +1134,19 @@ function Fetch-ThumbnailFile {
         $args += @("--cookies", $script:cookiesPath) 
     }
     $args += $Url
-    Write-Host "[THUMB] Ejecutando yt-dlp para obtener miniatura..." -ForegroundColor Cyan
+    Write-Host "`t[THUMB] Ejecutando yt-dlp para obtener miniatura..." -ForegroundColor Cyan
     $res = Invoke-Capture -ExePath $yt.Source -Args $args
     if ($res.ExitCode -ne 0) {
-        Write-Host "[THUMB] Error al obtener miniatura: $($res.StdErr)" -ForegroundColor Red
+        Write-Host "`t[THUMB] Error al obtener miniatura: $($res.StdErr)" -ForegroundColor Red
     }
     $thumb = Get-ChildItem -Path (Get-TempThumbPattern) -ErrorAction SilentlyContinue |
              Sort-Object LastWriteTime -Descending |
              Select-Object -First 1
     if ($thumb) {
-        Write-Host "[THUMB] Miniatura descargada: $($thumb.FullName)" -ForegroundColor Green
+        Write-Host "`t[THUMB] Miniatura descargada: $($thumb.FullName)" -ForegroundColor Green
         return $thumb.FullName
     } else {
-        Write-Host "[THUMB] No se pudo descargar miniatura con yt-dlp" -ForegroundColor Red
+        Write-Host "`t[THUMB] No se pudo descargar miniatura con yt-dlp" -ForegroundColor Red
         return $null
     }
 }
@@ -1168,7 +1160,7 @@ function Show-PreviewUniversal {
         [string]$Titulo = $null,
         [string]$DirectThumbUrl = $null
     )
-    Write-Host "`t[PREVIEW] Intentando vista previa para: $Url" -ForegroundColor Cyan
+    Write-Host "[PREVIEW] Intentando vista previa para: $Url" -ForegroundColor Cyan
     $lblEstadoConsulta.Text = "Obteniendo miniaturas..."
     $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::DarkBlue
     Write-Host "`t[PREVIEW] Intentando descargar miniatura con yt-dlp..." -ForegroundColor Yellow
@@ -1367,7 +1359,7 @@ function Invoke-ConsultaFromUI {
     $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::DarkBlue
     [System.Windows.Forms.Application]::DoEvents()
     $res = Invoke-CaptureResponsive -ExePath $yt.Source -Args $args -WorkingText "Consultando video" -TimeoutSec 30
-    Write-Host "[DEBUG] yt-dlp ExitCode: $($res.ExitCode)" -ForegroundColor Yellow
+##De momento no me interesa    Write-Host "[DEBUG] yt-dlp ExitCode: $($res.ExitCode)" -ForegroundColor Yellow
     if ([string]::IsNullOrWhiteSpace($res.StdOut)) {
         Write-Host "[DEBUG] StdOut está vacío o nulo" -ForegroundColor Red
         if (-not [string]::IsNullOrWhiteSpace($res.StdErr)) {
@@ -1390,9 +1382,9 @@ function Invoke-ConsultaFromUI {
         $script:formatsEnumerated = $false
         $lblEstadoConsulta.Text = "Consulta OK: `"$title`""
         $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::DarkGreen
-        Write-Host "[CONSULTA] Título: $title" -ForegroundColor Green
-        Write-Host "[CONSULTA] Thumbnail: $thumbUrl" -ForegroundColor Green
-        Write-Host "[CONSULTA] Video ID: $videoId" -ForegroundColor Green
+        Write-Host "`t[CONSULTA] Título: $title" -ForegroundColor Green
+ #       Write-Host "[CONSULTA] Thumbnail: $thumbUrl" -ForegroundColor Green
+ #       Write-Host "[CONSULTA] Video ID: $videoId" -ForegroundColor Green
         $lblEstadoConsulta.Text = "Cargando vista previa..."
         $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::DarkBlue
         [System.Windows.Forms.Application]::DoEvents()
