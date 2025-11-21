@@ -11,7 +11,7 @@ $script:LogFile = "C:\Temp\ytdll_history.txt"
 if (-not (Test-Path -LiteralPath $script:LogFile)) {
     New-Item -ItemType File -Path $script:LogFile -Force | Out-Null
 }
-                                                                                                $version = "beta 251121.0901"
+                                                                                                $version = "beta 251121.0911"
 function Get-HistoryUrls {
     try {
         $content = Get-Content -LiteralPath $script:LogFile -ErrorAction Stop -Raw
@@ -489,7 +489,6 @@ $script:bestProgId   = $null
 $script:bestProgRank = -1
 function Fetch-Formats {
     param([Parameter(Mandatory=$true)][string]$Url)
-    
     $script:formatsIndex.Clear()
     $script:formatsVideo = @()
     $script:formatsAudio = @()
@@ -497,7 +496,6 @@ function Fetch-Formats {
     $script:lastFormats = $null
     $script:bestProgId   = $null
     $script:bestProgRank = -1
-    
     try { 
         $yt = Get-Command yt-dlp -ErrorAction Stop 
     } catch {
@@ -615,6 +613,7 @@ function Fetch-Formats {
     if ($script:formatsEnumerated) {
         $lblEstadoConsulta.Text = "Formatos obtenidos y ordenados correctamente"
         $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::DarkGreen
+        Populate-FormatCombos
     } else {
         $lblEstadoConsulta.Text = "ADVERTENCIA: No se pudieron enumerar formatos"
         $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::DarkOrange
@@ -625,28 +624,42 @@ function Populate-FormatCombos {
     if (-not $script:lastFormats) { return }
     if ($cmbVideoFmt) { $cmbVideoFmt.Items.Clear() }
     if ($cmbAudioFmt) { $cmbAudioFmt.Items.Clear() }
-    $videoFormats = @()
-    $audioFormats = @()
+    $videoItems = @()
+    $audioItems = @()
     foreach ($fmt in $script:lastFormats) {
         $klass = Classify-Format $fmt
+        if ($script:ExcludedFormatIds -contains $klass.Id) { continue }
+        $res = if ($klass.VRes) { "{0}p" -f $klass.VRes } else { "" }
+        $sz = Human-Size $klass.Filesize
+        $tbrStr = if ($klass.Tbr) { "{0}k" -f [math]::Round($klass.Tbr) } else { "" }
         if ($klass.Progressive -or $klass.VideoOnly) {
-            $videoFormats += [pscustomobject]@{
-                Format = $fmt
+            $label = if ($klass.Progressive) {
+                "{0} {1} {2} {3}/{4} {5} (progresivo)" -f $res, $sz, $klass.Ext, $klass.VCodec, $klass.ACodec, $tbrStr
+            } else {
+                "{0} {1} {2} {3} {4} (video-only)" -f $res, $sz, $klass.Ext, $klass.VCodec, $tbrStr
+            }
+            $videoItems += [pscustomobject]@{
+                Display = (New-FormatDisplay -Id $klass.Id -Label $label)
                 Height = $klass.VRes
                 Tbr = $klass.Tbr
                 IsProgressive = $klass.Progressive
+                Filesize = $klass.Filesize
                 Id = $klass.Id
+                OriginalIndex = $videoItems.Count  # Mantener orden original
             }
         }
         elseif ($klass.AudioOnly) {
-            $audioFormats += [pscustomobject]@{
-                Format = $fmt
+            $label = "{0} {1} {2} ~{3}k (audio-only)" -f $sz, $klass.Ext, $klass.ACodec, [math]::Round($klass.ABr)
+            $audioItems += [pscustomobject]@{
+                Display = (New-FormatDisplay -Id $klass.Id -Label $label)
                 ABr = $klass.ABr
+                Filesize = $klass.Filesize
                 Id = $klass.Id
+                OriginalIndex = $audioItems.Count  # Mantener orden original
             }
         }
     }
-    $sortedVideo = $videoFormats | Sort-Object @{
+    $sortedVideo = $videoItems | Sort-Object @{
         Expression = {
             $heightScore = if ($_.Height) { $_.Height } else { 0 }
             $tbrScore = if ($_.Tbr) { $_.Tbr } else { 0 }
@@ -654,34 +667,32 @@ function Populate-FormatCombos {
         }
         Descending = $true
     }
-    $sortedAudio = $audioFormats | Sort-Object @{
+    $sortedAudio = $audioItems | Sort-Object @{
         Expression = { if ($_.ABr) { $_.ABr } else { 0 } }
         Descending = $true
     }
     foreach ($item in $sortedVideo) {
-        $f = $item.Format
-        $klass = Classify-Format $f
-        $res = if ($klass.VRes) { "{0}p" -f $klass.VRes } else { "" }
-        $sz = Human-Size $klass.Filesize
-        $tbrStr = if ($klass.Tbr) { "{0}k" -f [math]::Round($klass.Tbr) } else { "" }
-        if ($klass.Progressive) {
-            $label = "{0} {1} {2} {3}/{4} {5} (progresivo)" -f $res, $sz, $klass.Ext, $klass.VCodec, $klass.ACodec, $tbrStr
-        } else {
-            $label = "{0} {1} {2} {3} {4} (video-only)" -f $res, $sz, $klass.Ext, $klass.VCodec, $tbrStr
-        }
-        $display = (New-FormatDisplay -Id $klass.Id -Label $label)
-        $cmbVideoFmt.Items.Add($display) | Out-Null
+        $cmbVideoFmt.Items.Add($item.Display) | Out-Null
     }
     foreach ($item in $sortedAudio) {
-        $f = $item.Format
-        $klass = Classify-Format $f   
-        $sz = Human-Size $klass.Filesize
-        $label = "{0} {1} {2} ~{3}k (audio-only)" -f $sz, $klass.Ext, $klass.ACodec, [math]::Round($klass.ABr)
-        $display = (New-FormatDisplay -Id $klass.Id -Label $label)
-        $cmbAudioFmt.Items.Add($display) | Out-Null
+        $cmbAudioFmt.Items.Add($item.Display) | Out-Null
     }
-    if ($cmbVideoFmt.Items.Count -gt 0) { $cmbVideoFmt.SelectedIndex = 0 }
-    if ($cmbAudioFmt.Items.Count -gt 0) { $cmbAudioFmt.SelectedIndex = 0 }
+    if ($cmbVideoFmt.Items.Count -gt 0) { 
+        $cmbVideoFmt.SelectedIndex = 0 
+        Write-Host "[DEBUG] Video combo items: $($cmbVideoFmt.Items.Count)" -ForegroundColor Yellow
+    }
+    if ($cmbAudioFmt.Items.Count -gt 0) { 
+        $cmbAudioFmt.SelectedIndex = 0 
+        Write-Host "[DEBUG] Audio combo items: $($cmbAudioFmt.Items.Count)" -ForegroundColor Yellow
+    }
+    Write-Host "`n[COMBO ORDER - VIDEO]:" -ForegroundColor Cyan
+    for ($i = 0; $i -lt [Math]::Min(3, $cmbVideoFmt.Items.Count); $i++) {
+        Write-Host ("  {0}: {1}" -f $i, $cmbVideoFmt.Items[$i]) -ForegroundColor White
+    }
+    Write-Host "`n[COMBO ORDER - AUDIO]:" -ForegroundColor Cyan
+    for ($i = 0; $i -lt [Math]::Min(3, $cmbAudioFmt.Items.Count); $i++) {
+        Write-Host ("  {0}: {1}" -f $i, $cmbAudioFmt.Items[$i]) -ForegroundColor White
+    }
 }
 function Normalize-ThumbUrl {
     param(
@@ -1386,7 +1397,6 @@ function Invoke-ConsultaFromUI {
         $fmtOk = Fetch-Formats -Url $Url
         if ($fmtOk -and $script:lastFormats) {
             Print-FormatsTable -formats $script:lastFormats
-            Populate-FormatCombos
         }
         $btnDescargar.Enabled = $true
         $txtUrl.Enabled = $true
