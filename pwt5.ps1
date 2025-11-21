@@ -437,13 +437,65 @@ function Format-ExtractorsInline {
     }
 }
 function Print-FormatsTable {
-    param([array]$formats)  # array del JSON .formats
+    param([array]$formats)
+    
     Write-Host "`n[FORMATOS] Disponibles (similar a yt-dlp -F):" -ForegroundColor Cyan
     Write-Host ("{0,-8} {1,-12} {2,-6} {3,-15} {4,-15} {5,-8} {6}" -f "res", "tamaño", "ext", "vcodec", "acodec", "tbr", "format_id") -ForegroundColor DarkGray
+    
+    # Clasificar y ordenar los formatos para mostrar
+    $videoFormats = @()
+    $audioFormats = @()
+    
     foreach ($f in $formats) {
+        $klass = Classify-Format $f
+        
+        if ($klass.Progressive -or $klass.VideoOnly) {
+            $videoFormats += [pscustomobject]@{
+                Format = $f
+                Height = $klass.VRes
+                Tbr = $klass.Tbr
+            }
+        }
+        elseif ($klass.AudioOnly) {
+            $audioFormats += [pscustomobject]@{
+                Format = $f
+                ABr = $klass.ABr
+            }
+        }
+    }
+    
+    # Ordenar video: por height (desc), luego por tbr (desc)
+    $sortedVideo = $videoFormats | Sort-Object @{
+        Expression = {
+            $heightScore = if ($_.Height) { $_.Height } else { 0 }
+            $tbrScore = if ($_.Tbr) { $_.Tbr } else { 0 }
+            ($heightScore * 100000) + $tbrScore
+        }
+        Descending = $true
+    }
+    
+    # Ordenar audio: por ABr (desc)
+    $sortedAudio = $audioFormats | Sort-Object @{
+        Expression = { if ($_.ABr) { $_.ABr } else { 0 } }
+        Descending = $true
+    }
+    
+    # Mostrar primero formatos de video ordenados, luego audio ordenados
+    foreach ($item in $sortedVideo) {
+        $f = $item.Format
         $res = if ($f.height) { "{0}p" -f $f.height } else { "" }
         $sz = Human-Size $f.filesize
         $tbrStr = if ($f.tbr) { "{0}k" -f [math]::Round($f.tbr) } else { "" }
+        
+        Write-Host ("{0,-8} {1,-12} {2,-6} {3,-15} {4,-15} {5,-8} {6}" -f $res, $sz, $f.ext, $f.vcodec, $f.acodec, $tbrStr, $f.format_id)
+    }
+    
+    foreach ($item in $sortedAudio) {
+        $f = $item.Format
+        $res = ""
+        $sz = Human-Size $f.filesize
+        $tbrStr = if ($f.tbr) { "{0}k" -f [math]::Round($f.tbr) } else { "" }
+        
         Write-Host ("{0,-8} {1,-12} {2,-6} {3,-15} {4,-15} {5,-8} {6}" -f $res, $sz, $f.ext, $f.vcodec, $f.acodec, $tbrStr, $f.format_id)
     }
 }
@@ -451,6 +503,7 @@ $script:bestProgId   = $null
 $script:bestProgRank = -1
 function Fetch-Formats {
     param([Parameter(Mandatory=$true)][string]$Url)
+    
     $script:formatsIndex.Clear()
     $script:formatsVideo = @()
     $script:formatsAudio = @()
@@ -458,6 +511,7 @@ function Fetch-Formats {
     $script:lastFormats = $null
     $script:bestProgId   = $null
     $script:bestProgRank = -1
+    
     try { 
         $yt = Get-Command yt-dlp -ErrorAction Stop 
     } catch {
@@ -466,6 +520,7 @@ function Fetch-Formats {
         Write-Host "`t[ERROR] yt-dlp no disponible para listar formatos." -ForegroundColor Red
         return $false
     }
+    
     $lblEstadoConsulta.Text = "Obteniendo lista de formatos..."
     $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::DarkBlue
     $args1 = @(
@@ -520,50 +575,69 @@ function Fetch-Formats {
         return $false
     }
     $script:lastFormats = $json.formats
+
+    
     $lblEstadoConsulta.Text = "Clasificando y ordenando formatos..."
+$lblEstadoConsulta.Text = "Clasificando y ordenando formatos..."
+    
     $videoFormats = @()
     $audioFormats = @()
+    
     foreach ($f in $json.formats) {
         $klass = Classify-Format $f
         $script:formatsIndex[$klass.Id] = $klass
+        
         $res   = if ($klass.VRes) { "{0}p" -f $klass.VRes } else { "" }
         $sz    = Human-Size $klass.Filesize
         $tbrStr = if ($klass.Tbr) { "{0}k" -f [math]::Round($klass.Tbr) } else { "" }
+        
         if ($klass.Progressive -or $klass.VideoOnly) {
             $label = if ($klass.Progressive) {
                 "{0} {1} {2} {3}/{4} {5} (progresivo)" -f $res, $sz, $klass.Ext, $klass.VCodec, $klass.ACodec, $tbrStr
             } else {
                 "{0} {1} {2} {3} {4} (video-only)" -f $res, $sz, $klass.Ext, $klass.VCodec, $tbrStr
             }
+            
             $videoFormats += [pscustomobject]@{
                 Display = (New-FormatDisplay -Id $klass.Id -Label $label)
                 Height = $klass.VRes
                 Tbr = $klass.Tbr
                 IsProgressive = $klass.Progressive
                 Filesize = $klass.Filesize
+                Id = $klass.Id
             }
         }
         elseif ($klass.AudioOnly) {
             $label = "{0} {1} {2} ~{3}k (audio-only)" -f $sz, $klass.Ext, $klass.ACodec, [math]::Round($klass.ABr)
+            
             $audioFormats += [pscustomobject]@{
                 Display = (New-FormatDisplay -Id $klass.Id -Label $label)
                 ABr = $klass.ABr
                 Filesize = $klass.Filesize
+                Id = $klass.Id
             }
         }
     }
+    
+    # ORDENAR FORMATOS DE VIDEO: primero por resolución (mayor a menor), luego por TBR (mayor a menor)
     $sortedVideo = $videoFormats | Sort-Object @{
         Expression = {
+            # Prioridad 1: Resolución (height)
             $heightScore = if ($_.Height) { $_.Height } else { 0 }
+            # Prioridad 2: TBR (total bitrate)
             $tbrScore = if ($_.Tbr) { $_.Tbr } else { 0 }
-            ($heightScore * 10000) + $tbrScore
+            # Combinar: height tiene mayor peso
+            ($heightScore * 100000) + $tbrScore
         }
         Descending = $true
     }
+    
+    # ORDENAR FORMATOS DE AUDIO: por ABR (mayor a menor), luego por filesize (mayor a menor)
     $sortedAudio = $audioFormats | Sort-Object @{
         Expression = {
             $abrScore = if ($_.ABr) { $_.ABr } else { 0 }
             $sizeScore = if ($_.Filesize) { $_.Filesize } else { 0 }
+            # ABR tiene mayor peso
             ($abrScore * 1000) + ($sizeScore / 1MB)
         }
         Descending = $true
