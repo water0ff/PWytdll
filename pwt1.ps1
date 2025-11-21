@@ -804,6 +804,32 @@ function Get-SelectedFormatId {
     if ([string]::IsNullOrWhiteSpace($t)) { return $null }
     return ($t -split '\s')[0]
 }
+function Test-YouTubePlaylist {
+    param([Parameter(Mandatory=$true)][string]$Url)
+    return ($Url -match 'list=' -and $Url -match 'youtube\.com')
+}
+function Extract-VideoFromPlaylist {
+    param([Parameter(Mandatory=$true)][string]$Url)
+    try {
+        $yt = Get-Command yt-dlp -ErrorAction Stop
+        $args = @(
+            "--flat-playlist",
+            "--print", "url",
+            "--no-warnings",
+            $Url
+        )
+        $res = Invoke-Capture -ExePath $yt.Source -Args $args
+        if ($res.ExitCode -eq 0 -and -not [string]::IsNullOrWhiteSpace($res.StdOut)) {
+            $firstVideo = ($res.StdOut -split "`r?`n" | Where-Object { $_ -match 'watch\?v=' } | Select-Object -First 1)
+            if ($firstVideo) {
+                return "https://www.youtube.com/$firstVideo"
+            }
+        }
+    } catch {
+        Write-Host "[PLAYLIST] Error extrayendo video de playlist: $($_.Exception.Message)" -ForegroundColor Yellow
+    }
+    return $null
+}
 function Create-IconButton {
     param(
         [Parameter(Mandatory = $true)]
@@ -1166,8 +1192,12 @@ function Fetch-ThumbnailFile {
         "--no-warnings",
         "--write-thumbnail",
         "--convert-thumbnails", "jpg",
-        "-o", $outTmpl
+        "-o", $outTmpl,
+        "--no-playlist"  # Importante para playlists
     )
+    if ($Url -match 'youtube\.com.*list=') {
+        $args += "--playlist-items", "1"
+    }
     if ($script:cookiesPath) { 
         $args += @("--cookies", $script:cookiesPath) 
     }
@@ -1175,17 +1205,24 @@ function Fetch-ThumbnailFile {
     Write-Host "`t[THUMB] Ejecutando yt-dlp para obtener miniatura..." -ForegroundColor Cyan
     $res = Invoke-Capture -ExePath $yt.Source -Args $args
     if ($res.ExitCode -ne 0) {
-        Write-Host "`t[THUMB] Error al obtener miniatura: $($res.StdErr)" -ForegroundColor Red
+        Write-Host "`t[THUMB] Error al obtener miniatura (ExitCode: $($res.ExitCode))" -ForegroundColor Red
+        if (-not [string]::IsNullOrWhiteSpace($res.StdErr)) {
+            Write-Host "`t[THUMB] Error details: $($res.StdErr)" -ForegroundColor Red
+        }
+        if ($Url -match 'youtube\.com.*list=') {
+            Write-Host "`t[THUMB] Intentando método alternativo para playlist..." -ForegroundColor Yellow
+            return $null  # Dejar que Show-PreviewUniversal use otros métodos
+        }
     }
     $thumb = Get-ChildItem -Path (Join-Path $script:ThumbnailsDir "ytdll_thumb_*") -ErrorAction SilentlyContinue |
                  Sort-Object LastWriteTime -Descending |
                  Select-Object -First 1
-        if ($thumb) {
-            Write-Host "`t[THUMB] Miniatura descargada: $($thumb.FullName)" -ForegroundColor Green
-            return $thumb.FullName
-        } else {
-            Write-Host "`t[THUMB] No se pudo descargar miniatura con yt-dlp" -ForegroundColor Red
-            return $null
+    if ($thumb) {
+        Write-Host "`t[THUMB] Miniatura descargada: $($thumb.FullName)" -ForegroundColor Green
+        return $thumb.FullName
+    } else {
+        Write-Host "`t[THUMB] No se pudo descargar miniatura con yt-dlp" -ForegroundColor Red
+        return $null
     }
 }
 function Get-TempThumbPattern {
@@ -1364,6 +1401,29 @@ function Build-PreviewFromStream {
 }
 function Invoke-ConsultaFromUI {
     param([Parameter(Mandatory = $true)][string]$Url)
+    if (Test-YouTubePlaylist -Url $Url) {
+        Write-Host "[CONSULTA] Detectada playlist de YouTube, extrayendo primer video..." -ForegroundColor Yellow
+        $lblEstadoConsulta.Text = "Playlist detectada, extrayendo primer video..."
+        $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::DarkOrange
+        [System.Windows.Forms.Application]::DoEvents()
+        
+        $singleVideoUrl = Extract-VideoFromPlaylist -Url $Url
+        if ($singleVideoUrl) {
+            Write-Host "[CONSULTA] Usando video individual: $singleVideoUrl" -ForegroundColor Green
+            $Url = $singleVideoUrl
+            $txtUrl.Text = $singleVideoUrl
+            $txtUrl.ForeColor = [System.Drawing.Color]::Black
+        } else {
+            $lblEstadoConsulta.Text = "ERROR: No se pudo extraer video de la playlist"
+            $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::Red
+            [System.Windows.Forms.MessageBox]::Show(
+                "Las playlists/radios de YouTube no son totalmente compatables. Se extraerá el primer video para previsualización, pero la descarga puede fallar.",
+                "Playlist detectada",
+                [System.Windows.Forms.MessageBoxButtons]::OK,
+                [System.Windows.Forms.MessageBoxIcon]::Warning
+            ) | Out-Null
+        }
+    }
     Write-Host ("`n`n[CONSULTA] Consultando URL: {0}" -f $Url) -ForegroundColor Cyan
     try {
         $yt = Get-Command yt-dlp -ErrorAction Stop
@@ -2665,7 +2725,11 @@ function Invoke-CaptureResponsive {
     return [pscustomobject]@{ ExitCode = $proc.ExitCode; StdOut = $stdout; StdErr = $stderr }
 }
 function Invoke-Capture {
-    param([Parameter(Mandatory=$true)][string]$ExePath,[string[]]$Args=@())
+    param(
+        [Parameter(Mandatory=$true)][string]$ExePath,
+        [string[]]$Args=@(),
+        [int]$TimeoutSeconds = 30
+    )
     $psi = New-Object System.Diagnostics.ProcessStartInfo
     $psi.FileName = $ExePath
     $psi.Arguments = (($Args | ForEach-Object { if ($_ -match '\s') { '"{0}"' -f $_ } else { $_ } }) -join ' ')
@@ -2676,9 +2740,15 @@ function Invoke-Capture {
     $p = New-Object System.Diagnostics.Process
     $p.StartInfo = $psi
     [void]$p.Start()
+    if (-not $p.WaitForExit($TimeoutSeconds * 1000)) {
+        try { 
+            $p.Kill() 
+            Write-Host "[TIMEOUT] Proceso terminado por timeout después de $TimeoutSeconds segundos" -ForegroundColor Red
+        } catch { }
+        return [pscustomobject]@{ ExitCode = -1; StdOut = ""; StdErr = "Timeout después de $TimeoutSeconds segundos" }
+    }
     $stdout = $p.StandardOutput.ReadToEnd()
     $stderr = $p.StandardError.ReadToEnd()
-    $p.WaitForExit()
     return [pscustomobject]@{ ExitCode = $p.ExitCode; StdOut = $stdout; StdErr = $stderr }
 }
 function Save-Bytes {
