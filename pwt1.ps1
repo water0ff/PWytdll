@@ -436,19 +436,15 @@ function Format-ExtractorsInline {
         List  = $uniq           # <--- NUEVO: lista utilizable para filtrar
     }
 }
-
 function Print-FormatsTable {
     param([array]$formats)  # array del JSON .formats
     Write-Host "`n[FORMATOS] Disponibles (similar a yt-dlp -F):" -ForegroundColor Cyan
-    Write-Host ("{0,-9} {1,-5} {2,-10} {3,-7} {4,-9} {5}" -f "format_id","ext","res","vcodec","acodec","nota/tamaño/tbr") -ForegroundColor DarkGray
+    Write-Host ("{0,-10} {1,-10} {2,-5} {3,-7} {4,-9} {5,-8} {6}" -f "res", "tamaño", "ext", "vcodec", "acodec", "tbr", "format_id") -ForegroundColor DarkGray
     foreach ($f in $formats) {
+        $res = if ($f.height) { "{0}p" -f $f.height } else { "" }
         $sz = Human-Size $f.filesize
         $tbrStr = if ($f.tbr) { "{0}k" -f [math]::Round($f.tbr) } else { "" }
-        $res = if ($f.height) { "{0}p" -f $f.height } else { "" }
-        $note = ""
-        if ($f.format_note) { $note = $f.format_note }
-        $extra = ($note, $sz, $tbrStr) -join " "
-        Write-Host ("{0,-9} {1,-5} {2,-10} {3,-7} {4,-9} {5}" -f $f.format_id, $f.ext, $res, $f.vcodec, $f.acodec, $extra)
+        Write-Host ("{0,-10} {1,-10} {2,-5} {3,-7} {4,-9} {5,-8} {6}" -f $res, $sz, $f.ext, $f.vcodec, $f.acodec, $tbrStr, $f.format_id)
     }
 }
 $script:bestProgId   = $null
@@ -537,9 +533,9 @@ function Fetch-Formats {
         $tbrStr = if ($klass.Tbr) { "{0}k" -f [math]::Round($klass.Tbr) } else { "" }
         if ($klass.Progressive -or $klass.VideoOnly) {
             $label = if ($klass.Progressive) {
-                "{0} {1} {2}/{3} (progresivo) {4} {5}" -f $klass.Ext, $res, $klass.VCodec, $klass.ACodec, $sz, $tbrStr
+                "{0} {1} {2} {3}/{4} {5} (progresivo)" -f $res, $sz, $klass.Ext, $klass.VCodec, $klass.ACodec, $tbrStr
             } else {
-                "{0} {1} {2} (video-only) {3} {4}" -f $klass.Ext, $res, $klass.VCodec, $sz, $tbrStr
+                "{0} {1} {2} {3} {4} (video-only)" -f $res, $sz, $klass.Ext, $klass.VCodec, $tbrStr
             }
             $videoFormats += [pscustomobject]@{
                 Display = (New-FormatDisplay -Id $klass.Id -Label $label)
@@ -549,7 +545,7 @@ function Fetch-Formats {
             }
         }
         elseif ($klass.AudioOnly) {
-            $label = "{0} ~{1} {2} (audio-only) {3}" -f $klass.Ext, $klass.ABr, $klass.ACodec, $sz
+            $label = "{0} {1} {2} ~{3} (audio-only)" -f $sz, $klass.Ext, $klass.ACodec, $klass.ABr
             $audioFormats += [pscustomobject]@{
                 Display = (New-FormatDisplay -Id $klass.Id -Label $label)
                 ABr = $klass.ABr
