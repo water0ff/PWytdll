@@ -14,7 +14,7 @@ $script:ConfigFile = "C:\Temp\ytdll\config.ini"
 if (-not (Test-Path -LiteralPath $script:LogFile)) {
     New-Item -ItemType File -Path $script:LogFile -Force | Out-Null
 }
-                                                                                                $version = "beta 251121.1544"
+                                                                                                $version = "beta 251121.1555"
 function Get-IniValue {
     param([string]$Section, [string]$Key, [string]$DefaultValue = $null)
     
@@ -2488,16 +2488,20 @@ function Show-UrlHistoryMenu {
     $ctxUrlHistory.Items.Clear()
     try {
         $content = Get-Content -LiteralPath $script:LogFile -ErrorAction Stop -Raw
-        $items = $content -split "`r?`n" |
-            ForEach-Object { $_.Trim() } |
-            Where-Object { $_ -and ($_ -notmatch '^\s*$') } |
+        $items = $content -split "[\r\n]+" |
+            ForEach-Object { 
+                $line = $_.Trim()
+                if ($line -and $line -notmatch '^\s*$') {
+                    $line
+                }
+            } |
             Select-Object -Unique
     } catch { 
         $items = @()
     }
     Write-Host "[DEBUG-HISTORY] Items encontrados: $($items.Count)" -ForegroundColor Yellow
     if ($items.Count -gt 0) {
-        Write-Host "[DEBUG-HISTORY] Primer item: '$($items[0])'" -ForegroundColor Yellow
+        Write-Host "[DEBUG-HISTORY] Primer item completo: '$($items[0])'" -ForegroundColor Yellow
     }
     if (-not $items -or $items.Count -eq 0) {
         $miEmpty = New-Object System.Windows.Forms.ToolStripMenuItem
