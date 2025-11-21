@@ -89,10 +89,19 @@ function Set-IniValue {
 function Get-HistoryUrls {
     try {
         $content = Get-Content -LiteralPath $script:LogFile -ErrorAction Stop -Raw
-        $content -split "`r?`n" |
+        $lines = $content -split "`r?`n" |
             ForEach-Object { $_.Trim() } |
             Where-Object { $_ -and ($_ -notmatch '^\s*$') } |
             Select-Object -Unique
+        $urls = @()
+        foreach ($line in $lines) {
+            if ($line -match '\|\s*(.+)$') {
+                $urls += $matches[1].Trim()
+            } else {
+                $urls += $line
+            }
+        }
+        return $urls
     } catch { @() }
 }
 function Add-HistoryUrl {
@@ -101,17 +110,40 @@ function Add-HistoryUrl {
     if ([string]::IsNullOrWhiteSpace($u)) { return }
     if ($u -eq $global:UrlPlaceholder) { return }
     if ($u -notmatch '^(https?://|www\.)') { return }
+    $cleanUrl = Get-CleanUrl -Url $u
+    $title = if ($script:ultimoTitulo) { 
+        Get-SafeFileName -Name $script:ultimoTitulo 
+    } else { 
+        "Video" 
+    }
+    $historyEntry = "{0} | {1}" -f $title, $cleanUrl
     $list = Get-HistoryUrls
-    if ($list -notcontains $u) {
-        $newList = @($u) + $list
+    $exists = $false
+    foreach ($item in $list) {
+        if ($item -eq $cleanUrl -or $item -match "\|\s*$([regex]::Escape($cleanUrl))$") {
+            $exists = $true
+            break
+        }
+    }
+    if (-not $exists) {
+        $newList = @($historyEntry) + $list
         if ($newList.Count -gt 200) { $newList = $newList[0..199] }
         try {
             Set-Content -LiteralPath $script:LogFile -Value $newList -Encoding UTF8
         } catch {}
     }
 }
+function Get-CleanUrl {
+    param([Parameter(Mandatory=$true)][string]$Url)
+    $cleanUrl = $Url -replace '^https?://', ''
+    $cleanUrl = $cleanUrl -replace '^www\.', ''
+    $cleanUrl = $cleanUrl -replace '/+$', ''  # Quitar trailing slashes
+    return $cleanUrl.Trim()
+}
 function Clear-History {
-    try { Clear-Content -LiteralPath $script:LogFile -ErrorAction Stop } catch {}
+    try { 
+        Set-Content -LiteralPath $script:LogFile -Value @() -Encoding UTF8
+    } catch {}
 }
 try {
   [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
@@ -2401,12 +2433,18 @@ function Show-UrlHistoryMenu {
         $top = [Math]::Min(12, $items.Count)
         for ($i=0; $i -lt $top; $i++) {
             $urlItem = New-Object System.Windows.Forms.ToolStripMenuItem
-            $urlItem.Text = $items[$i]
-            $urlItem.ToolTipText = $items[$i]
+            $displayText = $items[$i]
+            $urlItem.Text = $displayText
+            $urlItem.ToolTipText = $displayText
             $urlItem.add_Click({
                 param($sender, $e)
-                $url = [string]($sender -as [System.Windows.Forms.ToolStripMenuItem]).Text
-                $txtUrl.Text = $url
+                $fullText = [string]($sender -as [System.Windows.Forms.ToolStripMenuItem]).Text
+                if ($fullText -match '\|\s*(.+)$') {
+                    $urlToSet = $matches[1].Trim()
+                } else {
+                    $urlToSet = $fullText
+                }
+                $txtUrl.Text = $urlToSet
                 $txtUrl.ForeColor = [System.Drawing.Color]::Black
                 $txtUrl.SelectionStart = $txtUrl.Text.Length
                 $txtUrl.SelectionLength = 0
