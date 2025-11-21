@@ -2776,6 +2776,8 @@ $btnDescargar.Add_Click({
         }
         $videoSel = Get-SelectedFormatId -Combo $cmbVideoFmt
         $audioSel = Get-SelectedFormatId -Combo $cmbAudioFmt
+        $hayFormatosAudio = ($script:formatsAudio -and $script:formatsAudio.Count -gt 0)
+        
         $fSelector = $null
         $mergeExt  = "mp4"
         $formatInfo = $null
@@ -2783,7 +2785,6 @@ $btnDescargar.Add_Click({
             $formatInfo = $script:formatsIndex[$videoSel]
         }
         if (Is-TwitchUrl $script:ultimaURL) {
-            # Twitch: nos olvidamos de combos avanzados, mejor dejar "best"
             if ($videoSel -and $videoSel -notmatch '^best(video)?$') {
                 $fSelector = $videoSel
             } else {
@@ -2791,7 +2792,6 @@ $btnDescargar.Add_Click({
             }
         }
         elseif (Is-ProgressiveOnlySite $script:lastExtractor) {
-            # Sitios sólo progresivos (tiktok, etc.): no hay combinación de streams
             if ($videoSel -match '^best(video)?$') {
                 if ($script:bestProgId) {
                     $fSelector = $script:bestProgId
@@ -2802,16 +2802,15 @@ $btnDescargar.Add_Click({
                 $fSelector = $videoSel
             }
             $mergeExt = $null
-            try { $cmbAudioFmt.Enabled = $false } catch {}
-            }
-            else {
+        }
+        else {
             $videoIsBest  = $videoSel -match '^best(video)?$'
             $audioIsBest  = $audioSel -match '^best(audio)?$'
-            if ($videoSel -and -not $videoIsBest -and $audioSel -and -not $audioIsBest) {
+            if ($videoSel -and -not $videoIsBest -and $audioSel -and -not $audioIsBest -and $hayFormatosAudio) {
                 $fSelector = "{0}+{1}" -f $videoSel, $audioSel
             }
             elseif ($videoSel -and -not $videoIsBest) {
-                if ($formatInfo -and $formatInfo.VideoOnly) {
+                if ($formatInfo -and $formatInfo.VideoOnly -and $hayFormatosAudio) {
                     if ($audioSel -and -not $audioIsBest) {
                         $fSelector = "{0}+{1}" -f $videoSel, $audioSel
                     } else {
@@ -2819,17 +2818,25 @@ $btnDescargar.Add_Click({
                     }
                 } else {
                     $fSelector = $videoSel
+                    $mergeExt = $null
                 }
             }
-            elseif ($audioSel -and -not $audioIsBest) {
+            elseif ($audioSel -and -not $audioIsBest -and $hayFormatosAudio) {
                 $fSelector = $audioSel
-                $mergeExt  = $null  # no hay merge video+audio
+                $mergeExt  = $null
             }
             else {
-                $fSelector = "bestvideo+bestaudio/best"
+                if ($hayFormatosAudio) {
+                    $fSelector = "bestvideo+bestaudio/best"
+                } else {
+                    $fSelector = "best"
+                    $mergeExt = $null
+                }
             }
         }
         Write-Host "[DEBUG] Selector de formato: $fSelector" -ForegroundColor Yellow
+        Write-Host "[DEBUG] Merge extension: $mergeExt" -ForegroundColor Yellow
+        Write-Host "[DEBUG] ¿Hay formatos de audio?: $hayFormatosAudio" -ForegroundColor Yellow
     $prevLbl = $lblEstadoConsulta.Text
     $prevPickDest  = $btnPickDestino.Enabled
     $prevCmbVid    = $cmbVideoFmt.Enabled
