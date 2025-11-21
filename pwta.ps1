@@ -181,7 +181,7 @@ function Add-HistoryUrl {
         }
         try {
             Write-Host "[DEBUG] Intentando escribir en: $script:LogFile" -ForegroundColor Cyan
-            $contentToWrite = $newList -join "`r`n"
+            $contentToWrite = ($newList -join "`r`n") + "`r`n"
             Write-Host "[DEBUG] Contenido a escribir (primeros 500 chars): '$($contentToWrite.Substring(0, [Math]::Min(500, $contentToWrite.Length)))'" -ForegroundColor Gray
             Set-Content -LiteralPath $script:LogFile -Value $contentToWrite -Encoding UTF8
             Write-Host "[HISTORIAL] ¡Guardado exitosamente: $historyEntry" -ForegroundColor Green
@@ -2487,22 +2487,27 @@ function Show-UrlHistoryMenu {
     )
     $ctxUrlHistory.Items.Clear()
     try {
-        $content = Get-Content -LiteralPath $script:LogFile -ErrorAction Stop -Raw
-        $items = $content -split "[\r\n]+" |
-            ForEach-Object { 
-                $line = $_.Trim()
-                if ($line -and $line -notmatch '^\s*$') {
-                    $line
-                }
-            } |
-            Select-Object -Unique
+        # Cambiar a ReadAllLines para mejor manejo de encoding y líneas
+        if (Test-Path -LiteralPath $script:LogFile) {
+            $items = [System.IO.File]::ReadAllLines($script:LogFile) | 
+                ForEach-Object { $_.Trim() } | 
+                Where-Object { $_ -and ($_ -notmatch '^\s*$') } | 
+                Select-Object -Unique
+        } else {
+            $items = @()
+        }
     } catch { 
+        Write-Host "[DEBUG-HISTORY] Error al leer historial: $($_.Exception.Message)" -ForegroundColor Red
         $items = @()
     }
+    
     Write-Host "[DEBUG-HISTORY] Items encontrados: $($items.Count)" -ForegroundColor Yellow
     if ($items.Count -gt 0) {
         Write-Host "[DEBUG-HISTORY] Primer item completo: '$($items[0])'" -ForegroundColor Yellow
+        Write-Host "[DEBUG-HISTORY] Longitud del primer item: $($items[0].Length)" -ForegroundColor Yellow
     }
+    
+    # Resto del código igual...
     if (-not $items -or $items.Count -eq 0) {
         $miEmpty = New-Object System.Windows.Forms.ToolStripMenuItem
         $miEmpty.Text = "(Sin historial)"
@@ -2518,6 +2523,11 @@ function Show-UrlHistoryMenu {
                 Write-Host "[DEBUG-HISTORY] Item $i está vacío, saltando" -ForegroundColor Red
                 continue
             }
+            
+            # DEBUG adicional para ver qué está pasando
+            Write-Host "[DEBUG-HISTORY] Procesando item $i : '$displayText'" -ForegroundColor Cyan
+            Write-Host "[DEBUG-HISTORY] Longitud del item $i : $($displayText.Length)" -ForegroundColor Cyan
+            
             $urlItem.Text = $displayText
             $urlItem.ToolTipText = $displayText
             $urlItem.add_Click({
@@ -2537,9 +2547,10 @@ function Show-UrlHistoryMenu {
                 $txtUrl.SelectionLength = 0
             })
             [void]$ctxUrlHistory.Items.Add($urlItem)
-            Write-Host "[DEBUG-HISTORY] Item agregado: '$displayText'" -ForegroundColor Gray
+            Write-Host "[DEBUG-HISTORY] Item agregado al menú: '$displayText'" -ForegroundColor Green
         }
     }
+    
     if ($ctxUrlHistory.Items.Count -gt 0) {
         [void]$ctxUrlHistory.Items.Add((New-Object System.Windows.Forms.ToolStripSeparator))
         $miClear = New-Object System.Windows.Forms.ToolStripMenuItem
@@ -2557,6 +2568,7 @@ function Show-UrlHistoryMenu {
         })
         [void]$ctxUrlHistory.Items.Add($miClear)
     }
+    
     $pt = New-Object System.Drawing.Point(0, $AnchorControl.Height)
     $ctxUrlHistory.Show($AnchorControl, $pt)
 }
