@@ -14,7 +14,7 @@ $script:ConfigFile = "C:\Temp\ytdll\config.ini"
 if (-not (Test-Path -LiteralPath $script:LogFile)) {
     New-Item -ItemType File -Path $script:LogFile -Force | Out-Null
 }
-                                                                                                $version = "beta 251121.1214"
+                                                                                                $version = "beta 251121.1324"
 function Get-IniValue {
     param([string]$Section, [string]$Key, [string]$DefaultValue = $null)
     
@@ -1930,11 +1930,11 @@ function Initialize-AppHeadless {
             return $false 
         }
     }
-    Write-Host "  mpvnet: " -NoNewline
+    Write-Host "[CHECK] (headless) Verificando mpvnet: " -NoNewline
     if ($mpvnetInstalled) {
-        Write-Host "INSTALADO (opcional)" -ForegroundColor Green
+        Write-Host "`t[OK] INSTALADO (opcional)" -ForegroundColor Green
     } else {
-        Write-Host "NO INSTALADO (opcional)" -ForegroundColor Yellow
+        Write-Host "`t[NO] NO INSTALADO (opcional)" -ForegroundColor Yellow
     }
     return $true
 }
