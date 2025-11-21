@@ -7,11 +7,85 @@ if (-not (Test-Path $iconDir)) {
     New-Item -ItemType Directory -Path $iconDir -Force | Out-Null
     Write-Host "Carpeta de íconos creada: $iconDir"
 }
-$script:LogFile = "C:\Temp\ytdll_history.txt"
+$script:LogFile = "C:\Temp\ytdll\ytdll_history.txt"
+$script:ThumbnailsDir = "C:\Temp\ytdll\miniaturas"
+$script:ConfigDir = "C:\Temp\ytdll"
+$script:ConfigFile = "C:\Temp\ytdll\config.ini"
 if (-not (Test-Path -LiteralPath $script:LogFile)) {
     New-Item -ItemType File -Path $script:LogFile -Force | Out-Null
 }
                                                                                                 $version = "beta 251121.1104"
+function Get-IniValue {
+    param([string]$Section, [string]$Key, [string]$DefaultValue = $null)
+    
+    if (-not (Test-Path $script:ConfigFile)) {
+        return $DefaultValue
+    }
+    
+    try {
+        $content = Get-Content $script:ConfigFile -ErrorAction Stop
+        $inSection = $false
+        
+        foreach ($line in $content) {
+            $line = $line.Trim()
+            if ($line -eq "[$Section]") {
+                $inSection = $true
+                continue
+            } elseif ($line -match '^\[') {
+                $inSection = $false
+                continue
+            }
+            
+            if ($inSection -and $line -match "^$Key=(.*)$") {
+                return $matches[1].Trim()
+            }
+        }
+    } catch {
+        Write-Host "[CONFIG] Error leyendo configuración: $($_.Exception.Message)" -ForegroundColor Yellow
+    }
+    
+    return $DefaultValue
+}
+function Set-IniValue {
+    param([string]$Section, [string]$Key, [string]$Value)
+    if (-not (Test-Path $script:ConfigDir)) {
+        New-Item -ItemType Directory -Path $script:ConfigDir -Force | Out-Null
+    }
+    $lines = @()
+    $sectionFound = $false
+    $keyFound = $false
+    if (Test-Path $script:ConfigFile) {
+        $lines = Get-Content $script:ConfigFile
+    }
+    for ($i = 0; $i -lt $lines.Count; $i++) {
+        if ($lines[$i].Trim() -eq "[$Section]") {
+            $sectionFound = $true
+            for ($j = $i + 1; $j -lt $lines.Count; $j++) {
+                if ($lines[$j] -match '^\[') {
+                    break  # Nueva sección encontrada
+                }
+                if ($lines[$j] -match "^$Key=") {
+                    $lines[$j] = "$Key=$Value"
+                    $keyFound = $true
+                    break
+                }
+            }
+            if (-not $keyFound) {
+                $lines = @($lines[0..$i]) + @("$Key=$Value") + @($lines[($i+1)..($lines.Count-1)])
+            }
+            break
+        }
+    }
+    if (-not $sectionFound) {
+        $lines += "[$Section]"
+        $lines += "$Key=$Value"
+    }
+    try {
+        Set-Content -Path $script:ConfigFile -Value $lines -Encoding UTF8
+    } catch {
+        Write-Host "[CONFIG] Error guardando configuración: $($_.Exception.Message)" -ForegroundColor Red
+    }
+}
 function Get-HistoryUrls {
     try {
         $content = Get-Content -LiteralPath $script:LogFile -ErrorAction Stop -Raw
@@ -52,6 +126,7 @@ if ($PSVersionTable.PSVersion.Major -ge 7) {
 }
 $global:defaultInstructions = @"
 ----- CAMBIOS -----
+- Se agrega ini para guardar configuraciones, nuevas rutas para URLS y miniaturas.
 - Rediseño y agregar opción de previsualizar.
 - Ahora ya guarda un log con URLS consultadas.
 - Se agrea funcionalidad para ver y buscar sitios compatibles.
@@ -1080,8 +1155,11 @@ function Fetch-ThumbnailFile {
         Write-Host "`t[ERROR] yt-dlp no disponible para descargar miniatura" -ForegroundColor Red
         return $null 
     }
-    Get-ChildItem -Path (Get-TempThumbPattern) -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
-    $outTmpl = Join-Path ([System.IO.Path]::GetTempPath()) "ytdll_thumb_%(id)s.%(ext)s"
+        if (-not (Test-Path $script:ThumbnailsDir)) {
+            New-Item -ItemType Directory -Path $script:ThumbnailsDir -Force | Out-Null
+        }
+        Get-ChildItem -Path (Get-TempThumbPattern) -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
+        $outTmpl = Join-Path $script:ThumbnailsDir "ytdll_thumb_%(id)s.%(ext)s"
     $args = @(
         "--skip-download",
         "--quiet",
@@ -1099,15 +1177,15 @@ function Fetch-ThumbnailFile {
     if ($res.ExitCode -ne 0) {
         Write-Host "`t[THUMB] Error al obtener miniatura: $($res.StdErr)" -ForegroundColor Red
     }
-    $thumb = Get-ChildItem -Path (Get-TempThumbPattern) -ErrorAction SilentlyContinue |
-             Sort-Object LastWriteTime -Descending |
-             Select-Object -First 1
-    if ($thumb) {
-        Write-Host "`t[THUMB] Miniatura descargada: $($thumb.FullName)" -ForegroundColor Green
-        return $thumb.FullName
-    } else {
-        Write-Host "`t[THUMB] No se pudo descargar miniatura con yt-dlp" -ForegroundColor Red
-        return $null
+    $thumb = Get-ChildItem -Path (Join-Path $script:ThumbnailsDir "ytdll_thumb_*") -ErrorAction SilentlyContinue |
+                 Sort-Object LastWriteTime -Descending |
+                 Select-Object -First 1
+        if ($thumb) {
+            Write-Host "`t[THUMB] Miniatura descargada: $($thumb.FullName)" -ForegroundColor Green
+            return $thumb.FullName
+        } else {
+            Write-Host "`t[THUMB] No se pudo descargar miniatura con yt-dlp" -ForegroundColor Red
+            return $null
     }
 }
 function Get-TempThumbPattern {
@@ -2042,7 +2120,7 @@ $script:ultimoTitulo      = $null
 $script:lastThumbUrl      = $null
 $script:formatsEnumerated = $false
 $script:cookiesPath = $null
-$script:ultimaRutaDescarga = [Environment]::GetFolderPath('Desktop')
+$script:ultimaRutaDescarga = Get-IniValue -Section "ruta" -Key "Destino" -DefaultValue ([Environment]::GetFolderPath('Desktop'))
 $global:UrlPlaceholder = "Escribe la URL del video"
 $btnPickCookies = Create-IconButton -Text "🍪" `
     -Location (New-Object System.Drawing.Point(320, 10)) `
@@ -2383,6 +2461,7 @@ $btnPickDestino.Add_Click({
     if ($fbd.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
         $script:ultimaRutaDescarga = $fbd.SelectedPath
         $txtDestino.Text = $script:ultimaRutaDescarga
+        Set-IniValue -Section "ruta" -Key "Destino" -Value $script:ultimaRutaDescarga
         Write-Host ("[DESTINO] Carpeta configurada: {0}" -f $script:ultimaRutaDescarga) -ForegroundColor Cyan
     }
 })
