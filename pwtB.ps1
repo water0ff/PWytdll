@@ -88,21 +88,22 @@ function Set-IniValue {
 }
 function Get-HistoryUrls {
     try {
-        $content = Get-Content -LiteralPath $script:LogFile -ErrorAction Stop -Raw
-        $lines = $content -split "`r?`n" |
+        $items = Get-Content -LiteralPath $script:LogFile -Encoding UTF8 -ErrorAction Stop |
             ForEach-Object { $_.Trim() } |
             Where-Object { $_ -and ($_ -notmatch '^\s*$') } |
             Select-Object -Unique
         $urls = @()
-        foreach ($line in $lines) {
-            if ($line -match '\|\s*(.+)$') {
+        foreach ($item in $items) {
+            if ($item -match '\|\s*(.+)$') {
                 $urls += $matches[1].Trim()
             } else {
-                $urls += $line
+                $urls += $item
             }
         }
         return $urls
-    } catch { @() }
+    } catch { 
+        return @() 
+    }
 }
 function Add-HistoryUrl {
     param([Parameter(Mandatory=$true)][string]$Url)
@@ -2487,9 +2488,9 @@ function Show-UrlHistoryMenu {
     )
     $ctxUrlHistory.Items.Clear()
     try {
-        # Cambiar a ReadAllLines para mejor manejo de encoding y líneas
+        # Usar Get-Content con encoding explícito en lugar de ReadAllLines
         if (Test-Path -LiteralPath $script:LogFile) {
-            $items = [System.IO.File]::ReadAllLines($script:LogFile) | 
+            $items = Get-Content -LiteralPath $script:LogFile -Encoding UTF8 | 
                 ForEach-Object { $_.Trim() } | 
                 Where-Object { $_ -and ($_ -notmatch '^\s*$') } | 
                 Select-Object -Unique
@@ -2507,7 +2508,6 @@ function Show-UrlHistoryMenu {
         Write-Host "[DEBUG-HISTORY] Longitud del primer item: $($items[0].Length)" -ForegroundColor Yellow
     }
     
-    # Resto del código igual...
     if (-not $items -or $items.Count -eq 0) {
         $miEmpty = New-Object System.Windows.Forms.ToolStripMenuItem
         $miEmpty.Text = "(Sin historial)"
