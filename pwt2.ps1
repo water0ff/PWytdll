@@ -117,8 +117,8 @@ function Add-HistoryUrl {
         Write-Host "[DEBUG] URL es placeholder, saliendo" -ForegroundColor Yellow
         return 
     }
-    if ($u -notmatch '^(https?://|www\.)') { 
-        Write-Host "[DEBUG] URL no válida (no empieza con http/https/www): '$u'" -ForegroundColor Yellow
+    if ($u -notmatch '^(\w+://|www\.|\w+\.\w+)') { 
+        Write-Host "[DEBUG] URL no válida: '$u'" -ForegroundColor Yellow
         return 
     }
     $cleanUrl = Get-CleanUrl -Url $u
