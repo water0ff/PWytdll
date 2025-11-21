@@ -11,7 +11,7 @@ $script:LogFile = "C:\Temp\ytdll_history.txt"
 if (-not (Test-Path -LiteralPath $script:LogFile)) {
     New-Item -ItemType File -Path $script:LogFile -Force | Out-Null
 }
-                                                                                                $version = "beta 251121.0911"
+                                                                                                $version = "beta 251121.1021"
 function Get-HistoryUrls {
     try {
         $content = Get-Content -LiteralPath $script:LogFile -ErrorAction Stop -Raw
@@ -294,23 +294,25 @@ function Set-DownloadButtonVisual {
                    -not [string]::IsNullOrWhiteSpace($script:ultimaURL) -and
                    ($script:ultimaURL -eq $currentUrl)
     $btnDescargar.Enabled = $true
-    $btnDescargar.Text    = "Descargar"
-    if (-not $isConsulted) {
+if (-not $isConsulted) {
+        $btnDescargar.Text = "Buscar Video"
         $btnDescargar.BackColor = [System.Drawing.Color]::DodgerBlue
         $btnDescargar.ForeColor = [System.Drawing.Color]::White
         $toolTip.SetToolTip($btnDescargar, "Aún no consultado: al hacer clic validará la URL (no descargará)")
     }
     elseif (-not $script:formatsEnumerated) {
+        $btnDescargar.Text = "Buscar Video"  # CAMBIO: Si no hay formatos, volver a buscar
         $btnDescargar.Enabled   = $true
         $btnDescargar.BackColor = [System.Drawing.Color]::DarkOrange
         $btnDescargar.ForeColor = [System.Drawing.Color]::White
-        $toolTip.SetToolTip($btnDescargar, "No se pudieron extraer formatos. Presiona 'Descargar' para volver a consultar.")
+        $toolTip.SetToolTip($btnDescargar, "No se pudieron extraer formatos. Presiona 'Buscar Video' para volver a consultar.")
         if ($lblEstadoConsulta) {
-            $lblEstadoConsulta.Text = "No fue posible extraer formatos. Presiona 'Descargar' para volver a consultar."
+            $lblEstadoConsulta.Text = "No fue posible extraer formatos. Presiona 'Buscar Video' para volver a consultar."
             $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::DarkOrange
         }
     }
     else {
+        $btnDescargar.Text = "Descargar Video"  # CAMBIO: Texto específico para descargar
         $btnDescargar.BackColor = [System.Drawing.Color]::ForestGreen
         $btnDescargar.ForeColor = [System.Drawing.Color]::White
         $toolTip.SetToolTip($btnDescargar, "Consulta válida: listo para descargar")
@@ -1348,6 +1350,10 @@ function Invoke-ConsultaFromUI {
     }
     $btnDescargar.Enabled = $false
     $txtUrl.Enabled = $false
+    if ($script:ultimaURL -ne $Url) {
+        $script:videoConsultado = $false
+        $script:formatsEnumerated = $false
+    }
     $args = @(
         "--no-playlist",
         "--no-warnings", 
@@ -2143,6 +2149,11 @@ $formPrincipal.Controls.Add($btnUrlHistory)
         if ($txtUrl.Text -ne $global:UrlPlaceholder -and -not [string]::IsNullOrWhiteSpace($txtUrl.Text)) {
             $toolTip.SetToolTip($txtUrl, (Get-DisplayUrl -Url $txtUrl.Text))
             $txtUrl.ForeColor = [System.Drawing.Color]::Black
+            $currentUrl = Get-CurrentUrl
+            if ($script:videoConsultado -and $script:ultimaURL -ne $currentUrl) {
+                $script:videoConsultado = $false
+                $script:formatsEnumerated = $false
+            }
         } else {
             $toolTip.SetToolTip($txtUrl, "")
         }
