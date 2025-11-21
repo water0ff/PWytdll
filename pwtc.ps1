@@ -11,7 +11,7 @@ $script:LogFile = "C:\Temp\ytdll_history.txt"
 if (-not (Test-Path -LiteralPath $script:LogFile)) {
     New-Item -ItemType File -Path $script:LogFile -Force | Out-Null
 }
-                                                                                                $version = "beta 251121.0841"
+                                                                                                $version = "beta 251121.0901"
 function Get-HistoryUrls {
     try {
         $content = Get-Content -LiteralPath $script:LogFile -ErrorAction Stop -Raw
@@ -561,29 +561,22 @@ function Fetch-Formats {
         return $false
     }
     $script:lastFormats = $json.formats
-
-    
     $lblEstadoConsulta.Text = "Clasificando y ordenando formatos..."
-$lblEstadoConsulta.Text = "Clasificando y ordenando formatos..."
-    
+    $lblEstadoConsulta.Text = "Clasificando y ordenando formatos..."
     $videoFormats = @()
     $audioFormats = @()
-    
     foreach ($f in $json.formats) {
         $klass = Classify-Format $f
         $script:formatsIndex[$klass.Id] = $klass
-        
         $res   = if ($klass.VRes) { "{0}p" -f $klass.VRes } else { "" }
         $sz    = Human-Size $klass.Filesize
         $tbrStr = if ($klass.Tbr) { "{0}k" -f [math]::Round($klass.Tbr) } else { "" }
-        
         if ($klass.Progressive -or $klass.VideoOnly) {
             $label = if ($klass.Progressive) {
                 "{0} {1} {2} {3}/{4} {5} (progresivo)" -f $res, $sz, $klass.Ext, $klass.VCodec, $klass.ACodec, $tbrStr
             } else {
                 "{0} {1} {2} {3} {4} (video-only)" -f $res, $sz, $klass.Ext, $klass.VCodec, $tbrStr
             }
-            
             $videoFormats += [pscustomobject]@{
                 Display = (New-FormatDisplay -Id $klass.Id -Label $label)
                 Height = $klass.VRes
@@ -593,39 +586,26 @@ $lblEstadoConsulta.Text = "Clasificando y ordenando formatos..."
                 Id = $klass.Id
             }
         }
-        elseif ($klass.AudioOnly) {
-            $label = "{0} {1} {2} ~{3}k (audio-only)" -f $sz, $klass.Ext, $klass.ACodec, [math]::Round($klass.ABr)
-            
-            $audioFormats += [pscustomobject]@{
-                Display = (New-FormatDisplay -Id $klass.Id -Label $label)
-                ABr = $klass.ABr
-                Filesize = $klass.Filesize
-                Id = $klass.Id
+    elseif ($klass.AudioOnly) {
+        $label = "{0} {1} {2} ~{3}k (audio-only)" -f $sz, $klass.Ext, $klass.ACodec, [math]::Round($klass.ABr)
+        $audioFormats += [pscustomobject]@{
+            Display = (New-FormatDisplay -Id $klass.Id -Label $label)
+            ABr = $klass.ABr
+            Filesize = $klass.Filesize
+            Id = $klass.Id
             }
         }
     }
-    
-    # ORDENAR FORMATOS DE VIDEO: primero por resolución (mayor a menor), luego por TBR (mayor a menor)
     $sortedVideo = $videoFormats | Sort-Object @{
         Expression = {
-            # Prioridad 1: Resolución (height)
             $heightScore = if ($_.Height) { $_.Height } else { 0 }
-            # Prioridad 2: TBR (total bitrate)
             $tbrScore = if ($_.Tbr) { $_.Tbr } else { 0 }
-            # Combinar: height tiene mayor peso
             ($heightScore * 100000) + $tbrScore
         }
         Descending = $true
     }
-    
-    # ORDENAR FORMATOS DE AUDIO: por ABR (mayor a menor), luego por filesize (mayor a menor)
     $sortedAudio = $audioFormats | Sort-Object @{
-        Expression = {
-            $abrScore = if ($_.ABr) { $_.ABr } else { 0 }
-            $sizeScore = if ($_.Filesize) { $_.Filesize } else { 0 }
-            # ABR tiene mayor peso
-            ($abrScore * 1000) + ($sizeScore / 1MB)
-        }
+        Expression = { if ($_.ABr) { $_.ABr } else { 0 } }
         Descending = $true
     }
     $script:formatsVideo = $sortedVideo.Display
