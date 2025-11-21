@@ -516,13 +516,13 @@ function Fetch-Formats {
         "--extractor-args","youtube:player_client=default,-web_safari,-web_embedded,-tv",
         $Url
     )
-    Write-Host "[FORMATS] Intento 1: yt-dlp -J (ignore-config + extractor-args)" -ForegroundColor Cyan
+    Write-Host "[FORMATOS] Intento 1: yt-dlp -J (ignore-config + extractor-args)" -ForegroundColor Cyan
     $obj = Invoke-CaptureResponsive -ExePath $yt.Source -Args $args1 -WorkingText "Obteniendo formatos" -TimeoutSec 30
     $exit1 = $obj.ExitCode
     $len1  = if ($obj.StdOut) { $obj.StdOut.Length } else { 0 }
     if ( ( $exit1 -ne $null -and $exit1 -ne 0 ) -or [string]::IsNullOrWhiteSpace($obj.StdOut)) {
         $lblEstadoConsulta.Text = "Reintentando obtención de formatos..."
-        Write-Host ("[FORMATS] Intento 1 sin JSON (ExitCode={0}, StdOutLen={1})" -f $exit1, $len1) -ForegroundColor Yellow
+        Write-Host ("[FORMATOS] Intento 1 sin JSON (ExitCode={0}, StdOutLen={1})" -f $exit1, $len1) -ForegroundColor Yellow
         if ($obj.StdErr) { Write-Host $obj.StdErr }
         $args2 = @(
             "-J","--no-playlist",
@@ -530,7 +530,7 @@ function Fetch-Formats {
             "--no-warnings",
             $Url
         )
-        Write-Host "[FORMATS] Intento 2: yt-dlp -J (ignore-config, sin extractor-args)" -ForegroundColor Cyan
+        Write-Host "[FORMATOS] Intento 2: yt-dlp -J (ignore-config, sin extractor-args)" -ForegroundColor Cyan
         $obj = Invoke-CaptureResponsive -ExePath $yt.Source -Args $args2 -WorkingText "Reintentando formatos" -TimeoutSec 30
         $exit2 = $obj.ExitCode
         $len2  = if ($obj.StdOut) { $obj.StdOut.Length } else { 0 }
@@ -541,7 +541,7 @@ function Fetch-Formats {
             if ($obj.StdErr) { Write-Host $obj.StdErr }
             return $false
         } else {
-            Write-Host ("[FORMATS] Intento 2 OK: ExitCode={0}, StdOutLen={1}" -f $exit2, $len2) -ForegroundColor Green
+            Write-Host ("[FORMATOS] Intento 2 OK: ExitCode={0}, StdOutLen={1}" -f $exit2, $len2) -ForegroundColor Green
         }
     }
     try {
@@ -984,10 +984,10 @@ function Get-ImageFromUrl {
     param([Parameter(Mandatory=$true)][string]$Url)
     $cleanUrl = $Url -replace '\?.*$', ''
     if ($cleanUrl -ne $Url) {
-        Write-Host "`t[IMAGE] URL limpiada: $cleanUrl" -ForegroundColor Yellow
+        Write-Host "`t[IMAGEN] URL limpiada: $cleanUrl" -ForegroundColor Yellow
     }
     try {
-        Write-Host "`t[IMAGE] Descargando: $cleanUrl" -ForegroundColor Cyan
+        Write-Host "`t[IMAGEN] Descargando: $cleanUrl" -ForegroundColor Cyan
         Add-Type -AssemblyName System.Net.Http
         $handler = New-Object System.Net.Http.HttpClientHandler
         $httpClient = New-Object System.Net.Http.HttpClient($handler)
@@ -1003,15 +1003,15 @@ function Get-ImageFromUrl {
             $stream = $response.Content.ReadAsStreamAsync().Result
             $image = [System.Drawing.Image]::FromStream($stream)
             $httpClient.Dispose()
-            Write-Host "`t[IMAGE] Descarga exitosa: $($image.Width)x$($image.Height)" -ForegroundColor Green
+            Write-Host "`t[IMAGEN] Descarga exitosa: $($image.Width)x$($image.Height)" -ForegroundColor Green
             return $image
         } else {
-            Write-Host "`t[IMAGE] Error HTTP: $($response.StatusCode) - $($response.ReasonPhrase)" -ForegroundColor Red
+            Write-Host "`t[IMAGEN] Error HTTP: $($response.StatusCode) - $($response.ReasonPhrase)" -ForegroundColor Red
             $httpClient.Dispose()
             return $null
         }
     } catch {
-        Write-Host "`t[IMAGE] Error con HttpClient: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host "`t[IMAGEN] Error con HttpClient: $($_.Exception.Message)" -ForegroundColor Red
         try { $httpClient.Dispose() } catch {}
         return $null
     }
@@ -1122,7 +1122,7 @@ function Fetch-ThumbnailFile {
         "-o", $outTmpl
     )
     if ($Url -match 'tiktok\.com') {
-        Write-Host "[TIKTOK] Usando configuración específica para TikTok..." -ForegroundColor Yellow
+        Write-Host "`t[TIKTOK] Usando configuración específica para TikTok..." -ForegroundColor Yellow
         $args += @(
             "--force-ipv4",
             "--retries", "3",
@@ -1160,10 +1160,10 @@ function Show-PreviewUniversal {
         [string]$Titulo = $null,
         [string]$DirectThumbUrl = $null
     )
-    Write-Host "[PREVIEW] Intentando vista previa para: $Url" -ForegroundColor Cyan
+    Write-Host "[VISTA PREVIA] Intentando vista previa para: $Url" -ForegroundColor Cyan
     $lblEstadoConsulta.Text = "Obteniendo miniaturas..."
     $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::DarkBlue
-    Write-Host "`t[PREVIEW] Intentando descargar miniatura con yt-dlp..." -ForegroundColor Yellow
+    Write-Host "`t[VISTA PREVIA] Intentando descargar miniatura con yt-dlp..." -ForegroundColor Yellow
     $thumbFile = Fetch-ThumbnailFile -Url $Url
     if ($thumbFile -and (Test-Path $thumbFile)) {
         try {
@@ -1173,7 +1173,7 @@ function Show-PreviewUniversal {
             if ($Titulo) { $toolTip.SetToolTip($picPreview, $Titulo) }
             $lblEstadoConsulta.Text = "Vista previa cargada"
             $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::DarkGreen
-            Write-Host "`t[PREVIEW] Vista previa cargada desde yt-dlp" -ForegroundColor Green
+            Write-Host "`t[VISTA PREVIA] Vista previa cargada desde yt-dlp" -ForegroundColor Green
             Start-Job -ScriptBlock {
                 param($file)
                 Start-Sleep -Seconds 5
@@ -1182,10 +1182,10 @@ function Show-PreviewUniversal {
             
             return $true
         } catch {
-            Write-Host "`t[PREVIEW] Error al cargar miniatura descargada: $($_.Exception.Message)" -ForegroundColor Red
+            Write-Host "`t[VISTA PREVIA] Error al cargar miniatura descargada: $($_.Exception.Message)" -ForegroundColor Red
         }
     }
-    Write-Host "`t[PREVIEW] Intentando obtener thumbnails con --list-thumbnails..." -ForegroundColor Yellow
+    Write-Host "`t[VISTA PREVIA] Intentando obtener thumbnails con --list-thumbnails..." -ForegroundColor Yellow
     $thumbList = Get-ThumbnailListFromYtDlp -Url $Url
     if ($thumbList -and $thumbList.Count -gt 0) {
         $lblEstadoConsulta.Text = "Probando miniaturas..."
@@ -1193,30 +1193,30 @@ function Show-PreviewUniversal {
         $thumbIndex = 1
         foreach ($thumb in $sortedThumbs) {
             $lblEstadoConsulta.Text = "Probando miniatura $thumbIndex de 3..."
-            Write-Host "`t[PREVIEW] Probando miniatura: $($thumb.Url)" -ForegroundColor Cyan
+            Write-Host "`t[VISTA PREVIA] Probando miniatura: $($thumb.Url)" -ForegroundColor Cyan
             if (Show-PreviewImage -ImageUrl $thumb.Url -Titulo $Titulo) {
                 $lblEstadoConsulta.Text = "Vista previa cargada"
                 $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::DarkGreen
-                Write-Host "`t[PREVIEW] Vista previa cargada desde --list-thumbnails" -ForegroundColor Green
+                Write-Host "`t[VISTA PREVIA] Vista previa cargada desde --list-thumbnails" -ForegroundColor Green
                 return $true
             } else {
-                Write-Host "`t[PREVIEW] Falló miniatura, probando siguiente..." -ForegroundColor Yellow
+                Write-Host "`t[VISTA PREVIA] Falló miniatura, probando siguiente..." -ForegroundColor Yellow
             }
             $thumbIndex++
         }
-        Write-Host "`t[PREVIEW] Todas las miniaturas JPG fallaron" -ForegroundColor Red
+        Write-Host "`t[VISTA PREVIA] Todas las miniaturas JPG fallaron" -ForegroundColor Red
     }
     $lblEstadoConsulta.Text = "Usando método alternativo..."
-    Write-Host "`t[PREVIEW] Usando fallback con miniatura directa..." -ForegroundColor Yellow
+    Write-Host "`t[VISTA PREVIA] Usando fallback con miniatura directa..." -ForegroundColor Yellow
     if ($DirectThumbUrl -and (Show-PreviewImage -ImageUrl $DirectThumbUrl -Titulo $Titulo)) {
         $lblEstadoConsulta.Text = "Vista previa cargada"
         $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::DarkGreen
-        Write-Host "`t[PREVIEW] Vista previa cargada (directa)" -ForegroundColor Green
+        Write-Host "`t[VISTA PREVIA] Vista previa cargada (directa)" -ForegroundColor Green
         return $true
     }
     $lblEstadoConsulta.Text = "No se pudo cargar vista previa"
     $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::DarkOrange
-    Write-Host "`t[PREVIEW] Todos los métodos fallaron, sin vista previa" -ForegroundColor Red
+    Write-Host "`t[VISTA PREVIA] Todos los métodos fallaron, sin vista previa" -ForegroundColor Red
     return $false
 }
 function Show-PreviewImage {
@@ -1226,7 +1226,7 @@ function Show-PreviewImage {
     )
     try {
         if ($ImageUrl -match '\.webp($|\?)') {
-            Write-Host "`t[PREVIEW] Detectado WEBP, intentando conversión..." -ForegroundColor Yellow
+            Write-Host "`t[VISTA PREVIA] Detectado WEBP, intentando conversión..." -ForegroundColor Yellow
             $png = Convert-WebpUrlToPng -Url $ImageUrl
             if ($png -and (Test-Path $png)) {
                 try { 
@@ -1252,7 +1252,7 @@ function Show-PreviewImage {
         }
         return $false
     } catch {
-        Write-Host "`t[PREVIEW] Error en Show-PreviewImage: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host "`t[VISTA PREVIA] Error en Show-PreviewImage: $($_.Exception.Message)" -ForegroundColor Red
         return $false
     }
 }
@@ -1326,7 +1326,7 @@ function Build-PreviewFromStream {
 }
 function Invoke-ConsultaFromUI {
     param([Parameter(Mandatory = $true)][string]$Url)
-    Write-Host ("[CONSULTA] Consultando URL: {0}" -f $Url) -ForegroundColor Cyan
+    Write-Host ("`n`n[CONSULTA] Consultando URL: {0}" -f $Url) -ForegroundColor Cyan
     try {
         $yt = Get-Command yt-dlp -ErrorAction Stop
     } catch {
