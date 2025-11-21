@@ -11,7 +11,7 @@ $script:LogFile = "C:\Temp\ytdll_history.txt"
 if (-not (Test-Path -LiteralPath $script:LogFile)) {
     New-Item -ItemType File -Path $script:LogFile -Force | Out-Null
 }
-                                                                                                $version = "beta 251121.1053"
+                                                                                                $version = "beta 251121.1104"
 function Get-HistoryUrls {
     try {
         $content = Get-Content -LiteralPath $script:LogFile -ErrorAction Stop -Raw
@@ -510,10 +510,9 @@ function Fetch-Formats {
     $lblEstadoConsulta.Text = "Obteniendo lista de formatos..."
     $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::DarkBlue
     $args1 = @(
-        "-J","--no-playlist",
-        "--ignore-config",        
+        "-J", "--no-playlist",
+        "--ignore-config",
         "--no-warnings",
-        "--extractor-args","youtube:player_client=default,-web_safari,-web_embedded,-tv",
         $Url
     )
     Write-Host "[FORMATOS] Intento 1: yt-dlp -J (ignore-config + extractor-args)" -ForegroundColor Cyan
@@ -695,24 +694,6 @@ function Normalize-ThumbUrl {
     )
     if ([string]::IsNullOrWhiteSpace($Url)) { return $Url }
     $u = $Url.Trim()
-    if ($Extractor -match '^twitch' -or $u -match 'twitch\.tv|static-cdn\.jtvnw\.net') {
-        Write-Host "`t[TWITCH] Normalizando miniatura: $u" -ForegroundColor Yellow
-        $u = $u -replace '%\{width\}x%\{height\}', '1280x720'
-        $u = $u -replace '\{width\}x\{height\}', '1280x720'
-        $u = $u -replace '%\{width\}', '1280'
-        $u = $u -replace '%\{height\}', '720'
-        $u = $u -replace '\{width\}', '1280'
-        $u = $u -replace '\{height\}', '720'
-        $u = $u -replace '%\{\s*width\s*\}', '1280'
-        $u = $u -replace '%\{\s*height\s*\}', '720'
-        if ($u -match 'thumb0-\{width\}x\{height\}') {
-            $u = $u -replace 'thumb0-\{width\}x\{height\}', 'thumb0-1280x720'
-        }
-        if ($u -match '(thumb0?|preview)-(\d+)x(\d+)') {
-            $u = $u -replace '(thumb0?|preview)-(\d+)x(\d+)', '${1}-1280x720'
-        }
-        Write-Host "`t[TWITCH] Miniatura normalizada: $u" -ForegroundColor Green
-    }
     return $u
 }
 function Get-Metadata {
@@ -819,18 +800,6 @@ function Refresh-DependencyLabel {
         $LabelRef.Value.ForeColor = [System.Drawing.Color]::Red
     }
     Refresh-GateByDeps   # <-- NUEVO
-}
-function Get-DownloadExtras {
-    param([string]$Extractor, [string]$Domain)
-
-    switch -Regex ($Extractor) {
-        'twitch' {
-            return @("--hls-use-mpegts", "--retries","10", "--retry-sleep","1", "-N","4")
-        }
-        'vimeo'  { return @("-N","4") }
-        'douyin|tiktok' { return @("-N","4") } # hls segmentado suele ir mejor con paralelo
-        default { return @() }
-    }
 }
 function Update-Dependency {
     param(
@@ -1121,15 +1090,6 @@ function Fetch-ThumbnailFile {
         "--convert-thumbnails", "jpg",
         "-o", $outTmpl
     )
-    if ($Url -match 'tiktok\.com') {
-        Write-Host "`t[TIKTOK] Usando configuración específica para TikTok..." -ForegroundColor Yellow
-        $args += @(
-            "--force-ipv4",
-            "--retries", "3",
-            "--socket-timeout", "15",
-            "--extractor-args", "tiktok:headers=User-Agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-        )
-    }
     if ($script:cookiesPath) { 
         $args += @("--cookies", $script:cookiesPath) 
     }
@@ -2825,9 +2785,6 @@ function Invoke-YtDlpQuery {
         StdErr = $stderr
     }
 }
-function Is-ProgressiveOnlySite([string]$extractor) {
-            return ($extractor -match '(tiktok|douyin|instagram|twitter|x)')
-        }
         
 $btnDescargar.Add_Click({
     Refresh-GateByDeps
@@ -2883,9 +2840,6 @@ $btnDescargar.Add_Click({
             return
         }
     }
-        function Is-TwitchUrl([string]$u) {
-            return $u -match '(^https?://)?([a-z]+\.)?twitch\.tv/'
-        }
         $videoSel = Get-SelectedFormatId -Combo $cmbVideoFmt
         $audioSel = Get-SelectedFormatId -Combo $cmbAudioFmt
         $hayFormatosAudio = ($script:formatsAudio -and $script:formatsAudio.Count -gt 0)
@@ -2979,21 +2933,18 @@ $btnDescargar.Add_Click({
             $args += @("--cookies", $script:cookiesPath)
         }
     $args += $script:ultimaURL
-    if (Is-TwitchUrl $script:ultimaURL) {
-            $args += @(
-                "--hls-use-mpegts",
-                "--retries","10","--retry-sleep","1",
-                "-N","4"
-            )
-            $args += (Get-DownloadExtras -Extractor $script:lastExtractor -Domain $script:lastDomain)
-    }
+    $args += @(
+        "--retries", "5",
+        "--retry-sleep", "2",
+        "-N", "4"
+    )
         $oldCursor = [System.Windows.Forms.Cursor]::Current
     [System.Windows.Forms.Cursor]::Current = [System.Windows.Forms.Cursors]::WaitCursor
     try {
         $exit = Invoke-YtDlpConsoleProgress -ExePath $yt.Source -Args $args -UpdateUi
         if ($exit -ne 0) {
             $lastErr = $lblEstadoConsulta.Text + " "  # opcional, no siempre contiene stderr
-            if (Is-ProgressiveOnlySite $script:lastExtractor -and $videoSel -match '^best(video)?$' -and $script:bestProgId) {
+            if ($videoSel -match '^best(video)?$' -and $script:bestProgId) {
                 Write-Host "[RETRY] Alias falló; reintento con ID concreto: $($script:bestProgId)" -ForegroundColor Yellow
                 $args = @(
                     "--encoding","utf-8","--progress","--no-color","--newline",
