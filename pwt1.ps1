@@ -11,6 +11,7 @@ $script:LogFile = "C:\Temp\ytdll\ytdll_history.txt"
 $script:ThumbnailsDir = "C:\Temp\ytdll\miniaturas"
 $script:ConfigDir = "C:\Temp\ytdll"
 $script:ConfigFile = "C:\Temp\ytdll\config.ini"
+$script:DebugEnabled = [bool]::Parse((Get-IniValue -Section "DEBUG" -Key "ConsoleDebug" -DefaultValue "false"))
 if (-not (Test-Path -LiteralPath $script:LogFile)) {
     New-Item -ItemType File -Path $script:LogFile -Force | Out-Null
 }
@@ -84,6 +85,13 @@ function Set-IniValue {
         Set-Content -Path $script:ConfigFile -Value $lines -Encoding UTF8
     } catch {
         Write-Host "[CONFIG] Error guardando configuración: $($_.Exception.Message)" -ForegroundColor Red
+    }
+}
+function Write-DebugLog {
+    param([string]$Message, [string]$ForegroundColor = "Yellow")
+    
+    if ($script:DebugEnabled) {
+        Write-Host $Message -ForegroundColor $ForegroundColor
     }
 }
 function Get-CleanUrl {
@@ -739,11 +747,11 @@ function Populate-FormatCombos {
     }
     if ($cmbVideoFmt.Items.Count -gt 0) { 
         $cmbVideoFmt.SelectedIndex = 0 
-        Write-Host "[DEBUG] Video combo items: $($cmbVideoFmt.Items.Count)" -ForegroundColor Yellow
+        Write-DebugLog "[DEBUG] Video combo items: $($cmbVideoFmt.Items.Count)" -ForegroundColor Yellow
     }
     if ($cmbAudioFmt.Items.Count -gt 0) { 
         $cmbAudioFmt.SelectedIndex = 0 
-        Write-Host "[DEBUG] Audio combo items: $($cmbAudioFmt.Items.Count)" -ForegroundColor Yellow
+        Write-DebugLog "[DEBUG] Audio combo items: $($cmbAudioFmt.Items.Count)" -ForegroundColor Yellow
     }
 }
 function Normalize-ThumbUrl {
@@ -1451,11 +1459,11 @@ function Invoke-ConsultaFromUI {
     $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::DarkBlue
     [System.Windows.Forms.Application]::DoEvents()
     $res = Invoke-CaptureResponsive -ExePath $yt.Source -Args $args -WorkingText "Consultando video" -TimeoutSec 30
-    Write-Host "[DEBUG] yt-dlp ExitCode: $($res.ExitCode)" -ForegroundColor Yellow
+    Write-DebugLog "[DEBUG] yt-dlp ExitCode: $($res.ExitCode)" -ForegroundColor Yellow
     if ([string]::IsNullOrWhiteSpace($res.StdOut)) {
-        Write-Host "[DEBUG] StdOut está vacío o nulo" -ForegroundColor Red
+        Write-DebugLog "[DEBUG] StdOut está vacío o nulo" -ForegroundColor Red
         if (-not [string]::IsNullOrWhiteSpace($res.StdErr)) {
-            Write-Host "[DEBUG] StdErr: $($res.StdErr)" -ForegroundColor Red
+            Write-DebugLog "[DEBUG] StdErr: $($res.StdErr)" -ForegroundColor Red
         }
     }
     $lines = @()
@@ -1929,7 +1937,7 @@ if (-not (Initialize-AppHeadless)) {      return  }
 function Show-AppInfo {
     $f = New-Object System.Windows.Forms.Form
     $f.Text = "Información de la aplicación"
-    $f.Size = New-Object System.Drawing.Size(520, 700)   # un poco más alto para mpv.net
+    $f.Size = New-Object System.Drawing.Size(520, 750)   # Un poco más alto para el checkbox
     $f.StartPosition = "CenterParent"
     $f.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::FixedDialog
     $f.MaximizeBox = $false
@@ -1948,9 +1956,21 @@ function Show-AppInfo {
         -Size (New-Object System.Drawing.Size(460,22)) `
         -Font $defaultFont
 
+    # Checkbox para debug
+    $chkDebug = New-Object System.Windows.Forms.CheckBox
+    $chkDebug.Location = New-Object System.Drawing.Point(20, 76)
+    $chkDebug.Size = New-Object System.Drawing.Size(200, 24)
+    $chkDebug.Text = "Mostrar debug en consola"
+    $chkDebug.Checked = $script:DebugEnabled
+    $chkDebug.Add_CheckedChanged({
+        $script:DebugEnabled = $chkDebug.Checked
+        Set-IniValue -Section "DEBUG" -Key "ConsoleDebug" -Value ($script:DebugEnabled.ToString().ToLower())
+        Write-DebugLog "[CONFIG] Debug en consola: $($script:DebugEnabled)" -ForegroundColor Cyan
+    })
+
     # Cambios recientes
     $lblCamb = Create-Label -Text "Cambios recientes:" `
-        -Location (New-Object System.Drawing.Point(20,76)) `
+        -Location (New-Object System.Drawing.Point(20,106)) `
         -Size (New-Object System.Drawing.Size(460,20)) `
         -IsTitle
 
@@ -1964,7 +1984,7 @@ function Show-AppInfo {
     $logCambios = $global:defaultInstructions -replace "`r?`n","`r`n"
 
     $txtCamb = New-Object System.Windows.Forms.RichTextBox
-    $txtCamb.Location   = New-Object System.Drawing.Point(20, 98)
+    $txtCamb.Location   = New-Object System.Drawing.Point(20, 128)
     $txtCamb.Size       = New-Object System.Drawing.Size(460, 150)
     $txtCamb.ReadOnly   = $true
     $txtCamb.BorderStyle= [System.Windows.Forms.BorderStyle]::None
@@ -1979,12 +1999,12 @@ function Show-AppInfo {
 
     # Dependencias detectadas (texto dentro del Info)
     $lblDeps = Create-Label -Text "Dependencias detectadas:" `
-        -Location (New-Object System.Drawing.Point(20,258)) `
+        -Location (New-Object System.Drawing.Point(20,288)) `
         -Size (New-Object System.Drawing.Size(460,22)) `
         -IsTitle
 
     $txtDeps = Create-TextBox `
-        -Location (New-Object System.Drawing.Point(20,282)) `
+        -Location (New-Object System.Drawing.Point(20,312)) `
         -Size (New-Object System.Drawing.Size(460,90)) `
         -BackColor ([System.Drawing.Color]::White) `
         -ForeColor ([System.Drawing.Color]::Black) `
@@ -2041,73 +2061,60 @@ function Show-AppInfo {
 
     # Proyectos + descripciones
     $lblLinks = Create-Label -Text "Proyectos:" `
-        -Location (New-Object System.Drawing.Point(20, 378)) `
+        -Location (New-Object System.Drawing.Point(20, 408)) `
         -Size (New-Object System.Drawing.Size(460, 22)) `
         -IsTitle
 
     # PWytdll
     $lnkApp = New-LinkLabel -Text "PWytdll (GitHub)" `
               -Url "https://github.com/water0ff/PWytdll/tree/main" `
-              -Location (New-Object System.Drawing.Point(20, 404)) `
+              -Location (New-Object System.Drawing.Point(20, 434)) `
               -Size (New-Object System.Drawing.Size(460, 20))
 
     $lblAppDesc = Create-Label -Text "Script principal en PowerShell: interfaz gráfica y lógica de YTDLL." `
-        -Location (New-Object System.Drawing.Point(40, 422)) `
+        -Location (New-Object System.Drawing.Point(40, 452)) `
         -Size (New-Object System.Drawing.Size(440, 18)) `
         -IsTag
 
     # yt-dlp
     $lnkYt  = New-LinkLabel -Text "yt-dlp" `
               -Url "https://github.com/yt-dlp/yt-dlp" `
-              -Location (New-Object System.Drawing.Point(20, 446)) `
+              -Location (New-Object System.Drawing.Point(20, 476)) `
               -Size (New-Object System.Drawing.Size(460, 20))
-
     $lblYtDesc = Create-Label -Text "Extractor/descargador de video/audio usado como motor principal." `
-        -Location (New-Object System.Drawing.Point(40, 464)) `
+        -Location (New-Object System.Drawing.Point(40, 494)) `
         -Size (New-Object System.Drawing.Size(440, 18)) `
         -IsTag
-
-    # FFmpeg
     $lnkFf  = New-LinkLabel -Text "FFmpeg" `
               -Url "https://ffmpeg.org/" `
-              -Location (New-Object System.Drawing.Point(20, 488)) `
+              -Location (New-Object System.Drawing.Point(20, 518)) `
               -Size (New-Object System.Drawing.Size(460, 20))
-
     $lblFfDesc = Create-Label -Text "Herramienta para conversión, fusión de streams y capturas de miniaturas." `
-        -Location (New-Object System.Drawing.Point(40, 506)) `
+        -Location (New-Object System.Drawing.Point(40, 536)) `
         -Size (New-Object System.Drawing.Size(440, 18)) `
         -IsTag
-
-    # Node.js
     $lnkNd  = New-LinkLabel -Text "Node.js" `
               -Url "https://nodejs.org/" `
-              -Location (New-Object System.Drawing.Point(20, 530)) `
+              -Location (New-Object System.Drawing.Point(20, 560)) `
               -Size (New-Object System.Drawing.Size(460, 20))
-
     $lblNdDesc = Create-Label -Text "Dependencia adicional (Node.js LTS) requerida para ciertas tareas internas." `
-        -Location (New-Object System.Drawing.Point(40, 548)) `
+        -Location (New-Object System.Drawing.Point(40, 578)) `
         -Size (New-Object System.Drawing.Size(440, 18)) `
         -IsTag
-
-    # mpv.net
     $lnkMpv  = New-LinkLabel -Text "mpv.net" `
                -Url "https://github.com/stax76/mpv.net" `
-               -Location (New-Object System.Drawing.Point(20, 572)) `
+               -Location (New-Object System.Drawing.Point(20, 602)) `
                -Size (New-Object System.Drawing.Size(460, 20))
-
     $lblMpvDesc = Create-Label -Text "Reproductor de video basado en mpv, usado para la vista previa/reproducción." `
-        -Location (New-Object System.Drawing.Point(40, 590)) `
+        -Location (New-Object System.Drawing.Point(40, 620)) `
         -Size (New-Object System.Drawing.Size(440, 18)) `
         -IsTag
-
-    # Botón ACTUALIZAR TODO
     $btnActualizarTodo = Create-Button -Text "ACTUALIZAR TODO" `
-        -Location (New-Object System.Drawing.Point(20, 610)) `
+        -Location (New-Object System.Drawing.Point(20, 640)) `
         -Size (New-Object System.Drawing.Size(150, 30)) `
         -BackColor $ColorPrimary `
         -ForeColor ([System.Drawing.Color]::White) `
         -ToolTipText "Actualizar/verificar todas las dependencias con Chocolatey"
-
     $btnActualizarTodo.Add_Click({
         if (-not (Check-Chocolatey)) {
             [System.Windows.Forms.MessageBox]::Show(
@@ -2118,31 +2125,18 @@ function Show-AppInfo {
             ) | Out-Null
             return
         }
-
-        # Verificar/instalar .NET 6 Desktop Runtime (requerido para mpv.net)
         [void](Ensure-DotNet6DesktopRuntime)
-
-        # yt-dlp
         Update-Dependency -ChocoPkg "yt-dlp" -FriendlyName "yt-dlp" -CommandName "yt-dlp" `
             -LabelRef ([ref]$lblYtDlp) -VersionArgs "--version" -Parse "FirstLine"
-
-        # ffmpeg
         Update-Dependency -ChocoPkg "ffmpeg" -FriendlyName "ffmpeg" -CommandName "ffmpeg" `
             -LabelRef ([ref]$lblFfmpeg) -VersionArgs "-version" -Parse "FirstLine"
-
-        # Node.js (si está habilitado en el script)
         if ($script:RequireNode) {
             Update-Dependency -ChocoPkg "nodejs-lts" -FriendlyName "Node.js" -CommandName "node" `
                 -LabelRef ([ref]$lblNode) -VersionArgs "--version" -Parse "FirstLine"
         }
-
-        # mpv.net
         Update-Dependency -ChocoPkg "mpv.net" -FriendlyName "mpv.net" -CommandName "mpvnet" `
             -LabelRef ([ref]$lblMpvNet) -VersionArgs "--version" -Parse "FirstLine"
-
-        # Refrescar resumen dentro de la ventana de info (incluye .NET 6)
         Update-LocalDepsText
-
         [System.Windows.Forms.MessageBox]::Show(
             "Dependencias verificadas/actualizadas.",
             "ACTUALIZAR TODO",
@@ -2150,18 +2144,15 @@ function Show-AppInfo {
             [System.Windows.Forms.MessageBoxIcon]::Information
         ) | Out-Null
     })
-
-    # Botón Cerrar
     $btnCerrar = Create-Button -Text "Cerrar" `
-        -Location (New-Object System.Drawing.Point(380, 610)) `
+        -Location (New-Object System.Drawing.Point(380, 640)) `
         -Size (New-Object System.Drawing.Size(100, 30)) `
         -BackColor ([System.Drawing.Color]::Black) `
         -ForeColor ([System.Drawing.Color]::White) `
         -ToolTipText "Cerrar esta ventana"
     $btnCerrar.Add_Click({ $f.Close() })
-
     $f.Controls.AddRange(@(
-        $lblTitulo,$lblVer,$lblCamb,$txtCamb,
+        $lblTitulo,$lblVer,$chkDebug,$lblCamb,$txtCamb,
         $lblDeps,$txtDeps,
         $lblLinks,
         $lnkApp,$lblAppDesc,
@@ -2172,7 +2163,6 @@ function Show-AppInfo {
         $btnActualizarTodo,
         $btnCerrar
     ))
-
     $f.ShowDialog() | Out-Null
 }
 #-----------------------------------------------------------
@@ -2498,25 +2488,25 @@ function Show-UrlHistoryMenu {
 }
 function Add-HistoryUrl {
     param([Parameter(Mandatory=$true)][string]$Url)
-    Write-Host "[DEBUG] Add-HistoryUrl iniciada con URL: '$Url'" -ForegroundColor Cyan
-    Write-Host "[DEBUG] script:ultimoTitulo: '$($script:ultimoTitulo)'" -ForegroundColor Cyan
+    Write-DebugLog "[DEBUG] Add-HistoryUrl iniciada con URL: '$Url'" -ForegroundColor Cyan
+    Write-DebugLog "[DEBUG] script:ultimoTitulo: '$($script:ultimoTitulo)'" -ForegroundColor Cyan
     
     $u = $Url.Trim()
     if ([string]::IsNullOrWhiteSpace($u)) { 
-        Write-Host "[DEBUG] URL vacía, saliendo" -ForegroundColor Yellow
+        Write-DebugLog "[DEBUG] URL vacía, saliendo" -ForegroundColor Yellow
         return 
     }
     if ($u -eq $global:UrlPlaceholder) { 
-        Write-Host "[DEBUG] URL es placeholder, saliendo" -ForegroundColor Yellow
+        Write-DebugLog "[DEBUG] URL es placeholder, saliendo" -ForegroundColor Yellow
         return 
     }
     if ($u -notmatch '^(\w+://|www\.|\w+\.\w+)') { 
-        Write-Host "[DEBUG] URL no válida: '$u'" -ForegroundColor Yellow
+        Write-DebugLog "[DEBUG] URL no válida: '$u'" -ForegroundColor Yellow
         return 
     }
     
     $cleanUrl = Get-CleanUrl -Url $u
-    Write-Host "[DEBUG] URL limpia: '$cleanUrl'" -ForegroundColor Cyan
+    Write-DebugLog "[DEBUG] URL limpia: '$cleanUrl'" -ForegroundColor Cyan
     
     $title = if ($script:ultimoTitulo) { 
         $safeTitle = Get-SafeFileName -Name $script:ultimoTitulo
@@ -2530,50 +2520,50 @@ function Add-HistoryUrl {
     }
     
     $historyEntry = "{0} | {1}" -f $title, $cleanUrl
-    Write-Host "[DEBUG] Entrada de historial a guardar: '$historyEntry'" -ForegroundColor Cyan
+    Write-DebugLog "[DEBUG] Entrada de historial a guardar: '$historyEntry'" -ForegroundColor Cyan
     
     # Forzar una pausa antes de leer
     Start-Sleep -Milliseconds 50
     [System.Windows.Forms.Application]::DoEvents()
     
-    Write-Host "[DEBUG] Leyendo historial desde: $script:LogFile" -ForegroundColor Cyan
+    Write-DebugLog "[DEBUG] Leyendo historial desde: $script:LogFile" -ForegroundColor Cyan
     
     $currentEntries = @()
     try {
         if (Test-Path -LiteralPath $script:LogFile) {
             $content = [System.IO.File]::ReadAllText($script:LogFile, [System.Text.Encoding]::UTF8)
-            Write-Host "[DEBUG] Contenido actual del archivo (raw): '$content'" -ForegroundColor Gray
+            Write-DebugLog "[DEBUG] Contenido actual del archivo (raw): '$content'" -ForegroundColor Gray
             
             $currentEntries = $content -split "`r?`n" | 
                 ForEach-Object { $_.Trim() } | 
                 Where-Object { $_ -and ($_ -notmatch '^\s*$') }
         }
     } catch {
-        Write-Host "[DEBUG] Error al leer historial: $($_.Exception.Message)" -ForegroundColor Red
-        Write-Host "[DEBUG] Inicializando lista vacía" -ForegroundColor Yellow
+        Write-DebugLog "[DEBUG] Error al leer historial: $($_.Exception.Message)" -ForegroundColor Red
+        Write-DebugLog "[DEBUG] Inicializando lista vacía" -ForegroundColor Yellow
         $currentEntries = @()
     }
     
-    Write-Host "[DEBUG] Entradas actuales procesadas: $($currentEntries.Count)" -ForegroundColor Cyan
-    Write-Host "[DEBUG] Entradas: $($currentEntries -join ' | ')" -ForegroundColor Gray
+    Write-DebugLog "[DEBUG] Entradas actuales procesadas: $($currentEntries.Count)" -ForegroundColor Cyan
+    Write-DebugLog "[DEBUG] Entradas: $($currentEntries -join ' | ')" -ForegroundColor Gray
     
     $exists = $false
-    Write-Host "[DEBUG] Verificando si '$cleanUrl' ya existe en el historial..." -ForegroundColor Cyan
+    Write-DebugLog "[DEBUG] Verificando si '$cleanUrl' ya existe en el historial..." -ForegroundColor Cyan
     
     foreach ($entry in $currentEntries) {
-        Write-Host "[DEBUG] Comparando con entrada: '$entry'" -ForegroundColor Gray
+        Write-DebugLog "[DEBUG] Comparando con entrada: '$entry'" -ForegroundColor Gray
         if ($entry -match '\|\s*(.+)$') {
             $existingUrl = $matches[1].Trim()
-            Write-Host "[DEBUG] Extraída URL existente: '$existingUrl'" -ForegroundColor Gray
+            Write-DebugLog "[DEBUG] Extraída URL existente: '$existingUrl'" -ForegroundColor Gray
             if ($existingUrl -eq $cleanUrl) {
-                Write-Host "[DEBUG] ¡URL ya existe en el historial!" -ForegroundColor Yellow
+                Write-DebugLog "[DEBUG] ¡URL ya existe en el historial!" -ForegroundColor Yellow
                 $exists = $true
                 break
             }
         } else {
-            Write-Host "[DEBUG] Entrada sin formato 'Título | URL': '$entry'" -ForegroundColor Gray
+            Write-DebugLog "[DEBUG] Entrada sin formato 'Título | URL': '$entry'" -ForegroundColor Gray
             if ($entry -eq $cleanUrl) {
-                Write-Host "[DEBUG] ¡URL ya existe (formato antiguo)!" -ForegroundColor Yellow
+                Write-DebugLog "[DEBUG] ¡URL ya existe (formato antiguo)!" -ForegroundColor Yellow
                 $exists = $true
                 break
             }
@@ -2581,19 +2571,19 @@ function Add-HistoryUrl {
     }
     
     if (-not $exists) {
-        Write-Host "[DEBUG] URL no existe en historial, procediendo a guardar..." -ForegroundColor Green
+        Write-DebugLog "[DEBUG] URL no existe en historial, procediendo a guardar..." -ForegroundColor Green
         $newList = @($historyEntry) + $currentEntries
-        Write-Host "[DEBUG] Nueva lista tendrá $($newList.Count) elementos" -ForegroundColor Cyan
+        Write-DebugLog "[DEBUG] Nueva lista tendrá $($newList.Count) elementos" -ForegroundColor Cyan
         
         if ($newList.Count -gt 200) { 
-            Write-Host "[DEBUG] Recortando lista a 200 elementos" -ForegroundColor Yellow
+            Write-DebugLog "[DEBUG] Recortando lista a 200 elementos" -ForegroundColor Yellow
             $newList = $newList[0..199] 
         }
         
         try {
-            Write-Host "[DEBUG] Intentando escribir en: $script:LogFile" -ForegroundColor Cyan
+            Write-DebugLog "[DEBUG] Intentando escribir en: $script:LogFile" -ForegroundColor Cyan
             $contentToWrite = ($newList -join "`r`n") + "`r`n"
-            Write-Host "[DEBUG] Contenido a escribir (primeros 500 chars): '$($contentToWrite.Substring(0, [Math]::Min(500, $contentToWrite.Length)))'" -ForegroundColor Gray
+            Write-DebugLog "[DEBUG] Contenido a escribir (primeros 500 chars): '$($contentToWrite.Substring(0, [Math]::Min(500, $contentToWrite.Length)))'" -ForegroundColor Gray
             
             # Usar StreamWriter para mayor control sobre el encoding
             $stream = [System.IO.StreamWriter]::new($script:LogFile, $false, [System.Text.Encoding]::UTF8)
@@ -2609,7 +2599,7 @@ function Add-HistoryUrl {
         Write-Host "[HISTORIAL] URL ya existe en historial: $cleanUrl" -ForegroundColor Yellow
     }
     
-    Write-Host "[DEBUG] Add-HistoryUrl finalizada" -ForegroundColor Cyan
+    Write-DebugLog "[DEBUG] Add-HistoryUrl finalizada" -ForegroundColor Cyan
 }
 function Get-HistoryUrls {
     try {
@@ -3220,25 +3210,25 @@ $btnDescargar.Add_Click({
             # SI hay selección de audio, FORZAR combinación
             $fSelector = "{0}+{1}" -f $videoSel, $audioSel
             $mergeExt = "mp4"
-            Write-Host "[DEBUG] Combinando video ($videoSel) + audio ($audioSel)" -ForegroundColor Green
+            Write-DebugLog "[DEBUG] Combinando video ($videoSel) + audio ($audioSel)" -ForegroundColor Green
         }
         elseif ($videoSel -and $hayFormatosAudio) {
             # SI hay video y formatos de audio disponibles, usar bestaudio
             $fSelector = "{0}+bestaudio" -f $videoSel
             $mergeExt = "mp4"
-            Write-Host "[DEBUG] Combinando video ($videoSel) + bestaudio" -ForegroundColor Green
+            Write-DebugLog "[DEBUG] Combinando video ($videoSel) + bestaudio" -ForegroundColor Green
         }
         elseif ($videoSel) {
             # Solo video, sin audio disponible
             $fSelector = $videoSel
             $mergeExt = $null
-            Write-Host "[DEBUG] Solo video: $videoSel" -ForegroundColor Yellow
+            Write-DebugLog "[DEBUG] Solo video: $videoSel" -ForegroundColor Yellow
         }
         elseif ($audioSel) {
             # Solo audio
             $fSelector = $audioSel
             $mergeExt = $null
-            Write-Host "[DEBUG] Solo audio: $audioSel" -ForegroundColor Yellow
+            Write-DebugLog "[DEBUG] Solo audio: $audioSel" -ForegroundColor Yellow
         }
         else {
             # Por defecto
@@ -3249,11 +3239,11 @@ $btnDescargar.Add_Click({
                 $fSelector = "best"
                 $mergeExt = $null
             }
-            Write-Host "[DEBUG] Selector por defecto: $fSelector" -ForegroundColor Cyan
+            Write-DebugLog "[DEBUG] Selector por defecto: $fSelector" -ForegroundColor Cyan
         }
-        Write-Host "[DEBUG] Selector de formato: $fSelector" -ForegroundColor Yellow
-        Write-Host "[DEBUG] Merge extension: $mergeExt" -ForegroundColor Yellow
-        Write-Host "[DEBUG] ¿Hay formatos de audio?: $hayFormatosAudio" -ForegroundColor Yellow
+        Write-DebugLog "[DEBUG] Selector de formato: $fSelector" -ForegroundColor Yellow
+        Write-DebugLog "[DEBUG] Merge extension: $mergeExt" -ForegroundColor Yellow
+        Write-DebugLog "[DEBUG] ¿Hay formatos de audio?: $hayFormatosAudio" -ForegroundColor Yellow
     $prevLbl = $lblEstadoConsulta.Text
     $prevPickDest  = $btnPickDestino.Enabled
     $prevCmbVid    = $cmbVideoFmt.Enabled
@@ -3335,10 +3325,10 @@ $btnDescargar.Add_Click({
             $exit = $script:lastYtDlpExitCode
         }
         Write-Host "------------------------" -ForegroundColor DarkGray
-        Write-Host "[DEBUG] ExitCode final de yt-dlp: $exit" -ForegroundColor Yellow
+        Write-DebugLog "[DEBUG] ExitCode final de yt-dlp: $exit" -ForegroundColor Yellow
         $archivoExiste = Test-Path -LiteralPath $targetPath
-        Write-Host "[DEBUG] ¿Archivo final existe?: $archivoExiste" -ForegroundColor Yellow
-        Write-Host "[DEBUG] Ruta objetivo: $targetPath" -ForegroundColor DarkCyan
+        Write-DebugLog "[DEBUG] ¿Archivo final existe?: $archivoExiste" -ForegroundColor Yellow
+        Write-DebugLog "[DEBUG] Ruta objetivo: $targetPath" -ForegroundColor DarkCyan
         Write-Host "------------------------" -ForegroundColor DarkGray
         if ($exit -eq 0 -or $archivoExiste) {
             if ($exit -ne 0 -and $archivoExiste) {
