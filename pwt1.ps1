@@ -11,7 +11,6 @@ $script:LogFile = "C:\Temp\ytdll\ytdll_history.txt"
 $script:ThumbnailsDir = "C:\Temp\ytdll\miniaturas"
 $script:ConfigDir = "C:\Temp\ytdll"
 $script:ConfigFile = "C:\Temp\ytdll\config.ini"
-$script:DebugEnabled = [bool]::Parse((Get-IniValue -Section "DEBUG" -Key "ConsoleDebug" -DefaultValue "false"))
 if (-not (Test-Path -LiteralPath $script:LogFile)) {
     New-Item -ItemType File -Path $script:LogFile -Force | Out-Null
 }
@@ -94,6 +93,7 @@ function Write-DebugLog {
         Write-Host $Message -ForegroundColor $ForegroundColor
     }
 }
+$script:DebugEnabled = [bool]::Parse((Get-IniValue -Section "DEBUG" -Key "ConsoleDebug" -DefaultValue "false"))
 function Get-CleanUrl {
     param([Parameter(Mandatory=$true)][string]$Url)
     $cleanUrl = $Url -replace '^https?://', ''
