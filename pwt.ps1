@@ -2377,18 +2377,18 @@ function Show-UrlHistoryMenu {
         # Método robusto para leer el archivo
         if (Test-Path -LiteralPath $script:LogFile) {
             $content = [System.IO.File]::ReadAllText($script:LogFile, [System.Text.Encoding]::UTF8)
-            Write-Host "[DEBUG-HISTORY] Contenido completo del archivo: '$content'" -ForegroundColor Magenta
+            Write-DebugLog "[DEBUG] Contenido completo del archivo: '$content'" -ForegroundColor Magenta
             
             $items = @(
                 $content -split "`r?`n" | 
                     ForEach-Object { 
                         $line = $_.Trim()
-                        Write-Host "[DEBUG-HISTORY] Procesando línea: '$line'" -ForegroundColor Gray
+                        Write-DebugLog "[DEBUG] Procesando línea: '$line'" -ForegroundColor Gray
                         $line
                     } | 
                     Where-Object { 
                         $isValid = $_ -and ($_ -notmatch '^\s*$')
-                        Write-Host "[DEBUG-HISTORY] Línea válida? '$isValid' para: '$_'" -ForegroundColor Gray
+                        Write-DebugLog "[DEBUG] Línea válida? '$isValid' para: '$_'" -ForegroundColor Gray
                         $isValid
                     } | 
                     Select-Object -Unique
@@ -2397,7 +2397,7 @@ function Show-UrlHistoryMenu {
             $items = @()
         }
     } catch { 
-        Write-Host "[DEBUG-HISTORY] Error al leer historial: $($_.Exception.Message)" -ForegroundColor Red
+        Write-DebugLog "[DEBUG] Error al leer historial: $($_.Exception.Message)" -ForegroundColor Red
         try {
             # Fallback: usar Get-Content
             $items = @(
@@ -2411,10 +2411,10 @@ function Show-UrlHistoryMenu {
         }
     }
     
-    Write-Host "[DEBUG-HISTORY] Items encontrados: $($items.Count)" -ForegroundColor Yellow
+    Write-DebugLog "[DEBUG] Items encontrados: $($items.Count)" -ForegroundColor Yellow
     if ($items.Count -gt 0) {
-        Write-Host "[DEBUG-HISTORY] Primer item completo: '$($items[0])'" -ForegroundColor Yellow
-        Write-Host "[DEBUG-HISTORY] Longitud del primer item: $($items[0].Length)" -ForegroundColor Yellow
+        Write-DebugLog "[DEBUG] Primer item completo: '$($items[0])'" -ForegroundColor Yellow
+        Write-DebugLog "[DEBUG] Longitud del primer item: $($items[0].Length)" -ForegroundColor Yellow
     }
     
     if (-not $items -or $items.Count -eq 0) {
@@ -2424,17 +2424,17 @@ function Show-UrlHistoryMenu {
         [void]$ctxUrlHistory.Items.Add($miEmpty)
     } else {
         $top = [Math]::Min(12, $items.Count)
-        Write-Host "[DEBUG-HISTORY] Mostrando $top items" -ForegroundColor Yellow
+        Write-DebugLog "[DEBUG] Mostrando $top items" -ForegroundColor Yellow
         
         for ($i = 0; $i -lt $top; $i++) {
             $displayText = [string]$items[$i]
             if ([string]::IsNullOrWhiteSpace($displayText)) {
-                Write-Host "[DEBUG-HISTORY] Item $i está vacío, saltando" -ForegroundColor Red
+                Write-DebugLog "[DEBUG] Item $i está vacío, saltando" -ForegroundColor Red
                 continue
             }
             
-            Write-Host "[DEBUG-HISTORY] Procesando item $i : '$displayText'" -ForegroundColor Cyan
-            Write-Host "[DEBUG-HISTORY] Longitud del item $i : $($displayText.Length)" -ForegroundColor Cyan
+            Write-DebugLog "[DEBUG] Procesando item $i : '$displayText'" -ForegroundColor Cyan
+            Write-DebugLog "[DEBUG] Longitud del item $i : $($displayText.Length)" -ForegroundColor Cyan
             
             $urlItem = New-Object System.Windows.Forms.ToolStripMenuItem
             $urlItem.Text = $displayText
@@ -2443,7 +2443,7 @@ function Show-UrlHistoryMenu {
             $urlItem.add_Click({
                 param($sender, $e)
                 $fullText = [string]($sender -as [System.Windows.Forms.ToolStripMenuItem]).Text
-                Write-Host "[DEBUG-HISTORY] Click en: '$fullText'" -ForegroundColor Green
+                Write-DebugLog "[DEBUG] Click en: '$fullText'" -ForegroundColor Green
                 
                 if ($fullText -match '\|\s*(.+)$') {
                     $urlToSet = $matches[1].Trim()
@@ -2451,7 +2451,7 @@ function Show-UrlHistoryMenu {
                     $urlToSet = $fullText
                 }
                 
-                Write-Host "[DEBUG-HISTORY] URL a establecer: '$urlToSet'" -ForegroundColor Cyan
+                Write-DebugLog "[DEBUG] URL a establecer: '$urlToSet'" -ForegroundColor Cyan
                 $txtUrl.Text = $urlToSet
                 $txtUrl.ForeColor = [System.Drawing.Color]::Black
                 $txtUrl.SelectionStart = $txtUrl.Text.Length
@@ -2459,7 +2459,7 @@ function Show-UrlHistoryMenu {
             })
             
             [void]$ctxUrlHistory.Items.Add($urlItem)
-            Write-Host "[DEBUG-HISTORY] Item agregado al menú: '$displayText'" -ForegroundColor Green
+            Write-DebugLog "[DEBUG] Item agregado al menú: '$displayText'" -ForegroundColor Green
         }
     }
     
