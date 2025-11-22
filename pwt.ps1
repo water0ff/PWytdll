@@ -14,7 +14,7 @@ $script:ConfigFile = "C:\Temp\ytdll\config.ini"
 if (-not (Test-Path -LiteralPath $script:LogFile)) {
     New-Item -ItemType File -Path $script:LogFile -Force | Out-Null
 }
-                                                                                                $version = "beta 251121.1715"
+                                                                                                $version = "beta 251121.1825"
 function Get-IniValue {
     param([string]$Section, [string]$Key, [string]$DefaultValue = $null)
     
@@ -2590,13 +2590,13 @@ function Add-HistoryUrl {
             $stream.Write($contentToWrite)
             $stream.Close()
             
-            Write-Host "[HISTORIAL] ¡Guardado exitosamente: $historyEntry" -ForegroundColor Green
+            Write-DebugLog "[HISTORIAL] ¡Guardado exitosamente: $historyEntry" -ForegroundColor Green
         } catch {
-            Write-Host "[ERROR] No se pudo guardar en el historial: $($_.Exception.Message)" -ForegroundColor Red
-            Write-Host "[ERROR] Tipo de error: $($_.Exception.GetType().Name)" -ForegroundColor Red
+            Write-DebugLog "[ERROR] No se pudo guardar en el historial: $($_.Exception.Message)" -ForegroundColor Red
+            Write-DebugLog "[ERROR] Tipo de error: $($_.Exception.GetType().Name)" -ForegroundColor Red
         }
     } else {
-        Write-Host "[HISTORIAL] URL ya existe en historial: $cleanUrl" -ForegroundColor Yellow
+        Write-DebugLog "[HISTORIAL] URL ya existe en historial: $cleanUrl" -ForegroundColor Yellow
     }
     
     Write-DebugLog "[DEBUG] Add-HistoryUrl finalizada" -ForegroundColor Cyan
@@ -2791,13 +2791,9 @@ $btnMpvNetUninstall.Add_Click({
     if ($r -ne [System.Windows.Forms.DialogResult]::Yes) {
         return
     }
-
-    # 1) Desinstalar mpv.net (usa tu helper genérico)
     Uninstall-Dependency -ChocoPkg "mpv.net" `
                          -FriendlyName "mpv.net" `
                          -LabelRef ([ref]$lblMpvNet)
-
-    # 2) Desinstalar SIEMPRE mpvnet.portable (si no está, Choco solo dirá 0 paquetes)
     Write-Host "[UNINSTALL] Intentando desinstalar mpvnet.portable..." -ForegroundColor Cyan
     try {
         Start-Process -FilePath "choco" `
