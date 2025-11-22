@@ -14,7 +14,7 @@ $script:ConfigFile = "C:\Temp\ytdll\config.ini"
 if (-not (Test-Path -LiteralPath $script:LogFile)) {
     New-Item -ItemType File -Path $script:LogFile -Force | Out-Null
 }
-                                                                                                $version = "beta 251121.1605"
+                                                                                                $version = "beta 251121.1715"
 function Get-IniValue {
     param([string]$Section, [string]$Key, [string]$DefaultValue = $null)
     
@@ -582,7 +582,7 @@ function Fetch-Formats {
         "--no-warnings",
         $Url
     )
-    Write-Host "[FORMATOS] Intento 1: yt-dlp -J (ignore-config + extractor-args)" -ForegroundColor Cyan
+    Write-DebugLog "[FORMATOS] Intento 1: yt-dlp -J (ignore-config + extractor-args)" -ForegroundColor Cyan
     $obj = Invoke-CaptureResponsive -ExePath $yt.Source -Args $args1 -WorkingText "Obteniendo formatos" -TimeoutSec 30
     $exit1 = $obj.ExitCode
     $len1  = if ($obj.StdOut) { $obj.StdOut.Length } else { 0 }
@@ -596,7 +596,7 @@ function Fetch-Formats {
             "--no-warnings",
             $Url
         )
-        Write-Host "[FORMATOS] Intento 2: yt-dlp -J (ignore-config, sin extractor-args)" -ForegroundColor Cyan
+        Write-DebugLog "[FORMATOS] Intento 2: yt-dlp -J (ignore-config, sin extractor-args)" -ForegroundColor Cyan
         $obj = Invoke-CaptureResponsive -ExePath $yt.Source -Args $args2 -WorkingText "Reintentando formatos" -TimeoutSec 30
         $exit2 = $obj.ExitCode
         $len2  = if ($obj.StdOut) { $obj.StdOut.Length } else { 0 }
@@ -1205,9 +1205,9 @@ function Fetch-ThumbnailFile {
     Write-Host "`t[THUMB] Ejecutando yt-dlp para obtener miniatura..." -ForegroundColor Cyan
     $res = Invoke-Capture -ExePath $yt.Source -Args $args
     if ($res.ExitCode -ne 0) {
-        Write-Host "`t[THUMB] Error al obtener miniatura (ExitCode: $($res.ExitCode))" -ForegroundColor Red
+        Write-DebugLog "`t[THUMB] Error al obtener miniatura (ExitCode: $($res.ExitCode))" -ForegroundColor Red
         if (-not [string]::IsNullOrWhiteSpace($res.StdErr)) {
-            Write-Host "`t[THUMB] Error details: $($res.StdErr)" -ForegroundColor Red
+            Write-DebugLog "`t[THUMB] Error details: $($res.StdErr)" -ForegroundColor Red
         }
         if ($Url -match 'youtube\.com.*list=') {
             Write-Host "`t[THUMB] Intentando método alternativo para playlist..." -ForegroundColor Yellow
@@ -1235,10 +1235,10 @@ function Show-PreviewUniversal {
         [string]$Titulo = $null,
         [string]$DirectThumbUrl = $null
     )
-    Write-Host "[VISTA PREVIA] Intentando vista previa para: $Url" -ForegroundColor Cyan
+    Write-DebugLog "[VISTA PREVIA] Intentando vista previa para: $Url" -ForegroundColor Cyan
     $lblEstadoConsulta.Text = "Obteniendo miniaturas..."
     $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::DarkBlue
-    Write-Host "`t[VISTA PREVIA] Intentando descargar miniatura con yt-dlp..." -ForegroundColor Yellow
+    Write-DebugLog "`t[VISTA PREVIA] Intentando descargar miniatura con yt-dlp..." -ForegroundColor Yellow
     $thumbFile = Fetch-ThumbnailFile -Url $Url
     if ($thumbFile -and (Test-Path $thumbFile)) {
         try {
@@ -1248,7 +1248,7 @@ function Show-PreviewUniversal {
             if ($Titulo) { $toolTip.SetToolTip($picPreview, $Titulo) }
             $lblEstadoConsulta.Text = "Vista previa cargada"
             $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::DarkGreen
-            Write-Host "`t[VISTA PREVIA] Vista previa cargada desde yt-dlp" -ForegroundColor Green
+            Write-DebugLog "`t[VISTA PREVIA] Vista previa cargada desde yt-dlp" -ForegroundColor Green
             Start-Job -ScriptBlock {
                 param($file)
                 Start-Sleep -Seconds 5
@@ -1260,7 +1260,7 @@ function Show-PreviewUniversal {
             Write-Host "`t[VISTA PREVIA] Error al cargar miniatura descargada: $($_.Exception.Message)" -ForegroundColor Red
         }
     }
-    Write-Host "`t[VISTA PREVIA] Intentando obtener thumbnails con --list-thumbnails..." -ForegroundColor Yellow
+    Write-DebugLog "`t[VISTA PREVIA] Intentando obtener thumbnails con --list-thumbnails..." -ForegroundColor Yellow
     $thumbList = Get-ThumbnailListFromYtDlp -Url $Url
     if ($thumbList -and $thumbList.Count -gt 0) {
         $lblEstadoConsulta.Text = "Probando miniaturas..."
@@ -1268,11 +1268,11 @@ function Show-PreviewUniversal {
         $thumbIndex = 1
         foreach ($thumb in $sortedThumbs) {
             $lblEstadoConsulta.Text = "Probando miniatura $thumbIndex de 3..."
-            Write-Host "`t[VISTA PREVIA] Probando miniatura: $($thumb.Url)" -ForegroundColor Cyan
+            Write-DebugLog "`t[VISTA PREVIA] Probando miniatura: $($thumb.Url)" -ForegroundColor Cyan
             if (Show-PreviewImage -ImageUrl $thumb.Url -Titulo $Titulo) {
                 $lblEstadoConsulta.Text = "Vista previa cargada"
                 $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::DarkGreen
-                Write-Host "`t[VISTA PREVIA] Vista previa cargada desde --list-thumbnails" -ForegroundColor Green
+                Write-DebugLog "`t[VISTA PREVIA] Vista previa cargada desde --list-thumbnails" -ForegroundColor Green
                 return $true
             } else {
                 Write-Host "`t[VISTA PREVIA] Falló miniatura, probando siguiente..." -ForegroundColor Yellow
@@ -1282,11 +1282,11 @@ function Show-PreviewUniversal {
         Write-Host "`t[VISTA PREVIA] Todas las miniaturas JPG fallaron" -ForegroundColor Red
     }
     $lblEstadoConsulta.Text = "Usando método alternativo..."
-    Write-Host "`t[VISTA PREVIA] Usando fallback con miniatura directa..." -ForegroundColor Yellow
+    Write-DebugLog "`t[VISTA PREVIA] Usando fallback con miniatura directa..." -ForegroundColor Yellow
     if ($DirectThumbUrl -and (Show-PreviewImage -ImageUrl $DirectThumbUrl -Titulo $Titulo)) {
         $lblEstadoConsulta.Text = "Vista previa cargada"
         $lblEstadoConsulta.ForeColor = [System.Drawing.Color]::DarkGreen
-        Write-Host "`t[VISTA PREVIA] Vista previa cargada (directa)" -ForegroundColor Green
+        Write-DebugLog "`t[VISTA PREVIA] Vista previa cargada (directa)" -ForegroundColor Green
         return $true
     }
     $lblEstadoConsulta.Text = "No se pudo cargar vista previa"
