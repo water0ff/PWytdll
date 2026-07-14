@@ -101,13 +101,14 @@ function Check-Chocolatey {
     if (-not (Get-Command choco -ErrorAction SilentlyContinue)) {
         Write-Host "[WARN] Chocolatey no encontrado." -ForegroundColor Yellow
         $response = [System.Windows.Forms.MessageBox]::Show(
-            "Chocolatey no está instalado. ¿Desea instalarlo ahora?",
+            "YTDLL necesita Chocolatey para instalar y actualizar sus complementos automáticamente." +
+            "`n`nChocolatey no está instalado. ¿Deseas instalarlo ahora?",
             "Chocolatey no encontrado",
             [System.Windows.Forms.MessageBoxButtons]::YesNo,
             [System.Windows.Forms.MessageBoxIcon]::Question
         )
         if ($response -eq [System.Windows.Forms.DialogResult]::No) {
-            Write-Host "[CANCEL] Usuario rechazó instalar Chocolatey." -ForegroundColor Red
+            Write-Host "[CANCEL] Usuario rechazó instalar Chocolatey. No se instalarán dependencias." -ForegroundColor Red
             return $false
         }
         Write-Host "[INSTALL] Instalando Chocolatey..." -ForegroundColor Cyan
@@ -281,6 +282,89 @@ function Ensure-MpvNetOptional {
         -VersionArgs "--version")
 }
 
+function Get-CoreDependencyDefinitions {
+    <#
+    .SYNOPSIS Retorna las dependencias obligatorias de YTDLL. #>
+    $deps = @(
+        [pscustomobject]@{
+            CommandName  = "yt-dlp"
+            FriendlyName = "yt-dlp"
+            ChocoPkg     = "yt-dlp"
+            VersionArgs  = "--version"
+        },
+        [pscustomobject]@{
+            CommandName  = "ffmpeg"
+            FriendlyName = "ffmpeg"
+            ChocoPkg     = "ffmpeg"
+            VersionArgs  = "-version"
+        }
+    )
+
+    if ($script:RequireNode) {
+        $deps += [pscustomobject]@{
+            CommandName  = "node"
+            FriendlyName = "Node.js"
+            ChocoPkg     = "nodejs-lts"
+            VersionArgs  = "--version"
+        }
+    }
+
+    return $deps
+}
+
+function Get-MissingCoreDependencies {
+    <#
+    .SYNOPSIS Verifica las dependencias obligatorias y retorna las que faltan. #>
+    $missing = @()
+    foreach ($dep in (Get-CoreDependencyDefinitions)) {
+        Write-Host ("[CHECK] Verificando {0}..." -f $dep.FriendlyName) -ForegroundColor Cyan
+        if (Test-CommandExists -Name $dep.CommandName) {
+            Write-Host ("`t[OK] {0} detectado." -f $dep.FriendlyName) -ForegroundColor Green
+        } else {
+            Write-Host ("`t[NO] {0} no encontrado." -f $dep.FriendlyName) -ForegroundColor Yellow
+            $missing += $dep
+        }
+    }
+    return $missing
+}
+
+function Confirm-CoreDependencyInstall {
+    <#
+    .SYNOPSIS Pide permiso antes de instalar dependencias obligatorias. #>
+    param([array]$MissingDependencies = @())
+
+    if ($MissingDependencies.Count -eq 0) { return $true }
+
+    $requiredNames = (Get-CoreDependencyDefinitions | ForEach-Object { $_.FriendlyName }) -join ", "
+    $missingNames = ($MissingDependencies | ForEach-Object { $_.FriendlyName }) -join ", "
+    $requiredCount = @(Get-CoreDependencyDefinitions).Count
+    $response = [System.Windows.Forms.MessageBox]::Show(
+        "Esta aplicación requiere $requiredCount complementos indispensables para funcionar:" +
+        "`n`n$requiredNames" +
+        "`n`nFaltan: $missingNames." +
+        "`n`n¿Deseas instalarlos ahora con Chocolatey?" +
+        "`n`nSi no los instalas, YTDLL se cerrará. Puedes desinstalarlos en cualquier momento desde la ventana de Dependencias o con Chocolatey.",
+        "Complementos obligatorios",
+        [System.Windows.Forms.MessageBoxButtons]::YesNo,
+        [System.Windows.Forms.MessageBoxIcon]::Question
+    )
+
+    if ($response -eq [System.Windows.Forms.DialogResult]::Yes) {
+        return $true
+    }
+
+    Write-Host "[CANCEL] Usuario rechazó instalar los complementos obligatorios." -ForegroundColor Yellow
+    [System.Windows.Forms.MessageBox]::Show(
+        "No se instalaron los complementos." +
+        "`n`n$requiredNames son obligatorios para usar YTDLL." +
+        "`n`nPuedes instalarlos más tarde volviendo a abrir la aplicación. Si los instalas, también podrás desinstalarlos en cualquier momento.",
+        "YTDLL no puede continuar",
+        [System.Windows.Forms.MessageBoxButtons]::OK,
+        [System.Windows.Forms.MessageBoxIcon]::Information
+    ) | Out-Null
+    return $false
+}
+
 function Initialize-AppHeadless {
     <#
     .SYNOPSIS
@@ -295,11 +379,22 @@ function Initialize-AppHeadless {
         Write-Host "[EXIT] Falta Chocolatey o se requiere reinicio." -ForegroundColor Yellow
         return $false
     }
-    if (-not (Ensure-ToolHeadless -CommandName "yt-dlp"  -FriendlyName "yt-dlp"  -ChocoPkg "yt-dlp"       -VersionArgs "--version")) { return $false }
-    if (-not (Ensure-ToolHeadless -CommandName "ffmpeg"  -FriendlyName "ffmpeg"  -ChocoPkg "ffmpeg"       -VersionArgs "-version"))  { return $false }
-    if ($script:RequireNode) {
-        if (-not (Ensure-ToolHeadless -CommandName "node" -FriendlyName "Node.js" -ChocoPkg "nodejs-lts" -VersionArgs "--version")) { return $false }
+
+    $missingCoreDependencies = @(Get-MissingCoreDependencies)
+    if (-not (Confirm-CoreDependencyInstall -MissingDependencies $missingCoreDependencies)) {
+        return $false
     }
+
+    foreach ($dep in $missingCoreDependencies) {
+        if (-not (Ensure-ToolHeadless `
+            -CommandName $dep.CommandName `
+            -FriendlyName $dep.FriendlyName `
+            -ChocoPkg $dep.ChocoPkg `
+            -VersionArgs $dep.VersionArgs)) {
+            return $false
+        }
+    }
+
     Write-Host "[CHECK] (headless) Verificando mpvnet: " -NoNewline
     if (Test-CommandExists -Name "mpvnet") {
         Write-Host "`n`t[OK] INSTALADO (opcional)" -ForegroundColor Green
