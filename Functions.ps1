@@ -2042,6 +2042,7 @@ function Add-CurrentDownloadToQueue {
         LastErrFragment  = ""
     }
     if (-not $script:downloadQueue) { $script:downloadQueue = New-Object System.Collections.ArrayList }
+    $item = Initialize-QueueItemShape -Item $item
     [void]$script:downloadQueue.Add($item)
     Add-HistoryUrl -Url $script:ultimaURL
     Save-DownloadQueue
@@ -2257,6 +2258,7 @@ function Start-QueuedDownload {
     }
 
     try {
+        $Item = Initialize-QueueItemShape -Item $Item
         $targetPath = New-QueueTargetPath -Item $Item
         $Item.TargetPath = $targetPath
         $isAudioMp3 = Test-AudioMp3QueueItem -Item $Item
