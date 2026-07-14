@@ -28,6 +28,9 @@ function Assert-FileExists {
 
 function Get-ReleaseNotesText {
     if (-not [string]::IsNullOrWhiteSpace($NotesFile)) {
+        if (-not (Test-Path -LiteralPath $NotesFile -PathType Leaf)) {
+            throw "No se encontro el archivo de notas: $NotesFile"
+        }
         $resolvedNotesFile = Resolve-Path -LiteralPath $NotesFile
         return (Get-Content -LiteralPath $resolvedNotesFile.Path -Raw)
     }
@@ -53,6 +56,11 @@ function Format-CommandArgument {
 
 Push-Location $PSScriptRoot
 try {
+    $releaseNotes = Get-ReleaseNotesText
+    if ([string]::IsNullOrWhiteSpace($releaseNotes)) {
+        $releaseNotes = "Sin notas."
+    }
+
     if (-not $SkipBuild) {
         Write-Host ("Creando build {0}..." -f $Version) -ForegroundColor Cyan
         & (Resolve-ProjectPath "build.ps1") -Version $Version
@@ -70,11 +78,6 @@ try {
 
     if ([string]::IsNullOrWhiteSpace($Title)) {
         $Title = "YTDLL $tag"
-    }
-
-    $releaseNotes = Get-ReleaseNotesText
-    if ([string]::IsNullOrWhiteSpace($releaseNotes)) {
-        $releaseNotes = "Sin notas."
     }
 
     $assets = @(

@@ -136,6 +136,14 @@ cd C:\Users\water\Documents\githubProyects\YTDLL
 .\Publish-Release.ps1 -NotesFile .\release-notes.md
 ```
 
+Si ya creaste el build manualmente con `build.ps1`, publica ese paquete sin
+volver a generar versión usando `-SkipBuild`:
+
+```powershell
+cd C:\Users\water\Documents\githubProyects\YTDLL
+.\Publish-Release.ps1 -SkipBuild -Notes "Notas del release"
+```
+
 🎮 Uso / Usage
 Interfaz Gráfica
 
