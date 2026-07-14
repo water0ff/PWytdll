@@ -1545,7 +1545,7 @@ function Get-QueueBool {
 
 function Ensure-QueueProperty {
     param($Item, [string]$Name, $DefaultValue)
-    if (-not $Item.PSObject.Properties[$Name]) {
+    if (@($Item.PSObject.Properties.Match($Name)).Count -eq 0) {
         $Item | Add-Member -MemberType NoteProperty -Name $Name -Value $DefaultValue
     }
 }
