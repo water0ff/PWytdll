@@ -254,10 +254,22 @@ $ColorSubText     = "#86868B"
                 </Button>
 
                 <!-- Formats -->
-                <Label Content="Formato de VIDEO"/>
+                <Grid Margin="0,0,0,12">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="150"/>
+                    </Grid.ColumnDefinitions>
+                    <Label Content="Formato de descarga" Padding="0" VerticalAlignment="Center"/>
+                    <ComboBox Name="cmbDownloadMode" Grid.Column="1" Height="30">
+                        <ComboBoxItem Content="Video"/>
+                        <ComboBoxItem Content="Audio MP3"/>
+                    </ComboBox>
+                </Grid>
+
+                <Label Name="lblVideoFmt" Content="Formato de VIDEO"/>
                 <ComboBox Name="cmbVideoFmt" Margin="0,0,0,15"/>
 
-                <Label Content="Formato de AUDIO"/>
+                <Label Name="lblAudioFmt" Content="Formato de AUDIO"/>
                 <ComboBox Name="cmbAudioFmt" Margin="0,0,0,25"/>
 
                 <!-- Download Button -->
@@ -429,6 +441,9 @@ $btnUrlHistory = $formPrincipal.FindName("btnUrlHistory")
 $ctxUrlHistory = $formPrincipal.FindName("ctxUrlHistory")
 $txtDestino = $formPrincipal.FindName("txtDestino")
 $btnPickDestino = $formPrincipal.FindName("btnPickDestino")
+$cmbDownloadMode = $formPrincipal.FindName("cmbDownloadMode")
+$lblVideoFmt = $formPrincipal.FindName("lblVideoFmt")
+$lblAudioFmt = $formPrincipal.FindName("lblAudioFmt")
 $cmbVideoFmt = $formPrincipal.FindName("cmbVideoFmt")
 $cmbAudioFmt = $formPrincipal.FindName("cmbAudioFmt")
 $btnDescargar = $formPrincipal.FindName("btnDescargar")
@@ -471,6 +486,55 @@ function Set-CookiesActive {
     Set-IniValue -Section "cookies" -Key "Path" -Value $Path
     Set-IniValue -Section "cookies" -Key "Label" -Value $Label
     Write-Host "[COOKIES] cookiesPath establecido y guardado en ini: $Path" -ForegroundColor Green
+}
+
+function Get-DownloadModeFromCombo {
+    if (-not $cmbDownloadMode -or -not $cmbDownloadMode.SelectedItem) {
+        if ($script:downloadMode -eq "audio-mp3") { return "audio-mp3" }
+        return "video"
+    }
+    $raw = $cmbDownloadMode.SelectedItem
+    if ($raw -is [System.Windows.Controls.ComboBoxItem]) { $raw = $raw.Content }
+    if ([string]$raw -eq "Audio MP3") { return "audio-mp3" }
+    return "video"
+}
+
+function Update-DownloadModeUi {
+    param([switch]$Persist)
+    $mode = Get-DownloadModeFromCombo
+    if ($mode -ne "audio-mp3") { $mode = "video" }
+    $script:downloadMode = $mode
+    if ($Persist) {
+        Set-IniValue -Section "download" -Key "Mode" -Value $script:downloadMode
+    }
+
+    $audioOnly = ($script:downloadMode -eq "audio-mp3")
+    if ($cmbVideoFmt) {
+        $cmbVideoFmt.IsEnabled = -not $audioOnly
+        $cmbVideoFmt.Opacity = if ($audioOnly) { 0.45 } else { 1.0 }
+        $cmbVideoFmt.ToolTip = if ($audioOnly) { "No se usa al descargar solo audio MP3." } else { $null }
+    }
+    if ($lblVideoFmt) {
+        $lblVideoFmt.IsEnabled = -not $audioOnly
+        $lblVideoFmt.Content = if ($audioOnly) { "Formato de VIDEO (no usado)" } else { "Formato de VIDEO" }
+    }
+    if ($lblAudioFmt) {
+        $lblAudioFmt.Content = if ($audioOnly) { "Formato de AUDIO MP3" } else { "Formato de AUDIO" }
+    }
+    if (Get-Command Set-DownloadButtonVisual -ErrorAction SilentlyContinue) {
+        Set-DownloadButtonVisual
+    }
+}
+
+function Initialize-DownloadModeUi {
+    if ($script:downloadMode -ne "audio-mp3") { $script:downloadMode = "video" }
+    if ($cmbDownloadMode) {
+        $cmbDownloadMode.SelectedIndex = if ($script:downloadMode -eq "audio-mp3") { 1 } else { 0 }
+        $cmbDownloadMode.Add_SelectionChanged({
+            Update-DownloadModeUi -Persist
+        })
+    }
+    Update-DownloadModeUi
 }
 
 function Update-AiButtonVisual {
@@ -1159,7 +1223,12 @@ function Set-DownloadButtonVisual {
     } else {
         $btnDescargar.Content = "Agregar a cola"
         $btnDescargar.Background = (New-Object System.Windows.Media.SolidColorBrush([System.Windows.Media.Color]::FromRgb(52, 199, 89)))
-        $btnDescargar.ToolTip = "Consulta válida: agregar esta descarga a la cola"
+        if ($script:downloadMode -eq "audio-mp3") {
+            $btnDescargar.Content = "Agregar MP3 a cola"
+            $btnDescargar.ToolTip = "Consulta válida: agregar audio MP3 a la cola"
+        } else {
+            $btnDescargar.ToolTip = "Consulta válida: agregar esta descarga a la cola"
+        }
     }
 }
 

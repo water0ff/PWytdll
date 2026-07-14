@@ -134,6 +134,8 @@ $script:lastFormats       = $null
 $script:lastExtractor     = $null
 $script:isPlaylist        = $false
 $script:originalUrl       = $null
+$script:downloadMode      = Get-IniValue -Section "download" -Key "Mode" -DefaultValue "video"
+if ($script:downloadMode -ne "audio-mp3") { $script:downloadMode = "video" }
 
 # ═══════════════════════════════════════════════════════════════════════════════
 #  VERIFICAR E INSTALAR DEPENDENCIAS (antes de mostrar la GUI)
@@ -208,6 +210,7 @@ $btnInfo.Add_Click({ Show-AppInfo })
 
 # ── Cola de descargas ─────────────────────────────────────────────────────────
 Initialize-DownloadQueueUi
+Initialize-DownloadModeUi
 
 # ── Salir ─────────────────────────────────────────────────────────────────────
 $btnExit.Add_Click({

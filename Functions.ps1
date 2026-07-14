@@ -1550,6 +1550,17 @@ function Ensure-QueueProperty {
     }
 }
 
+function Normalize-DownloadMode {
+    param([string]$Mode)
+    if ($Mode -eq "audio-mp3") { return "audio-mp3" }
+    return "video"
+}
+
+function Test-AudioMp3QueueItem {
+    param($Item)
+    return ((Normalize-DownloadMode -Mode ([string]$Item.DownloadMode)) -eq "audio-mp3")
+}
+
 function Initialize-QueueItemShape {
     param($Item)
     Ensure-QueueProperty -Item $Item -Name "Id" -DefaultValue ([guid]::NewGuid().ToString())
@@ -1559,6 +1570,8 @@ function Initialize-QueueItemShape {
     Ensure-QueueProperty -Item $Item -Name "Destination" -DefaultValue $script:ultimaRutaDescarga
     Ensure-QueueProperty -Item $Item -Name "FormatSelector" -DefaultValue "bestvideo+bestaudio/best"
     Ensure-QueueProperty -Item $Item -Name "MergeExt" -DefaultValue "mp4"
+    Ensure-QueueProperty -Item $Item -Name "DownloadMode" -DefaultValue "video"
+    Ensure-QueueProperty -Item $Item -Name "AudioOutputFormat" -DefaultValue ""
     Ensure-QueueProperty -Item $Item -Name "VideoFormatId" -DefaultValue ""
     Ensure-QueueProperty -Item $Item -Name "AudioFormatId" -DefaultValue ""
     Ensure-QueueProperty -Item $Item -Name "VideoFormatLabel" -DefaultValue ""
@@ -1593,6 +1606,13 @@ function Initialize-QueueItemShape {
     Ensure-QueueProperty -Item $Item -Name "StderrStream" -DefaultValue $null
     Ensure-QueueProperty -Item $Item -Name "LastOutFragment" -DefaultValue ""
     Ensure-QueueProperty -Item $Item -Name "LastErrFragment" -DefaultValue ""
+    $Item.DownloadMode = Normalize-DownloadMode -Mode ([string]$Item.DownloadMode)
+    if ($Item.DownloadMode -eq "audio-mp3") {
+        $Item.AudioOutputFormat = "mp3"
+        $Item.MergeExt = ""
+    } elseif ([string]::IsNullOrWhiteSpace($Item.MergeExt)) {
+        $Item.MergeExt = "mp4"
+    }
     if ($Item.Status -in @("Running","Canceling")) {
         $Item.Status = "Waiting"
         $Item.Phase = "En espera"
@@ -1643,6 +1663,8 @@ function Save-DownloadQueue {
                 Destination      = $item.Destination
                 FormatSelector   = $item.FormatSelector
                 MergeExt         = $item.MergeExt
+                DownloadMode     = Normalize-DownloadMode -Mode ([string]$item.DownloadMode)
+                AudioOutputFormat = if ((Normalize-DownloadMode -Mode ([string]$item.DownloadMode)) -eq "audio-mp3") { "mp3" } else { "" }
                 VideoFormatId    = $item.VideoFormatId
                 AudioFormatId    = $item.AudioFormatId
                 VideoFormatLabel = $item.VideoFormatLabel
@@ -1720,8 +1742,27 @@ function Get-QueueItemById {
 }
 
 function Get-QueueFormatSelection {
-    $videoSel = Get-SelectedFormatId -Combo $cmbVideoFmt
     $audioSel = Get-SelectedFormatId -Combo $cmbAudioFmt
+    $mode = Normalize-DownloadMode -Mode ([string]$script:downloadMode)
+    if ($mode -eq "audio-mp3") {
+        $size = 0
+        if ($audioSel -and $script:formatsIndex.ContainsKey($audioSel) -and $script:formatsIndex[$audioSel].Filesize) {
+            $size = [double]$script:formatsIndex[$audioSel].Filesize
+        }
+        return [pscustomobject]@{
+            Selector          = if ($audioSel) { $audioSel } else { "bestaudio/best" }
+            MergeExt          = ""
+            DownloadMode      = "audio-mp3"
+            AudioOutputFormat = "mp3"
+            VideoId           = ""
+            AudioId           = if ($audioSel) { $audioSel } else { "" }
+            VideoLabel        = ""
+            AudioLabel        = if ($cmbAudioFmt -and $cmbAudioFmt.SelectedItem) { [string]$cmbAudioFmt.SelectedItem } else { "Auto" }
+            SizeText          = if ($size -gt 0) { Human-Size $size } else { "" }
+        }
+    }
+
+    $videoSel = Get-SelectedFormatId -Combo $cmbVideoFmt
     $hayFormatosAudio = ($script:formatsAudio -and $script:formatsAudio.Count -gt 0)
     $mergeExt = $null
 
@@ -1752,13 +1793,15 @@ function Get-QueueFormatSelection {
     }
 
     return [pscustomobject]@{
-        Selector   = $selector
-        MergeExt   = $mergeExt
-        VideoId    = if ($videoSel) { $videoSel } else { "" }
-        AudioId    = if ($audioSel) { $audioSel } else { "" }
-        VideoLabel = if ($cmbVideoFmt -and $cmbVideoFmt.SelectedItem) { [string]$cmbVideoFmt.SelectedItem } else { "" }
-        AudioLabel = if ($cmbAudioFmt -and $cmbAudioFmt.SelectedItem) { [string]$cmbAudioFmt.SelectedItem } else { "" }
-        SizeText   = if ($size -gt 0) { Human-Size $size } else { "" }
+        Selector          = $selector
+        MergeExt          = $mergeExt
+        DownloadMode      = "video"
+        AudioOutputFormat = ""
+        VideoId           = if ($videoSel) { $videoSel } else { "" }
+        AudioId           = if ($audioSel) { $audioSel } else { "" }
+        VideoLabel        = if ($cmbVideoFmt -and $cmbVideoFmt.SelectedItem) { [string]$cmbVideoFmt.SelectedItem } else { "" }
+        AudioLabel        = if ($cmbAudioFmt -and $cmbAudioFmt.SelectedItem) { [string]$cmbAudioFmt.SelectedItem } else { "" }
+        SizeText          = if ($size -gt 0) { Human-Size $size } else { "" }
     }
 }
 
@@ -1805,18 +1848,20 @@ function Add-UrlToDownloadQueue {
 
     $fmt = if ($UseGenericFormat) {
         [pscustomobject]@{
-            Selector   = "bestvideo*+bestaudio/best"
-            MergeExt   = "mp4"
-            VideoId    = ""
-            AudioId    = ""
-            VideoLabel = "Auto"
-            AudioLabel = "Auto"
-            SizeText   = ""
+            Selector          = "bestvideo*+bestaudio/best"
+            MergeExt          = "mp4"
+            DownloadMode      = "video"
+            AudioOutputFormat = ""
+            VideoId           = ""
+            AudioId           = ""
+            VideoLabel        = "Auto"
+            AudioLabel        = "Auto"
+            SizeText          = ""
         }
     } else {
         Get-QueueFormatSelection
     }
-    Write-DebugLog ("[QUEUE][DEBUG] Add-UrlToDownloadQueue: url={0} selector={1} merge={2} video={3} audio={4} generic={5}" -f $normalizedUrl, $fmt.Selector, $fmt.MergeExt, $fmt.VideoId, $fmt.AudioId, [bool]$UseGenericFormat) -ForegroundColor Cyan
+    Write-DebugLog ("[QUEUE][DEBUG] Add-UrlToDownloadQueue: url={0} mode={1} selector={2} merge={3} audioOut={4} video={5} audio={6} generic={7}" -f $normalizedUrl, $fmt.DownloadMode, $fmt.Selector, $fmt.MergeExt, $fmt.AudioOutputFormat, $fmt.VideoId, $fmt.AudioId, [bool]$UseGenericFormat) -ForegroundColor Cyan
     $item = [pscustomobject]@{
         Id               = [guid]::NewGuid().ToString()
         Url              = $normalizedUrl
@@ -1825,6 +1870,8 @@ function Add-UrlToDownloadQueue {
         Destination      = $dest
         FormatSelector   = $fmt.Selector
         MergeExt         = $fmt.MergeExt
+        DownloadMode     = $fmt.DownloadMode
+        AudioOutputFormat = $fmt.AudioOutputFormat
         VideoFormatId    = $fmt.VideoId
         AudioFormatId    = $fmt.AudioId
         VideoFormatLabel = $fmt.VideoLabel
@@ -1926,7 +1973,7 @@ function Add-CurrentDownloadToQueue {
     }
 
     $fmt = Get-QueueFormatSelection
-    Write-DebugLog ("[QUEUE][DEBUG] Add-CurrentDownloadToQueue: url={0} selector={1} merge={2} video={3} audio={4} videoLabel='{5}' audioLabel='{6}' size={7}" -f $script:ultimaURL, $fmt.Selector, $fmt.MergeExt, $fmt.VideoId, $fmt.AudioId, $fmt.VideoLabel, $fmt.AudioLabel, $fmt.SizeText) -ForegroundColor Cyan
+    Write-DebugLog ("[QUEUE][DEBUG] Add-CurrentDownloadToQueue: url={0} mode={1} selector={2} merge={3} audioOut={4} video={5} audio={6} videoLabel='{7}' audioLabel='{8}' size={9}" -f $script:ultimaURL, $fmt.DownloadMode, $fmt.Selector, $fmt.MergeExt, $fmt.AudioOutputFormat, $fmt.VideoId, $fmt.AudioId, $fmt.VideoLabel, $fmt.AudioLabel, $fmt.SizeText) -ForegroundColor Cyan
     $noPlaylist = $false
     foreach ($u in @($script:originalUrl, $script:ultimaURL)) {
         if (-not [string]::IsNullOrWhiteSpace($u) -and (Test-YouTubePlaylist -Url $u)) {
@@ -1943,6 +1990,8 @@ function Add-CurrentDownloadToQueue {
         Destination      = $dest
         FormatSelector   = $fmt.Selector
         MergeExt         = $fmt.MergeExt
+        DownloadMode     = $fmt.DownloadMode
+        AudioOutputFormat = $fmt.AudioOutputFormat
         VideoFormatId    = $fmt.VideoId
         AudioFormatId    = $fmt.AudioId
         VideoFormatLabel = $fmt.VideoLabel
@@ -1997,7 +2046,13 @@ function New-QueueTargetPath {
     if (-not (Test-Path -LiteralPath $dest)) { New-Item -ItemType Directory -Path $dest -Force | Out-Null }
 
     $baseTitle = Get-SafeFileName -Name $Item.Title
-    $finalExt = if ([string]::IsNullOrWhiteSpace($Item.MergeExt)) { "mp4" } else { $Item.MergeExt }
+    $finalExt = if (Test-AudioMp3QueueItem -Item $Item) {
+        if ([string]::IsNullOrWhiteSpace($Item.AudioOutputFormat)) { "mp3" } else { [string]$Item.AudioOutputFormat }
+    } elseif ([string]::IsNullOrWhiteSpace($Item.MergeExt)) {
+        "mp4"
+    } else {
+        $Item.MergeExt
+    }
     $idx = 1
     do {
         $suffix = if ($idx -eq 1) { "" } else { "_$idx" }
@@ -2131,14 +2186,25 @@ function Start-QueuedDownload {
     try {
         $targetPath = New-QueueTargetPath -Item $Item
         $Item.TargetPath = $targetPath
+        $isAudioMp3 = Test-AudioMp3QueueItem -Item $Item
+        $audioFormat = if ([string]::IsNullOrWhiteSpace($Item.AudioOutputFormat)) { "mp3" } else { [string]$Item.AudioOutputFormat }
+        $outputTemplate = $targetPath
+        if ($isAudioMp3) {
+            $outDir = Split-Path -Parent $targetPath
+            $outStem = [System.IO.Path]::GetFileNameWithoutExtension($targetPath)
+            $outputTemplate = Join-Path $outDir ("{0}.%(ext)s" -f $outStem)
+        }
+
         $dlpArgs = @("--encoding","utf-8","--progress","--no-color","--newline","-f",$Item.FormatSelector)
         if ($global:DebugEnabled) { $dlpArgs += "--verbose" }
         if ($Item.NoPlaylist) { $dlpArgs += "--no-playlist" }
-        if (-not [string]::IsNullOrWhiteSpace($Item.MergeExt)) {
+        if ($isAudioMp3) {
+            $dlpArgs += @("--extract-audio","--audio-format",$audioFormat,"--audio-quality","0")
+        } elseif (-not [string]::IsNullOrWhiteSpace($Item.MergeExt)) {
             $dlpArgs += @("--merge-output-format", $Item.MergeExt)
         }
         $dlpArgs += @(
-            "-o", $targetPath,
+            "-o", $outputTemplate,
             "--progress-template", "download:%(progress._percent_str)s ETA:%(progress._eta_str)s SPEED:%(progress._speed_str)s"
         )
         $dlpArgs += Get-JsRuntimeArgs
@@ -2173,7 +2239,8 @@ function Start-QueuedDownload {
         Write-QueueDebugLog -Item $Item -Text ("URL: {0}" -f $Item.Url)
         Write-QueueDebugLog -Item $Item -Text ("Destination: {0}" -f $Item.Destination)
         Write-QueueDebugLog -Item $Item -Text ("Target: {0}" -f $Item.TargetPath)
-        Write-QueueDebugLog -Item $Item -Text ("Selector: {0} | MergeExt: {1}" -f $Item.FormatSelector, $Item.MergeExt)
+        Write-QueueDebugLog -Item $Item -Text ("OutputTemplate: {0}" -f $outputTemplate)
+        Write-QueueDebugLog -Item $Item -Text ("Mode: {0} | Selector: {1} | MergeExt: {2} | AudioOutputFormat: {3}" -f $Item.DownloadMode, $Item.FormatSelector, $Item.MergeExt, $Item.AudioOutputFormat)
         Write-QueueDebugLog -Item $Item -Text ("VideoId: {0} | AudioId: {1}" -f $Item.VideoFormatId, $Item.AudioFormatId)
         Write-QueueDebugLog -Item $Item -Text ("VideoLabel: {0}" -f $Item.VideoFormatLabel)
         Write-QueueDebugLog -Item $Item -Text ("AudioLabel: {0}" -f $Item.AudioFormatLabel)
@@ -2241,7 +2308,11 @@ function Update-QueueProgressFromLine {
     }
     if ($Text -match '^\[Merger\]\s+Merging formats') { $Item.Phase = "Fusionando"; return }
     if ($Text -match '^Deleting original file') { $Item.Phase = "Borrando temporales"; return }
-    if ($Text -match '^\[(ExtractAudio|Fixup|EmbedSubtitle|ModifyChapters)\]') { $Item.Phase = "Post-procesando"; return }
+    if ($Text -match '^\[ExtractAudio\]') {
+        $Item.Phase = if (Test-AudioMp3QueueItem -Item $Item) { "Convirtiendo a MP3" } else { "Post-procesando" }
+        return
+    }
+    if ($Text -match '^\[(Fixup|EmbedSubtitle|ModifyChapters)\]') { $Item.Phase = "Post-procesando"; return }
 
     $m = [regex]::Match($Text, 'download:\s*(?<pct>\d+(?:\.\d+)?)%\s*(?:ETA:(?<eta>\S+))?\s*(?:SPEED:(?<spd>.+))?', 'IgnoreCase')
     if (-not $m.Success) { $m = [regex]::Match($Text, '(?<pct>\d+(?:\.\d+)?)%\s+of.*?at\s+(?<spd>\S+)\s+ETA\s+(?<eta>\S+)', 'IgnoreCase') }
@@ -2250,7 +2321,9 @@ function Update-QueueProgressFromLine {
         $Item.Percent = [int][math]::Min(100,[math]::Round([double]$m.Groups['pct'].Value))
         $Item.Eta = $m.Groups['eta'].Value
         $Item.Speed = ($m.Groups['spd'].Value).Trim()
-        if ([string]::IsNullOrWhiteSpace($Item.DownloadStage)) { $Item.DownloadStage = "Video" }
+        if ([string]::IsNullOrWhiteSpace($Item.DownloadStage)) {
+            $Item.DownloadStage = if (Test-AudioMp3QueueItem -Item $Item) { "Audio" } else { "Video" }
+        }
         $Item.Phase = "{0} {1}%" -f (Get-QueueDownloadPhaseLabel -Item $Item), $Item.Percent
     }
 }
@@ -2388,6 +2461,10 @@ function Complete-QueuedDownload {
 
 function Set-QueueDownloadStageFromDestination {
     param($Item, [string]$Text)
+    if (Test-AudioMp3QueueItem -Item $Item) {
+        $Item.DownloadStage = "Audio"
+        return
+    }
     $videoId = [regex]::Escape([string]$Item.VideoFormatId)
     $audioId = [regex]::Escape([string]$Item.AudioFormatId)
     if ($videoId -and $Text -match "\.f$videoId(\.|$)") {
@@ -2405,6 +2482,7 @@ function Set-QueueDownloadStageFromDestination {
 
 function Get-QueueDownloadPhaseLabel {
     param($Item)
+    if (Test-AudioMp3QueueItem -Item $Item) { return "Descargando audio" }
     if ($Item.DownloadStage -eq "Audio") { return "Descargando audio" }
     return "Descargando video"
 }
@@ -2541,9 +2619,14 @@ function New-QueueItemCard {
         if ($shortError.Length -gt 120) { $shortError = $shortError.Substring(0,120).Trim() + "..." }
         $status = [System.Security.SecurityElement]::Escape("Error: $shortError")
     }
-    $format = if ($Item.SizeText) { $Item.SizeText } else { $Item.FormatSelector }
-    if ($Item.VideoFormatId) { $format = ("{0}  Video {1}" -f $format, $Item.VideoFormatId).Trim() }
-    if ($Item.AudioFormatId) { $format = ("{0}  Audio {1}" -f $format, $Item.AudioFormatId).Trim() }
+    if (Test-AudioMp3QueueItem -Item $Item) {
+        $format = if ($Item.SizeText) { "{0}  Audio MP3" -f $Item.SizeText } else { "Audio MP3" }
+        if ($Item.AudioFormatId) { $format = ("{0}  Audio {1}" -f $format, $Item.AudioFormatId).Trim() }
+    } else {
+        $format = if ($Item.SizeText) { $Item.SizeText } else { $Item.FormatSelector }
+        if ($Item.VideoFormatId) { $format = ("{0}  Video {1}" -f $format, $Item.VideoFormatId).Trim() }
+        if ($Item.AudioFormatId) { $format = ("{0}  Audio {1}" -f $format, $Item.AudioFormatId).Trim() }
+    }
     $format = [System.Security.SecurityElement]::Escape($format)
     $pct = [int][math]::Max(0,[math]::Min(100,[int]$Item.Percent))
     $speed = if ($Item.Speed) { [System.Security.SecurityElement]::Escape([string]$Item.Speed) } else { "" }
