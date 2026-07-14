@@ -2758,6 +2758,7 @@ function New-QueueItemCard {
     $pct = [int][math]::Max(0,[math]::Min(100,[int]$Item.Percent))
     $speed = if ($Item.Speed) { [System.Security.SecurityElement]::Escape([string]$Item.Speed) } else { "" }
     $progressVis = if ($Item.Status -in @("Running","Completed")) { "Visible" } else { "Collapsed" }
+    $progressIndeterminate = if ($Item.Status -eq "Running" -and [string]$Item.Phase -match '^Convirtiendo a MP3') { "True" } else { "False" }
     $playVis = if ($Item.Status -in @("Waiting","Failed","Cancelled")) { "Visible" } else { "Collapsed" }
     $cancelVis = if ($Item.Status -in @("Running","Waiting","Failed","Cancelled")) { "Visible" } else { "Collapsed" }
     $folderVis = if ($Item.Status -eq "Completed") { "Visible" } else { "Collapsed" }
@@ -2806,8 +2807,9 @@ function New-QueueItemCard {
             <TextBlock Text="$status" FontSize="11" Foreground="$statusColor" TextWrapping="Wrap"/>
             <TextBlock Grid.Column="1" Text="$speed" FontSize="11" Foreground="#1D1D1F"/>
         </Grid>
-        <ProgressBar Grid.Row="2" Grid.ColumnSpan="2" Height="6" Margin="0,6,0,0"
-                     Minimum="0" Maximum="100" Value="$pct" Visibility="$progressVis"/>
+        <ProgressBar Name="pbProgress" Grid.Row="2" Grid.ColumnSpan="2" Height="6" Margin="0,6,0,0"
+                     Minimum="0" Maximum="100" Value="$pct" Visibility="$progressVis"
+                     IsIndeterminate="$progressIndeterminate"/>
     </Grid>
 </Border>
 "@
