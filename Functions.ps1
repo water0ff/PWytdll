@@ -61,6 +61,32 @@ function Write-DebugLog {
     if ($global:DebugEnabled) { Write-Host $Message -ForegroundColor $ForegroundColor }
 }
 
+function Get-DebugTextTail {
+    param(
+        [string]$Text,
+        [int]$MaxChars = 1200
+    )
+    if ([string]::IsNullOrEmpty($Text)) { return "" }
+    $clean = $Text.Trim()
+    if ($clean.Length -le $MaxChars) { return $clean }
+    return "... " + $clean.Substring($clean.Length - $MaxChars)
+}
+
+function Write-YtDlpResultDebug {
+    param(
+        [string]$Context,
+        $Result,
+        [Diagnostics.Stopwatch]$Stopwatch = $null
+    )
+    if (-not $global:DebugEnabled) { return }
+    $elapsed = if ($Stopwatch) { "{0:n1}s" -f $Stopwatch.Elapsed.TotalSeconds } else { "n/a" }
+    $outLen = if ($Result -and $null -ne $Result.StdOut) { ([string]$Result.StdOut).Length } else { 0 }
+    $errLen = if ($Result -and $null -ne $Result.StdErr) { ([string]$Result.StdErr).Length } else { 0 }
+    Write-DebugLog ("[DEBUG] {0}: ExitCode={1} Elapsed={2} StdOutLen={3} StdErrLen={4}" -f $Context, $Result.ExitCode, $elapsed, $outLen, $errLen) -ForegroundColor Yellow
+    if ($outLen -gt 0) { Write-DebugLog ("[DEBUG] {0} StdOutTail: {1}" -f $Context, (Get-DebugTextTail -Text $Result.StdOut)) -ForegroundColor DarkGray }
+    if ($errLen -gt 0) { Write-DebugLog ("[DEBUG] {0} StdErrTail: {1}" -f $Context, (Get-DebugTextTail -Text $Result.StdErr)) -ForegroundColor Red }
+}
+
 function ConvertTo-ProtectedText {
     param([string]$PlainText)
     if ([string]::IsNullOrWhiteSpace($PlainText)) { return "" }
@@ -592,6 +618,7 @@ function Invoke-YtDlpJsonQuery {
     $args += Get-ActiveCookiesArgs
     $args += Get-YouTubeExtractorArgs -Url $Url
     $args += $Url
+    Write-DebugLog ("[DEBUG] JSON query args: {0}" -f (Join-YtdllArgumentList -ArgumentArray $args)) -ForegroundColor DarkGray
     $res = Invoke-CaptureResponsive -ExePath $ExePath -Args $args -WorkingText $WorkingText -TimeoutSec $TimeoutSec
     if (Test-YouTubeMissingPotRetry -Url $Url -StdOut $res.StdOut -StdErr $res.StdErr) {
         Write-DebugLog "[DEBUG] Reintentando consulta JSON con youtube:formats=missing_pot" -ForegroundColor Yellow
@@ -600,6 +627,7 @@ function Invoke-YtDlpJsonQuery {
         $retryArgs += Get-ActiveCookiesArgs
         $retryArgs += Get-YouTubeExtractorArgs -Url $Url -IncludeMissingPot
         $retryArgs += $Url
+        Write-DebugLog ("[DEBUG] JSON retry args: {0}" -f (Join-YtdllArgumentList -ArgumentArray $retryArgs)) -ForegroundColor DarkGray
         return Invoke-CaptureResponsive -ExePath $ExePath -Args $retryArgs -WorkingText ($WorkingText + " (missing_pot)") -TimeoutSec $TimeoutSec
     }
     return $res
@@ -734,15 +762,25 @@ function New-FormatDisplay {
 
 function Classify-Format {
     param($fmt)
-    $v = $fmt.vcodec; $a = $fmt.acodec
+    $v = [string]$fmt.vcodec
+    $a = [string]$fmt.acodec
+    $videoExt = [string]$fmt.video_ext
+    $audioExt = [string]$fmt.audio_ext
+    $hasVideo = (-not [string]::IsNullOrWhiteSpace($v) -and $v -ne "none") -or
+                (-not [string]::IsNullOrWhiteSpace($videoExt) -and $videoExt -ne "none") -or
+                ($fmt.width -or $fmt.height)
+    $hasAudio = (-not [string]::IsNullOrWhiteSpace($a) -and $a -ne "none") -or
+                (-not [string]::IsNullOrWhiteSpace($audioExt) -and $audioExt -ne "none")
+    $displayVCodec = if (-not [string]::IsNullOrWhiteSpace($v)) { $v } elseif ($hasVideo) { "video" } else { "none" }
+    $displayACodec = if (-not [string]::IsNullOrWhiteSpace($a)) { $a } elseif ($hasAudio) { "audio" } else { "none" }
     [pscustomobject]@{
-        VideoOnly   = [bool]($v -and $v -ne "none" -and ($a -eq $null -or $a -eq "" -or $a -eq "none"))
-        AudioOnly   = [bool]($a -and $a -ne "none" -and ($v -eq $null -or $v -eq "" -or $v -eq "none"))
-        Progressive = [bool]($v -and $v -ne "none" -and $a -and $a -ne "none")
+        VideoOnly   = [bool]($hasVideo -and -not $hasAudio)
+        AudioOnly   = [bool]($hasAudio -and -not $hasVideo)
+        Progressive = [bool]($hasVideo -and $hasAudio)
         Ext         = $fmt.ext
         VRes        = if ($fmt.height)   { [int]$fmt.height }    else { 0 }
-        VCodec      = $fmt.vcodec
-        ACodec      = $fmt.acodec
+        VCodec      = $displayVCodec
+        ACodec      = $displayACodec
         ABr         = if ($fmt.abr)      { [double]$fmt.abr }    else { 0 }
         Tbr         = if ($fmt.tbr)      { [double]$fmt.tbr }    else { 0 }
         Filesize    = $fmt.filesize
@@ -856,12 +894,19 @@ function Invoke-Capture {
     Write-DebugLog "[DEBUG] Invoke-Capture: $ExePath $($psi.Arguments)" -ForegroundColor DarkGray
     $p = New-Object System.Diagnostics.Process
     $p.StartInfo = $psi
+    $sw = [Diagnostics.Stopwatch]::StartNew()
     [void]$p.Start()
     if (-not $p.WaitForExit($TimeoutSeconds * 1000)) {
         try { $p.Kill() } catch {}
-        return [pscustomobject]@{ ExitCode = -1; StdOut = ""; StdErr = "Timeout después de $TimeoutSeconds segundos" }
+        $sw.Stop()
+        $timeoutResult = [pscustomobject]@{ ExitCode = -1; StdOut = ""; StdErr = "Timeout después de $TimeoutSeconds segundos" }
+        Write-YtDlpResultDebug -Context "Invoke-Capture timeout" -Result $timeoutResult -Stopwatch $sw
+        return $timeoutResult
     }
-    return [pscustomobject]@{ ExitCode = $p.ExitCode; StdOut = $p.StandardOutput.ReadToEnd(); StdErr = $p.StandardError.ReadToEnd() }
+    $result = [pscustomobject]@{ ExitCode = $p.ExitCode; StdOut = $p.StandardOutput.ReadToEnd(); StdErr = $p.StandardError.ReadToEnd() }
+    $sw.Stop()
+    Write-YtDlpResultDebug -Context "Invoke-Capture final" -Result $result -Stopwatch $sw
+    return $result
 }
 
 function Invoke-CaptureResponsive {
@@ -880,6 +925,7 @@ function Invoke-CaptureResponsive {
     $errFile = Join-Path $tmpDir ("proc_stderr_{0}.log" -f ([guid]::NewGuid()))
     $argLine = ($Args | ForEach-Object { if ($_ -match '\s') { '"{0}"' -f $_ } else { $_ } }) -join ' '
     Write-DebugLog "[DEBUG] Invoke-CaptureResponsive: $ExePath $argLine" -ForegroundColor DarkGray
+    Write-DebugLog "[DEBUG] Invoke-CaptureResponsive logs: stdout=$outFile stderr=$errFile timeout=${TimeoutSec}s" -ForegroundColor DarkGray
     $proc = Start-Process -FilePath $ExePath -ArgumentList $argLine `
                  -NoNewWindow -PassThru `
                  -RedirectStandardOutput $outFile `
@@ -893,7 +939,13 @@ function Invoke-CaptureResponsive {
             if ($lblEstadoConsulta) { $lblEstadoConsulta.Text = $WorkingText + ("." * $dot) }
             if ($sw.Elapsed.TotalSeconds -ge $TimeoutSec) {
                 try { $proc.Kill() } catch {}
-                return [pscustomobject]@{ ExitCode = -1; StdOut = ""; StdErr = "Tiempo de espera agotado ($TimeoutSec s) en '$WorkingText'." }
+                $stdout = ""; $stderr = ""
+                try { if (Test-Path $outFile) { $stdout = [IO.File]::ReadAllText($outFile) } } catch {}
+                try { if (Test-Path $errFile) { $stderr = [IO.File]::ReadAllText($errFile) } } catch {}
+                $timeoutResult = [pscustomobject]@{ ExitCode = -1; StdOut = $stdout; StdErr = "Tiempo de espera agotado ($TimeoutSec s) en '$WorkingText'.`n$stderr" }
+                Write-YtDlpResultDebug -Context "Invoke-CaptureResponsive timeout '$WorkingText'" -Result $timeoutResult -Stopwatch $sw
+                try { Remove-Item -Path $outFile,$errFile -ErrorAction SilentlyContinue } catch {}
+                return $timeoutResult
             }
             Start-Sleep -Milliseconds 120
         }
@@ -905,7 +957,9 @@ function Invoke-CaptureResponsive {
     try { if (Test-Path $outFile) { $stdout = [IO.File]::ReadAllText($outFile) } } catch {}
     try { if (Test-Path $errFile) { $stderr = [IO.File]::ReadAllText($errFile) } } catch {}
     try { Remove-Item -Path $outFile,$errFile -ErrorAction SilentlyContinue } catch {}
-    return [pscustomobject]@{ ExitCode = $proc.ExitCode; StdOut = $stdout; StdErr = $stderr }
+    $result = [pscustomobject]@{ ExitCode = $proc.ExitCode; StdOut = $stdout; StdErr = $stderr }
+    Write-YtDlpResultDebug -Context "Invoke-CaptureResponsive final '$WorkingText'" -Result $result -Stopwatch $sw
+    return $result
 }
 
 function Invoke-YtDlpQuery {
@@ -1168,13 +1222,20 @@ function Fetch-ThumbnailFile {
     }
     Get-ChildItem -Path (Get-TempThumbPattern) -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
     $outTmpl = Join-Path $script:ThumbnailsDir "ytdll_thumb_%(id)s.%(ext)s"
-    $args = @("--skip-download","--quiet","--no-warnings","--write-thumbnail","--convert-thumbnails","jpg","-o",$outTmpl,"--no-playlist")
-    $args += Get-JsRuntimeArgs
-    $args += Get-ActiveCookiesArgs
-    if ($Url -match 'youtube\.com.*list=') { $args += "--playlist-items","1" }
+    $baseArgs = @("--skip-download","--quiet","--no-warnings","--write-thumbnail","-o",$outTmpl,"--no-playlist")
+    $baseArgs += Get-JsRuntimeArgs
+    $baseArgs += Get-ActiveCookiesArgs
+    if ($Url -match 'youtube\.com.*list=') { $baseArgs += "--playlist-items","1" }
 
-    $args += $Url
+    $args = @($baseArgs + $Url)
     $res = Invoke-Capture -ExePath $yt.Source -Args $args
+    $thumb = Get-ChildItem -Path (Join-Path $script:ThumbnailsDir "ytdll_thumb_*") -ErrorAction SilentlyContinue |
+             Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    if ($thumb) { return $thumb.FullName }
+
+    Write-DebugLog "[THUMB][DEBUG] Sin miniatura tras intento directo; reintentando con --convert-thumbnails jpg" -ForegroundColor Yellow
+    $convertArgs = @($baseArgs[0..3] + @("--convert-thumbnails","jpg") + $baseArgs[4..($baseArgs.Count - 1)] + $Url)
+    $res = Invoke-Capture -ExePath $yt.Source -Args $convertArgs
     $thumb = Get-ChildItem -Path (Join-Path $script:ThumbnailsDir "ytdll_thumb_*") -ErrorAction SilentlyContinue |
              Sort-Object LastWriteTime -Descending | Select-Object -First 1
     if ($thumb) { return $thumb.FullName }
@@ -1268,30 +1329,39 @@ function Fetch-Formats {
     }
     $lblEstadoConsulta.Text     = "Obteniendo lista de formatos..."
     $lblEstadoConsulta.Foreground = [System.Windows.Media.Brushes]::DarkBlue
+    Write-DebugLog ("[FORMATOS][DEBUG] Iniciando Fetch-Formats para URL: {0}" -f $Url) -ForegroundColor Cyan
     $obj = Invoke-YtDlpJsonQuery -ExePath $yt.Source -Url $Url -WorkingText "Obteniendo formatos" -TimeoutSec 60
+    Write-YtDlpResultDebug -Context "Fetch-Formats intento 1" -Result $obj
     if (($obj.ExitCode -ne 0 -and $obj.ExitCode -ne $null) -or [string]::IsNullOrWhiteSpace($obj.StdOut)) {
         $lblEstadoConsulta.Text = "Reintentando obtención de formatos..."
+        Write-DebugLog "[FORMATOS][DEBUG] Intento 1 sin JSON util; iniciando reintento" -ForegroundColor Yellow
         $obj = Invoke-YtDlpJsonQuery -ExePath $yt.Source -Url $Url -WorkingText "Reintentando formatos" -TimeoutSec 60
+        Write-YtDlpResultDebug -Context "Fetch-Formats intento 2" -Result $obj
         if (($obj.ExitCode -ne 0 -and $obj.ExitCode -ne $null) -or [string]::IsNullOrWhiteSpace($obj.StdOut)) {
             $lblEstadoConsulta.Text     = "ERROR: No se pudieron obtener formatos"
             $lblEstadoConsulta.Foreground = [System.Windows.Media.Brushes]::Red
+            Write-DebugLog "[FORMATOS][DEBUG] Abortando: ambos intentos fallaron o devolvieron StdOut vacío" -ForegroundColor Red
             return $false
         }
     }
     try { $json = $obj.StdOut | ConvertFrom-Json } catch {
         $lblEstadoConsulta.Text     = "ERROR: Formato JSON inválido"
         $lblEstadoConsulta.Foreground = [System.Windows.Media.Brushes]::Red
+        Write-DebugLog ("[FORMATOS][DEBUG] JSON inválido: {0}" -f $_.Exception.Message) -ForegroundColor Red
         return $false
     }
     $script:lastThumbUrl = Get-BestThumbnailUrl -Json $json
     if (-not $json.formats -or $json.formats.Count -eq 0) {
         $lblEstadoConsulta.Text     = "ADVERTENCIA: No se encontraron formatos"
         $lblEstadoConsulta.Foreground = [System.Windows.Media.Brushes]::DarkOrange
+        Write-DebugLog ("[FORMATOS][DEBUG] JSON válido pero sin formats. extractor={0} title={1}" -f $json.extractor, $json.title) -ForegroundColor Yellow
         return $false
     }
     $script:lastFormats = $json.formats
+    Write-DebugLog ("[FORMATOS][DEBUG] JSON OK: extractor={0} id={1} title={2} formats={3} thumbnails={4}" -f $json.extractor, $json.id, $json.title, @($json.formats).Count, @($json.thumbnails).Count) -ForegroundColor Cyan
     $lblEstadoConsulta.Text = "Clasificando y ordenando formatos..."
     $videoFormats = @(); $audioFormats = @()
+    $progressiveCount = 0; $videoOnlyCount = 0; $audioOnlyCount = 0; $unknownCount = 0
     foreach ($f in $json.formats) {
         $klass = Classify-Format $f
         $script:formatsIndex[$klass.Id] = $klass
@@ -1299,6 +1369,7 @@ function Fetch-Formats {
         $sz    = Human-Size $klass.Filesize
         $tbrStr = if ($klass.Tbr) { "{0}k" -f [math]::Round($klass.Tbr) }     else { "" }
         if ($klass.Progressive -or $klass.VideoOnly) {
+            if ($klass.Progressive) { $progressiveCount++ } else { $videoOnlyCount++ }
             $label = if ($klass.Progressive) {
                 "{0} {1} {2} {3}/{4} {5} (progresivo)" -f $res,$sz,$klass.Ext,$klass.VCodec,$klass.ACodec,$tbrStr
             } else {
@@ -1306,14 +1377,23 @@ function Fetch-Formats {
             }
             $videoFormats += [pscustomobject]@{ Display=(New-FormatDisplay -Id $klass.Id -Label $label); Height=$klass.VRes; Tbr=$klass.Tbr; IsProgressive=$klass.Progressive; Filesize=$klass.Filesize; Id=$klass.Id }
         } elseif ($klass.AudioOnly) {
+            $audioOnlyCount++
             $label = "{0} {1} {2} ~{3}k (audio-only)" -f $sz,$klass.Ext,$klass.ACodec,[math]::Round($klass.ABr)
             $audioFormats += [pscustomobject]@{ Display=(New-FormatDisplay -Id $klass.Id -Label $label); ABr=$klass.ABr; Filesize=$klass.Filesize; Id=$klass.Id }
+        } else {
+            $unknownCount++
+            Write-DebugLog ("[FORMATOS][DEBUG] Formato no clasificado: id={0} ext={1} vcodec={2} acodec={3} url={4}" -f $klass.Id, $klass.Ext, $klass.VCodec, $klass.ACodec, [bool]$f.url) -ForegroundColor DarkYellow
         }
     }
-    $script:formatsVideo     = ($videoFormats | Sort-Object @{Expression={($_.Height*100000)+$_.Tbr};Descending=$true}).Display
-    $script:formatsAudio     = ($audioFormats | Sort-Object @{Expression={$_.ABr};Descending=$true}).Display
+    $script:formatsVideo     = @(($videoFormats | Sort-Object @{Expression={($_.Height*100000)+$_.Tbr};Descending=$true}) | ForEach-Object { $_.Display })
+    $script:formatsAudio     = @(($audioFormats | Sort-Object @{Expression={$_.ABr};Descending=$true}) | ForEach-Object { $_.Display })
     $script:formatsEnumerated = ($script:formatsVideo.Count -gt 0 -or $script:formatsAudio.Count -gt 0)
     if ($json.extractor) { $script:lastExtractor = $json.extractor }
+    Write-DebugLog ("[FORMATOS][DEBUG] Clasificación: progressive={0} videoOnly={1} audioOnly={2} unknown={3} comboVideo={4} comboAudio={5}" -f $progressiveCount, $videoOnlyCount, $audioOnlyCount, $unknownCount, @($script:formatsVideo).Count, @($script:formatsAudio).Count) -ForegroundColor Cyan
+    $debugVideoItems = @($script:formatsVideo)
+    $debugAudioItems = @($script:formatsAudio)
+    if ($debugVideoItems.Count -gt 0) { Write-DebugLog ("[FORMATOS][DEBUG] Video seleccionado inicial: {0}" -f $debugVideoItems[0]) -ForegroundColor DarkGray }
+    if ($debugAudioItems.Count -gt 0) { Write-DebugLog ("[FORMATOS][DEBUG] Audio seleccionado inicial: {0}" -f $debugAudioItems[0]) -ForegroundColor DarkGray }
     if ($script:formatsEnumerated) {
         $lblEstadoConsulta.Text     = "Formatos obtenidos y ordenados correctamente"
         $lblEstadoConsulta.Foreground = [System.Windows.Media.Brushes]::DarkGreen
@@ -1736,6 +1816,7 @@ function Add-UrlToDownloadQueue {
     } else {
         Get-QueueFormatSelection
     }
+    Write-DebugLog ("[QUEUE][DEBUG] Add-UrlToDownloadQueue: url={0} selector={1} merge={2} video={3} audio={4} generic={5}" -f $normalizedUrl, $fmt.Selector, $fmt.MergeExt, $fmt.VideoId, $fmt.AudioId, [bool]$UseGenericFormat) -ForegroundColor Cyan
     $item = [pscustomobject]@{
         Id               = [guid]::NewGuid().ToString()
         Url              = $normalizedUrl
@@ -1845,6 +1926,7 @@ function Add-CurrentDownloadToQueue {
     }
 
     $fmt = Get-QueueFormatSelection
+    Write-DebugLog ("[QUEUE][DEBUG] Add-CurrentDownloadToQueue: url={0} selector={1} merge={2} video={3} audio={4} videoLabel='{5}' audioLabel='{6}' size={7}" -f $script:ultimaURL, $fmt.Selector, $fmt.MergeExt, $fmt.VideoId, $fmt.AudioId, $fmt.VideoLabel, $fmt.AudioLabel, $fmt.SizeText) -ForegroundColor Cyan
     $noPlaylist = $false
     foreach ($u in @($script:originalUrl, $script:ultimaURL)) {
         if (-not [string]::IsNullOrWhiteSpace($u) -and (Test-YouTubePlaylist -Url $u)) {
@@ -1970,6 +2052,40 @@ function Write-QueueDebugLog {
     } catch {}
 }
 
+function Get-QueueFileSnapshot {
+    param($Item)
+    $paths = New-Object System.Collections.Generic.List[string]
+    foreach ($path in @($Item.TargetPath, $Item.StdoutPath, $Item.StderrPath)) {
+        if (-not [string]::IsNullOrWhiteSpace($path)) { [void]$paths.Add($path) }
+    }
+    if (-not [string]::IsNullOrWhiteSpace($Item.TargetPath)) {
+        $dir = Split-Path -Parent $Item.TargetPath
+        $leaf = Split-Path -Leaf $Item.TargetPath
+        $stem = [IO.Path]::GetFileNameWithoutExtension($leaf)
+        if (-not [string]::IsNullOrWhiteSpace($dir) -and (Test-Path -LiteralPath $dir)) {
+            Get-ChildItem -LiteralPath $dir -File -ErrorAction SilentlyContinue |
+                Where-Object { $_.Name -like "$stem*" -or $_.Name -like "*.part" -or $_.Name -like "*.ytdl" } |
+                Select-Object -First 20 |
+                ForEach-Object { [void]$paths.Add($_.FullName) }
+        }
+    }
+    $unique = @($paths | Select-Object -Unique)
+    if ($unique.Count -eq 0) { return "Sin rutas relacionadas." }
+    $lines = foreach ($path in $unique) {
+        if (Test-Path -LiteralPath $path) {
+            try {
+                $fi = Get-Item -LiteralPath $path -ErrorAction Stop
+                "{0} | exists | {1:n0} bytes | mtime {2:yyyy-MM-dd HH:mm:ss}" -f $path, $fi.Length, $fi.LastWriteTime
+            } catch {
+                "{0} | exists | no se pudo leer metadata: {1}" -f $path, $_.Exception.Message
+            }
+        } else {
+            "{0} | missing" -f $path
+        }
+    }
+    return ($lines -join [Environment]::NewLine)
+}
+
 function Add-QueueTextTail {
     param(
         $Item,
@@ -2041,17 +2157,38 @@ function Start-QueuedDownload {
         $Item.OutputTail = ""
         $Item.ErrorTail = ""
         $Item.LastError = ""
+        $ytVersion = ""
+        try {
+            $verRes = Invoke-Capture -ExePath $yt.Source -Args @("--version") -TimeoutSeconds 10
+            if ($verRes.ExitCode -eq 0) { $ytVersion = ($verRes.StdOut.Trim() -split "\r?\n" | Select-Object -First 1) }
+            elseif (-not [string]::IsNullOrWhiteSpace($verRes.StdErr)) { $ytVersion = "version-error: $($verRes.StdErr.Trim())" }
+        } catch {
+            $ytVersion = "version-error: $($_.Exception.Message)"
+        }
         Write-QueueDebugLog -Item $Item -Text ("YTDLL QUEUE DEBUG {0}" -f (Get-Date -Format "yyyy-MM-dd HH:mm:ss"))
+        Write-QueueDebugLog -Item $Item -Text ("YTDLL DebugEnabled: {0}" -f $global:DebugEnabled)
+        Write-QueueDebugLog -Item $Item -Text ("yt-dlp: {0}" -f $yt.Source)
+        Write-QueueDebugLog -Item $Item -Text ("yt-dlp version: {0}" -f $ytVersion)
         Write-QueueDebugLog -Item $Item -Text ("Title: {0}" -f $Item.Title)
         Write-QueueDebugLog -Item $Item -Text ("URL: {0}" -f $Item.Url)
+        Write-QueueDebugLog -Item $Item -Text ("Destination: {0}" -f $Item.Destination)
         Write-QueueDebugLog -Item $Item -Text ("Target: {0}" -f $Item.TargetPath)
         Write-QueueDebugLog -Item $Item -Text ("Selector: {0} | MergeExt: {1}" -f $Item.FormatSelector, $Item.MergeExt)
+        Write-QueueDebugLog -Item $Item -Text ("VideoId: {0} | AudioId: {1}" -f $Item.VideoFormatId, $Item.AudioFormatId)
+        Write-QueueDebugLog -Item $Item -Text ("VideoLabel: {0}" -f $Item.VideoFormatLabel)
+        Write-QueueDebugLog -Item $Item -Text ("AudioLabel: {0}" -f $Item.AudioFormatLabel)
+        Write-QueueDebugLog -Item $Item -Text ("NoPlaylist: {0} | BestProgId: {1} | SizeText: {2}" -f $Item.NoPlaylist, $Item.BestProgId, $Item.SizeText)
+        Write-QueueDebugLog -Item $Item -Text ("StdoutPath: {0}" -f $Item.StdoutPath)
+        Write-QueueDebugLog -Item $Item -Text ("StderrPath: {0}" -f $Item.StderrPath)
         Write-QueueDebugLog -Item $Item -Text ("Command: {0}" -f $Item.ArgsText)
+        Write-QueueDebugLog -Item $Item -Text "Initial file snapshot:"
+        Write-QueueDebugLog -Item $Item -Text (Get-QueueFileSnapshot -Item $Item)
         Write-QueueDebugLog -Item $Item -Text ""
         Write-DebugLog ("[QUEUE][DEBUG] Comando: {0}" -f $Item.ArgsText) -ForegroundColor DarkGray
         Write-DebugLog ("[QUEUE][DEBUG] Log: {0}" -f $Item.DebugLogPath) -ForegroundColor DarkGray
         $proc = Start-Process -FilePath $yt.Source -ArgumentList $argLine -NoNewWindow -PassThru `
             -RedirectStandardOutput $Item.StdoutPath -RedirectStandardError $Item.StderrPath
+        Write-QueueDebugLog -Item $Item -Text ("Process PID: {0}" -f $proc.Id)
 
         $Item.StdoutStream = [System.IO.File]::Open($Item.StdoutPath,[System.IO.FileMode]::OpenOrCreate,[System.IO.FileAccess]::Read,[System.IO.FileShare]::ReadWrite)
         $Item.StderrStream = [System.IO.File]::Open($Item.StderrPath,[System.IO.FileMode]::OpenOrCreate,[System.IO.FileAccess]::Read,[System.IO.FileShare]::ReadWrite)
@@ -2179,6 +2316,24 @@ function Complete-QueuedDownload {
     } catch {}
     $Item.ExitCode = $exit
     Close-QueueProcessResources -Item $Item
+    if ($Item.DebugLogPath) {
+        $elapsedText = "n/a"
+        try {
+            if (-not [string]::IsNullOrWhiteSpace($Item.StartedAt)) {
+                $elapsedText = "{0:n1}s" -f ([DateTime]::Now - [DateTime]::Parse($Item.StartedAt)).TotalSeconds
+            }
+        } catch {}
+        Write-QueueDebugLog -Item $Item -Text ""
+        Write-QueueDebugLog -Item $Item -Text ("Process finished: ExitCode={0} Elapsed={1}" -f $exit, $elapsedText)
+        if (-not [string]::IsNullOrWhiteSpace($Item.OutputTail)) {
+            Write-QueueDebugLog -Item $Item -Text ("OutputTail: {0}" -f (Get-DebugTextTail -Text $Item.OutputTail -MaxChars 2000))
+        }
+        if (-not [string]::IsNullOrWhiteSpace($Item.ErrorTail)) {
+            Write-QueueDebugLog -Item $Item -Text ("ErrorTail: {0}" -f (Get-DebugTextTail -Text $Item.ErrorTail -MaxChars 2000))
+        }
+        Write-QueueDebugLog -Item $Item -Text "Final file snapshot:"
+        Write-QueueDebugLog -Item $Item -Text (Get-QueueFileSnapshot -Item $Item)
+    }
 
     if ($Item.CancelRequested) {
         $Item.Status = "Cancelled"
@@ -2202,6 +2357,10 @@ function Complete-QueuedDownload {
             $script:ultimoTitulo = $oldTitle
         }
         Write-Host ("[QUEUE] Completada: {0}" -f $Item.Title) -ForegroundColor Green
+        if ($Item.DebugLogPath) {
+            Write-QueueDebugLog -Item $Item -Text ("Status: Completed | TargetExists={0}" -f (Test-Path -LiteralPath $Item.TargetPath))
+            Write-Host ("[QUEUE] Log de diagnostico: {0}" -f $Item.DebugLogPath) -ForegroundColor DarkGray
+        }
     } else {
         $Item.Status = "Failed"
         $Item.LastError = Get-QueueReadableError -Item $Item
@@ -2216,6 +2375,7 @@ function Complete-QueuedDownload {
             Write-QueueDebugLog -Item $Item -Text ""
             Write-QueueDebugLog -Item $Item -Text ("ExitCode: {0}" -f $exit)
             Write-QueueDebugLog -Item $Item -Text ("ReadableError: {0}" -f $Item.LastError)
+            Write-QueueDebugLog -Item $Item -Text ("TargetExists: {0}" -f (Test-Path -LiteralPath $Item.TargetPath))
         }
     }
     foreach ($logPath in @($Item.StdoutPath, $Item.StderrPath)) {

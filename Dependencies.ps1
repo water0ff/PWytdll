@@ -10,10 +10,44 @@
 
 # ─── Detección básica ──────────────────────────────────────────────────────────
 
+function Update-ProcessPath {
+    <#
+    .SYNOPSIS
+        Recarga el PATH del proceso desde las variables Machine/User.
+        Esto permite detectar herramientas recién instaladas por Chocolatey/MSI
+        sin cerrar y volver a abrir PowerShell.
+    #>
+    $pathBlocks = @(
+        [Environment]::GetEnvironmentVariable("Path", [System.EnvironmentVariableTarget]::Process),
+        [Environment]::GetEnvironmentVariable("Path", [System.EnvironmentVariableTarget]::Machine),
+        [Environment]::GetEnvironmentVariable("Path", [System.EnvironmentVariableTarget]::User)
+    )
+    $parts = @()
+    $seen = @{}
+    foreach ($pathBlock in $pathBlocks) {
+        if ([string]::IsNullOrWhiteSpace($pathBlock)) { continue }
+        foreach ($part in ($pathBlock -split ';')) {
+            if ([string]::IsNullOrWhiteSpace($part)) { continue }
+            $expanded = [Environment]::ExpandEnvironmentVariables($part.Trim()).Trim('"')
+            if ([string]::IsNullOrWhiteSpace($expanded)) { continue }
+            $key = $expanded.TrimEnd('\').ToUpperInvariant()
+            if (-not $seen.ContainsKey($key)) {
+                $seen[$key] = $true
+                $parts += $expanded
+            }
+        }
+    }
+    if ($parts.Count -gt 0) {
+        $env:Path = ($parts -join ';')
+    }
+}
+
 function Test-CommandExists {
     <#
     .SYNOPSIS Retorna $true si el comando existe en el PATH. #>
     param([Parameter(Mandatory=$true)][string]$Name)
+    try { Get-Command $Name -ErrorAction Stop | Out-Null; return $true } catch {}
+    Update-ProcessPath
     try { Get-Command $Name -ErrorAction Stop | Out-Null; return $true } catch { return $false }
 }
 
@@ -25,7 +59,10 @@ function Get-ToolVersion {
         [string]$ArgsForVersion = "--version",
         [ValidateSet("FirstLine","Raw")][string]$Parse = "FirstLine"
     )
-    try { $cmd = Get-Command $Command -ErrorAction Stop } catch { return $null }
+    try { $cmd = Get-Command $Command -ErrorAction Stop } catch {
+        Update-ProcessPath
+        try { $cmd = Get-Command $Command -ErrorAction Stop } catch { return $null }
+    }
     try {
         $p = New-Object System.Diagnostics.Process
         $p.StartInfo = New-Object System.Diagnostics.ProcessStartInfo
@@ -59,6 +96,9 @@ function Check-Chocolatey {
     #>
     Write-Host "[CHECK] Verificando Chocolatey..." -ForegroundColor Cyan
     if (-not (Get-Command choco -ErrorAction SilentlyContinue)) {
+        Update-ProcessPath
+    }
+    if (-not (Get-Command choco -ErrorAction SilentlyContinue)) {
         Write-Host "[WARN] Chocolatey no encontrado." -ForegroundColor Yellow
         $response = [System.Windows.Forms.MessageBox]::Show(
             "Chocolatey no está instalado. ¿Desea instalarlo ahora?",
@@ -76,15 +116,19 @@ function Check-Chocolatey {
             [System.Net.ServicePointManager]::SecurityProtocol = `
                 [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
             iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
-            Write-Host "`t[OK] Chocolatey instalado. Configurando cache..." -ForegroundColor Green
-            choco config set cacheLocation C:\Choco\cache | Out-Null
+            Write-Host "`t[OK] Chocolatey instalado. Refrescando PATH..." -ForegroundColor Green
+            Update-ProcessPath
+            if (Get-Command choco -ErrorAction SilentlyContinue) {
+                Write-Host "`t[OK] Chocolatey detectado. Configurando cache..." -ForegroundColor Green
+                choco config set cacheLocation C:\Choco\cache | Out-Null
+                return $true
+            }
             [System.Windows.Forms.MessageBox]::Show(
-                "Chocolatey se instaló correctamente.`nPor favor, reinicia PowerShell antes de continuar.",
+                "Chocolatey se instaló correctamente, pero no pudo detectarse en este proceso.`nPor favor, reinicia PowerShell antes de continuar.",
                 "Reinicio requerido",
                 [System.Windows.Forms.MessageBoxButtons]::OK,
                 [System.Windows.Forms.MessageBoxIcon]::Information
             ) | Out-Null
-            Stop-Process -Id $PID -Force
             return $false
         } catch {
             Write-Host "`t[ERROR] Falló instalación de Chocolatey: $_" -ForegroundColor Red
@@ -163,6 +207,7 @@ function Ensure-DotNet6DesktopRuntime {
         Start-Process -FilePath "choco" `
             -ArgumentList @("install","dotnet-6.0-desktopruntime","-y") `
             -NoNewWindow -Wait
+        Update-ProcessPath
     } catch {
         Write-Host "`t[ERROR] Falló instalación de .NET 6 Desktop Runtime: $_" -ForegroundColor Red
         [System.Windows.Forms.MessageBox]::Show(
@@ -212,6 +257,7 @@ function Ensure-ToolHeadless {
     Write-Host ("[WARN] {0} no encontrado. Instalando con choco..." -f $FriendlyName) -ForegroundColor Yellow
     try {
         Start-Process -FilePath "choco" -ArgumentList @("install",$ChocoPkg,"-y") -NoNewWindow -Wait
+        Update-ProcessPath
     } catch {
         Write-Host ("[ERROR] Falló instalación headless de {0}: {1}" -f $FriendlyName, $_) -ForegroundColor Red
         return $false
@@ -309,6 +355,7 @@ function Update-Dependency {
     Write-Host ("[UPDATE] Actualizando {0} con choco upgrade {1} -y" -f $FriendlyName, $ChocoPkg) -ForegroundColor Cyan
     try {
         Start-Process -FilePath "choco" -ArgumentList @("upgrade",$ChocoPkg,"-y") -Wait -NoNewWindow
+        Update-ProcessPath
         Refresh-DependencyLabel -CommandName $CommandName -FriendlyName $FriendlyName `
             -LabelRef $LabelRef -VersionArgs $VersionArgs -Parse $Parse
         [System.Windows.Forms.MessageBox]::Show(
@@ -358,6 +405,7 @@ function Uninstall-Dependency {
     Write-Host ("[UNINSTALL] Desinstalando {0} con choco uninstall {1} -y" -f $FriendlyName,$ChocoPkg) -ForegroundColor Cyan
     try {
         Start-Process -FilePath "choco" -ArgumentList @("uninstall",$ChocoPkg,"-y") -Wait -NoNewWindow
+        Update-ProcessPath
         $LabelRef.Value.Text     = ("{0}: no instalado" -f $FriendlyName)
         $LabelRef.Value.Foreground = [System.Windows.Media.Brushes]::Red
         [System.Windows.Forms.MessageBox]::Show(
