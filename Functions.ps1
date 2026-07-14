@@ -1545,8 +1545,19 @@ function Get-QueueBool {
 
 function Ensure-QueueProperty {
     param($Item, [string]$Name, $DefaultValue)
-    if (@($Item.PSObject.Properties.Match($Name)).Count -eq 0) {
-        $Item | Add-Member -MemberType NoteProperty -Name $Name -Value $DefaultValue
+    $exists = $false
+    foreach ($prop in @($Item.PSObject.Properties)) {
+        if ($prop.Name -eq $Name) {
+            $exists = $true
+            break
+        }
+    }
+    if (-not $exists) {
+        try {
+            $Item | Add-Member -MemberType NoteProperty -Name $Name -Value $DefaultValue -ErrorAction Stop
+        } catch [System.InvalidOperationException] {
+            # Some restored PSObjects report duplicate members even when indexed lookup misses them.
+        }
     }
 }
 
@@ -1606,6 +1617,9 @@ function Initialize-QueueItemShape {
     Ensure-QueueProperty -Item $Item -Name "StderrStream" -DefaultValue $null
     Ensure-QueueProperty -Item $Item -Name "LastOutFragment" -DefaultValue ""
     Ensure-QueueProperty -Item $Item -Name "LastErrFragment" -DefaultValue ""
+    Ensure-QueueProperty -Item $Item -Name "LastDebugEvent" -DefaultValue ""
+    Ensure-QueueProperty -Item $Item -Name "LastDebugHeartbeat" -DefaultValue ""
+    Ensure-QueueProperty -Item $Item -Name "LastDebugPercent" -DefaultValue -1
     $Item.DownloadMode = Normalize-DownloadMode -Mode ([string]$Item.DownloadMode)
     if ($Item.DownloadMode -eq "audio-mp3") {
         $Item.AudioOutputFormat = "mp3"
@@ -2107,6 +2121,65 @@ function Write-QueueDebugLog {
     } catch {}
 }
 
+function Get-QueueElapsedText {
+    param($Item)
+    try {
+        if ([string]::IsNullOrWhiteSpace($Item.StartedAt)) { return "n/a" }
+        $elapsed = [DateTime]::Now - [DateTime]::Parse($Item.StartedAt)
+        if ($elapsed.TotalHours -ge 1) { return $elapsed.ToString("h\:mm\:ss") }
+        return $elapsed.ToString("m\:ss")
+    } catch {
+        return "n/a"
+    }
+}
+
+function Get-QueueProcessSummary {
+    param($Item)
+    $pidText = "pid=n/a"
+    $childrenText = "children=n/a"
+    try {
+        $procObj = $Item.Process
+        if ($procObj -is [System.Management.Automation.PSObject]) { $procObj = $procObj.BaseObject }
+        if ($procObj) {
+            $procObj.Refresh()
+            $pidText = "pid=$($procObj.Id) exited=$($procObj.HasExited)"
+            try {
+                $children = @(Get-CimInstance Win32_Process -Filter ("ParentProcessId = {0}" -f $procObj.Id) -ErrorAction Stop)
+                if ($children.Count -gt 0) {
+                    $childrenText = "children=" + (($children | ForEach-Object {
+                        $cmd = [string]$_.CommandLine
+                        if ($cmd.Length -gt 90) { $cmd = $cmd.Substring(0,90) + "..." }
+                        "{0}#{1} {2}" -f $_.Name, $_.ProcessId, $cmd
+                    }) -join " | ")
+                } else {
+                    $childrenText = "children=none"
+                }
+            } catch {
+                $childrenText = "children=unavailable"
+            }
+        }
+    } catch {}
+    return ("{0}; {1}" -f $pidText, $childrenText)
+}
+
+function Write-QueueLiveDebug {
+    param(
+        $Item,
+        [Parameter(Mandatory=$true)][string]$Text,
+        [string]$ForegroundColor = "DarkGray",
+        [switch]$NoDedup
+    )
+    if (-not $Item -or [string]::IsNullOrWhiteSpace($Text)) { return }
+    Ensure-QueueProperty -Item $Item -Name "LastDebugEvent" -DefaultValue ""
+    if (-not $NoDedup -and [string]$Item.LastDebugEvent -eq $Text) { return }
+    $Item.LastDebugEvent = $Text
+    $line = "[QUEUE][DEBUG] $Text"
+    Write-QueueDebugLog -Item $Item -Text $line
+    if ($global:DebugEnabled) {
+        Write-Host $line -ForegroundColor $ForegroundColor
+    }
+}
+
 function Get-QueueFileSnapshot {
     param($Item)
     $paths = New-Object System.Collections.Generic.List[string]
@@ -2223,6 +2296,9 @@ function Start-QueuedDownload {
         $Item.OutputTail = ""
         $Item.ErrorTail = ""
         $Item.LastError = ""
+        $Item.LastDebugEvent = ""
+        $Item.LastDebugHeartbeat = ""
+        $Item.LastDebugPercent = -1
         $ytVersion = ""
         try {
             $verRes = Invoke-Capture -ExePath $yt.Source -Args @("--version") -TimeoutSeconds 10
@@ -2253,6 +2329,9 @@ function Start-QueuedDownload {
         Write-QueueDebugLog -Item $Item -Text ""
         Write-DebugLog ("[QUEUE][DEBUG] Comando: {0}" -f $Item.ArgsText) -ForegroundColor DarkGray
         Write-DebugLog ("[QUEUE][DEBUG] Log: {0}" -f $Item.DebugLogPath) -ForegroundColor DarkGray
+        if ($isAudioMp3) {
+            Write-QueueLiveDebug -Item $Item -Text ("Audio MP3: descargando selector {0}; luego ffmpeg convertira a {1}. Target final: {2}" -f $Item.FormatSelector, $audioFormat, $Item.TargetPath) -ForegroundColor Cyan
+        }
         $proc = Start-Process -FilePath $yt.Source -ArgumentList $argLine -NoNewWindow -PassThru `
             -RedirectStandardOutput $Item.StdoutPath -RedirectStandardError $Item.StderrPath
         Write-QueueDebugLog -Item $Item -Text ("Process PID: {0}" -f $proc.Id)
@@ -2304,27 +2383,72 @@ function Update-QueueProgressFromLine {
     if ($Text -match '^\[download\]\s+Destination:') {
         Set-QueueDownloadStageFromDestination -Item $Item -Text $Text
         $Item.Phase = Get-QueueDownloadPhaseLabel -Item $Item
+        Write-QueueLiveDebug -Item $Item -Text ("Destino yt-dlp: {0}" -f $Text) -ForegroundColor DarkCyan
         return
     }
-    if ($Text -match '^\[Merger\]\s+Merging formats') { $Item.Phase = "Fusionando"; return }
-    if ($Text -match '^Deleting original file') { $Item.Phase = "Borrando temporales"; return }
+    if ($Text -match '^\[Merger\]\s+Merging formats') {
+        $Item.Phase = "Fusionando"
+        Write-QueueLiveDebug -Item $Item -Text ("Fusionando: {0}" -f $Text) -ForegroundColor DarkCyan
+        return
+    }
+    if ($Text -match '^Deleting original file') {
+        $Item.Phase = "Borrando temporales"
+        Write-QueueLiveDebug -Item $Item -Text ("Borrando temporal: {0}" -f $Text) -ForegroundColor DarkGray
+        return
+    }
     if ($Text -match '^\[ExtractAudio\]') {
         $Item.Phase = if (Test-AudioMp3QueueItem -Item $Item) { "Convirtiendo a MP3" } else { "Post-procesando" }
+        Write-QueueLiveDebug -Item $Item -Text ("ExtractAudio: {0}" -f $Text) -ForegroundColor Cyan
         return
     }
-    if ($Text -match '^\[(Fixup|EmbedSubtitle|ModifyChapters)\]') { $Item.Phase = "Post-procesando"; return }
+    if ($Text -match '^\[(Fixup|EmbedSubtitle|ModifyChapters)\]') {
+        $Item.Phase = "Post-procesando"
+        Write-QueueLiveDebug -Item $Item -Text ("Postproceso: {0}" -f $Text) -ForegroundColor DarkCyan
+        return
+    }
 
     $m = [regex]::Match($Text, 'download:\s*(?<pct>\d+(?:\.\d+)?)%\s*(?:ETA:(?<eta>\S+))?\s*(?:SPEED:(?<spd>.+))?', 'IgnoreCase')
     if (-not $m.Success) { $m = [regex]::Match($Text, '(?<pct>\d+(?:\.\d+)?)%\s+of.*?at\s+(?<spd>\S+)\s+ETA\s+(?<eta>\S+)', 'IgnoreCase') }
     if (-not $m.Success) { $m = [regex]::Match($Text, '(?<pct>\d+(?:\.\d+)?)%') }
     if ($m.Success) {
-        $Item.Percent = [int][math]::Min(100,[math]::Round([double]$m.Groups['pct'].Value))
+        $pctValue = [int][math]::Min(100,[math]::Round([double]$m.Groups['pct'].Value))
+        $Item.Percent = $pctValue
         $Item.Eta = $m.Groups['eta'].Value
         $Item.Speed = ($m.Groups['spd'].Value).Trim()
         if ([string]::IsNullOrWhiteSpace($Item.DownloadStage)) {
             $Item.DownloadStage = if (Test-AudioMp3QueueItem -Item $Item) { "Audio" } else { "Video" }
         }
         $Item.Phase = "{0} {1}%" -f (Get-QueueDownloadPhaseLabel -Item $Item), $Item.Percent
+        Ensure-QueueProperty -Item $Item -Name "LastDebugPercent" -DefaultValue -1
+        $bucket = [int]([math]::Floor($pctValue / 10) * 10)
+        if ($pctValue -eq 100 -or $bucket -gt [int]$Item.LastDebugPercent) {
+            $Item.LastDebugPercent = $bucket
+            Write-QueueLiveDebug -Item $Item -Text ("Progreso {0}: {1}% ETA={2} SPEED={3}" -f (Get-QueueDownloadPhaseLabel -Item $Item), $pctValue, $Item.Eta, $Item.Speed) -ForegroundColor DarkCyan
+        }
+    }
+}
+
+function Update-QueueHeartbeat {
+    param($Item)
+    if (-not $Item -or $Item.Status -ne "Running" -or -not (Test-AudioMp3QueueItem -Item $Item)) { return }
+    Ensure-QueueProperty -Item $Item -Name "LastDebugHeartbeat" -DefaultValue ""
+    $now = [DateTime]::Now
+    $last = $null
+    if (-not [string]::IsNullOrWhiteSpace($Item.LastDebugHeartbeat)) {
+        try { $last = [DateTime]::Parse($Item.LastDebugHeartbeat) } catch { $last = $null }
+    }
+    if ($last -and ($now - $last).TotalSeconds -lt 10) { return }
+    $Item.LastDebugHeartbeat = $now.ToString("o")
+
+    $elapsed = Get-QueueElapsedText -Item $Item
+    $processSummary = Get-QueueProcessSummary -Item $Item
+    if ($Item.Phase -match '^Convirtiendo a MP3') {
+        $Item.Phase = "Convirtiendo a MP3 ($elapsed)"
+    }
+    Write-QueueLiveDebug -Item $Item -Text ("Audio MP3 activo: phase='{0}' elapsed={1}; {2}; target='{3}'" -f $Item.Phase, $elapsed, $processSummary, $Item.TargetPath) -ForegroundColor Yellow -NoDedup
+    if ($Item.DebugLogPath) {
+        Write-QueueDebugLog -Item $Item -Text "Heartbeat file snapshot:"
+        Write-QueueDebugLog -Item $Item -Text (Get-QueueFileSnapshot -Item $Item)
     }
 }
 
@@ -2491,6 +2615,7 @@ function Monitor-ActiveDownloads {
     if (-not $script:downloadQueue) { return }
     foreach ($item in @($script:downloadQueue | Where-Object { $_.Status -eq "Running" })) {
         Read-QueueProcessOutput -Item $item
+        Update-QueueHeartbeat -Item $item
         if ($item.Process -and $item.Process.HasExited) {
             Complete-QueuedDownload -Item $item
         }

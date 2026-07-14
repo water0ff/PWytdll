@@ -24,6 +24,7 @@ $assetName = "ytdll-release.zip"
 $appPath = Join-Path $installRootPath "app"
 $localVersionFile = Join-Path $appPath "version.json"
 $localRunBat = Join-Path $appPath "run.bat"
+$localInstallMetadataFile = Join-Path $installRootPath "install.json"
 
 function Get-InstalledVersion {
     if (-not (Test-Path -LiteralPath $localVersionFile)) {
@@ -36,6 +37,52 @@ function Get-InstalledVersion {
     } catch {
         return $null
     }
+}
+
+function Normalize-Sha256Digest {
+    param([string]$Digest)
+
+    if ([string]::IsNullOrWhiteSpace($Digest)) {
+        return $null
+    }
+    if ($Digest -match '^sha256:([a-fA-F0-9]{64})$') {
+        return "sha256:$($matches[1].ToLowerInvariant())"
+    }
+    if ($Digest -match '^[a-fA-F0-9]{64}$') {
+        return "sha256:$($Digest.ToLowerInvariant())"
+    }
+    return $null
+}
+
+function Get-InstalledPackageDigest {
+    if (-not (Test-Path -LiteralPath $localInstallMetadataFile)) {
+        return $null
+    }
+
+    try {
+        $data = Get-Content -LiteralPath $localInstallMetadataFile -Raw | ConvertFrom-Json
+        return (Normalize-Sha256Digest -Digest ([string]$data.PackageSha256))
+    } catch {
+        return $null
+    }
+}
+
+function Save-InstallMetadata {
+    param(
+        [string]$Version,
+        [string]$PackageSha256,
+        [string]$SourceVersion
+    )
+
+    $metadata = [ordered]@{
+        Version       = $Version
+        SourceVersion = $SourceVersion
+        PackageSha256 = (Normalize-Sha256Digest -Digest $PackageSha256)
+        InstalledAt   = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ssK")
+    }
+    $metadata |
+        ConvertTo-Json |
+        Set-Content -LiteralPath $localInstallMetadataFile -Encoding UTF8
 }
 
 function Start-Ytdll {
@@ -67,6 +114,7 @@ New-Item -ItemType Directory -Path $installRootPath -Force | Out-Null
 $downloadPath = Join-Path $installRootPath $assetName
 $remoteVersion = $PackageVersion
 $expectedDigest = $null
+$packageSha256 = $null
 
 if ([string]::IsNullOrWhiteSpace($PackagePath)) {
     $apiUrl = "https://api.github.com/repos/$Owner/$Repository/releases/latest"
@@ -91,14 +139,26 @@ if ([string]::IsNullOrWhiteSpace($PackagePath)) {
         throw "El release $remoteVersion no contiene el archivo $assetName."
     }
     $expectedDigest = [string]$asset[0].digest
+    $normalizedExpectedDigest = Normalize-Sha256Digest -Digest $expectedDigest
 
     $installedVersion = Get-InstalledVersion
+    $installedDigest = Get-InstalledPackageDigest
     if (-not $ForceUpdate -and
         -not [string]::IsNullOrWhiteSpace($installedVersion) -and
         $installedVersion -eq $remoteVersion) {
-        Write-Host "YTDLL $installedVersion ya esta actualizado." -ForegroundColor Green
-        Start-Ytdll
-        return
+        if ($normalizedExpectedDigest -and $installedDigest -eq $normalizedExpectedDigest) {
+            Write-Host "YTDLL $installedVersion ya esta actualizado." -ForegroundColor Green
+            Start-Ytdll
+            return
+        }
+
+        if ($normalizedExpectedDigest) {
+            Write-Host "YTDLL $installedVersion tiene el mismo tag, pero el paquete remoto cambio. Actualizando..." -ForegroundColor Yellow
+        } else {
+            Write-Host "YTDLL $installedVersion ya esta actualizado." -ForegroundColor Green
+            Start-Ytdll
+            return
+        }
     }
 
     Write-Host "Descargando YTDLL $remoteVersion..." -ForegroundColor Cyan
@@ -113,9 +173,10 @@ if ([string]::IsNullOrWhiteSpace($PackagePath)) {
         throw
     }
 
-    if ($expectedDigest -match '^sha256:([a-fA-F0-9]{64})$') {
-        $actualHash = (Get-FileHash -LiteralPath $downloadPath -Algorithm SHA256).Hash
-        if ($actualHash -ne $matches[1]) {
+    $packageSha256 = (Get-FileHash -LiteralPath $downloadPath -Algorithm SHA256).Hash
+    if ($normalizedExpectedDigest) {
+        $actualDigest = Normalize-Sha256Digest -Digest $packageSha256
+        if ($actualDigest -ne $normalizedExpectedDigest) {
             Remove-Item -LiteralPath $downloadPath -Force -ErrorAction SilentlyContinue
             throw "La suma SHA256 del paquete descargado no coincide con GitHub."
         }
@@ -123,6 +184,7 @@ if ([string]::IsNullOrWhiteSpace($PackagePath)) {
 } else {
     $resolvedPackage = (Resolve-Path -LiteralPath $PackagePath).Path
     Copy-Item -LiteralPath $resolvedPackage -Destination $downloadPath -Force
+    $packageSha256 = (Get-FileHash -LiteralPath $downloadPath -Algorithm SHA256).Hash
     if ([string]::IsNullOrWhiteSpace($remoteVersion)) {
         $remoteVersion = "paquete local"
     }
@@ -187,6 +249,7 @@ try {
 }
 
 $installedVersion = Get-InstalledVersion
+Save-InstallMetadata -Version $installedVersion -PackageSha256 $packageSha256 -SourceVersion $remoteVersion
 Write-Host "YTDLL instalado correctamente." -ForegroundColor Green
 Write-Host "Version: $installedVersion" -ForegroundColor Cyan
 Write-Host "Ruta: $appPath" -ForegroundColor DarkGray
