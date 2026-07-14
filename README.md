@@ -117,6 +117,25 @@ irm bit.ly/ytdll | iex
 El método por releases es necesario para la versión modular formada por
 `Main.ps1`, `Dependencies.ps1`, `Functions.ps1` y `GUI.ps1`.
 
+## Publicar release
+
+El build empaqueta la app modular en `ytdll-release.zip`. El release de GitHub
+también debe incluir `Install-YTDLL.ps1` y `YTDLL.bat`, porque el `.bat`
+descarga el instalador y el instalador descarga el paquete zip del último
+release.
+
+```powershell
+cd C:\Users\water\Documents\githubProyects\YTDLL
+.\Publish-Release.ps1
+```
+
+Para notas multilínea, guárdalas en un archivo y pásalo al publicador:
+
+```powershell
+cd C:\Users\water\Documents\githubProyects\YTDLL
+.\Publish-Release.ps1 -NotesFile .\release-notes.md
+```
+
 🎮 Uso / Usage
 Interfaz Gráfica
 
@@ -160,6 +179,7 @@ PWytdll/
 ├── Install-YTDLL.ps1         # Instalador y actualizador
 ├── YTDLL.bat                 # Entrada para usuarios
 ├── build.ps1                 # Generador del release
+├── Publish-Release.ps1       # Publica release en GitHub con assets requeridos
 └── README.md
 
 Archivos de configuración

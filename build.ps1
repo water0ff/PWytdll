@@ -42,6 +42,7 @@ foreach ($file in $requiredFiles) {
 $scriptsToValidate = @(
     $requiredFiles
     "Install-YTDLL.ps1"
+    "Publish-Release.ps1"
     "build.ps1"
 )
 foreach ($scriptName in $scriptsToValidate) {
